@@ -71,6 +71,50 @@ namespace AlpineTuning
         private GUIStyle _iconButtonStyle;
         private readonly Color _alpineAccent = new Color(0.74f, 0.88f, 1f, 1f);
 
+        // FADE IN/OUT icon
+        private float _toggleAlpha = 0.25f;   // current
+        private float _toggleAlphaVel;        // optional if you want SmoothDamp
+        private const float ToggleAlphaIdle = 0.10f;
+        private const float ToggleAlphaHover = 1.00f;
+        private const float ToggleFadeSpeed = 10f; // higher = snappier
+        private bool _iconFlipped;
+
+        // Cursor behavior tuning
+        private float _uiCursorAlpha;
+        private Vector2 _lastMousePos;
+        private float _lastMouseMoveTime;
+
+        // Sensitivity controls (tune these)
+        private const float CursorMoveThreshold = 2.5f;   // pixels
+        private const float CursorFadeInSpeed = 14f;
+        private const float CursorFadeOutSpeed = 4f;
+        private const float CursorIdleDelay = 0.6f;       // seconds before fading out
+
+        // Custom cursor
+        private Texture2D _uiCursorTex;
+
+        private void EnsureUiCursorTex()
+        {
+            if (_uiCursorTex != null) return;
+
+            // Simple 16x16 crosshair
+            int w = 16, h = 16;
+            _uiCursorTex = new Texture2D(w, h, TextureFormat.RGBA32, false);
+            var px = new Color32[w * h];
+
+            for (int y = 0; y < h; y++)
+                for (int x = 0; x < w; x++)
+                {
+                    bool line = (x == w / 2) || (y == h / 2);
+                    byte a = (byte)(line ? 220 : 0);
+                    px[y * w + x] = new Color32(255, 255, 255, a);
+                }
+
+            _uiCursorTex.SetPixels32(px);
+            _uiCursorTex.Apply(false, true);
+            _uiCursorTex.filterMode = FilterMode.Point;
+        }
+
         private static readonly string ConfigRoot =
             Path.Combine(MelonEnvironment.UserDataDirectory, "AlpineTuning");
         private static readonly string LegacyConfigRoot =
@@ -165,11 +209,13 @@ namespace AlpineTuning
             }
             else
             {
-                GUI.color = Color.black;
+                GUI.color = Color.gray;
                 GUI.backgroundColor = new Color(0.94f, 0.96f, 0.99f, 0.97f);
             }
 
-            AnchorWindowToTopRight();
+            InitWindowPositionOnceRightAligned();
+            ClampWindowToScreen();
+
 
             _windowRect = GUI.Window(
                 726400,
@@ -177,8 +223,54 @@ namespace AlpineTuning
                 DrawWindow,
                 "Alpine Tuning");
 
+            DrawUiCursorGlobal();
+
             GUI.color = prevColor;
             GUI.backgroundColor = prevBg;
+        }
+
+        private void DrawUiCursorGlobal()
+        {
+            EnsureUiCursorTex();
+
+            Vector2 mp = Event.current.mousePosition;
+            float now = Time.unscaledTime;
+
+            // 1) Detect meaningful mouse movement
+            float delta = Vector2.Distance(mp, _lastMousePos);
+
+            if (delta >= CursorMoveThreshold)
+            {
+                _lastMouseMoveTime = now;
+                _lastMousePos = mp;
+            }
+
+            // 2) Determine target alpha
+            bool recentlyMoved = (now - _lastMouseMoveTime) <= CursorIdleDelay;
+            float targetAlpha = recentlyMoved ? 1f : 0f;
+
+            // 3) Smooth fade (asymmetric: fast in, slow out)
+            float speed = targetAlpha > _uiCursorAlpha
+                ? CursorFadeInSpeed
+                : CursorFadeOutSpeed;
+
+            float dt = Mathf.Max(0.0001f, Time.unscaledDeltaTime);
+            _uiCursorAlpha = Mathf.Lerp(
+                _uiCursorAlpha,
+                targetAlpha,
+                1f - Mathf.Exp(-speed * dt)
+            );
+
+            if (_uiCursorAlpha <= 0.01f)
+                return;
+
+            // 4) Draw cursor
+            Rect r = new Rect(mp.x + 2f, mp.y + 2f, 16f, 16f);
+
+            Color prev = GUI.color;
+            GUI.color = new Color(1f, 1f, 1f, _uiCursorAlpha);
+            GUI.DrawTexture(r, _uiCursorTex);
+            GUI.color = prev;
         }
 
         private void DrawToggleBadge()
@@ -186,27 +278,39 @@ namespace AlpineTuning
             EnsureIconTexture();
 
             Rect badgeRect = _toggleIconRect;
-            Rect backdropRect = new Rect(badgeRect.x - 4f, badgeRect.y - 4f, badgeRect.width + 8f, badgeRect.height + 8f);
+
+            bool hovered = badgeRect.Contains(Event.current.mousePosition);
+            float target = hovered ? ToggleAlphaHover : ToggleAlphaIdle;
+
+            // Smooth alpha (unscaled)
+            float dt = Mathf.Max(0.0001f, Time.unscaledDeltaTime);
+            _toggleAlpha = Mathf.Lerp(
+                _toggleAlpha,
+                target,
+                1f - Mathf.Exp(-ToggleFadeSpeed * dt)
+            );
 
             Color prevColor = GUI.color;
-            GUI.color = _showUI
-                ? new Color(0.16f, 0.52f, 0.86f, 0.9f)
-                : new Color(0.16f, 0.16f, 0.16f, 0.7f);
-            GUI.DrawTexture(backdropRect, Texture2D.whiteTexture);
 
-            GUI.color = Color.white;
+            // Icon only
+            GUI.color = new Color(1f, 1f, 1f, _toggleAlpha);
+
             if (_toggleIconTexture != null)
                 GUI.DrawTexture(badgeRect, _toggleIconTexture);
             else
                 GUI.Label(badgeRect, "AT", _titleStyle ?? GUI.skin.label);
 
+            // Invisible button for input + tooltip
+            GUI.color = Color.white;
             string tooltip = _showUI ? "Hide Alpine Tuning" : "Show Alpine Tuning";
             GUIStyle buttonStyle = _iconButtonStyle ?? GUIStyle.none;
+
             if (GUI.Button(badgeRect, new GUIContent(string.Empty, tooltip), buttonStyle))
                 _showUI = !_showUI;
 
             GUI.color = prevColor;
         }
+
 
         private void EnsureIconTexture()
         {
@@ -229,6 +333,11 @@ namespace AlpineTuning
 
                 _toggleIconTexture.LoadRawTextureData(IconByteArray.RGBA);
                 _toggleIconTexture.Apply();
+                if (!_iconFlipped)
+                {
+                    FlipTextureVertical(_toggleIconTexture);
+                    _iconFlipped = true;
+                }
                 _toggleIconTexture.filterMode = FilterMode.Bilinear;
             }
             catch (Exception ex)
@@ -237,6 +346,31 @@ namespace AlpineTuning
                 _toggleIconTexture = null;
             }
         }
+
+        private static void FlipTextureVertical(Texture2D tex)
+        {
+            var pixels = tex.GetPixels32();
+            int w = tex.width;
+            int h = tex.height;
+
+            for (int y = 0; y < h / 2; y++)
+            {
+                int yTop = y * w;
+                int yBottom = (h - y - 1) * w;
+
+                for (int x = 0; x < w; x++)
+                {
+                    var tmp = pixels[yTop + x];
+                    pixels[yTop + x] = pixels[yBottom + x];
+                    pixels[yBottom + x] = tmp;
+                }
+            }
+
+            tex.SetPixels32(pixels);
+            tex.Apply(false, true);
+        }
+
+
 
         // ============================================================
         // WINDOW DRAW
@@ -458,15 +592,39 @@ namespace AlpineTuning
             }
         }
 
-        private void AnchorWindowToTopRight()
+        private void InitWindowPositionOnceRightAligned()
         {
+            if (_windowRect.width < 200f) _windowRect.width = 450f;
+            if (_windowRect.height < 200f) _windowRect.height = 520f;
+
+            if (_windowInit && !_windowInitPositioned)
+                return;
+
+            // Only do this once per session (or when explicitly reset).
             float margin = 14f;
             float screenWidth = Screen.width;
-            float maxWidth = Mathf.Max(240f, screenWidth - (margin * 2));
-            _windowRect.width = Mathf.Min(_windowRect.width, maxWidth);
+
             _windowRect.x = Mathf.Max(margin, screenWidth - _windowRect.width - margin);
-            _windowRect.y = Mathf.Max(margin, _windowRect.y);
+            _windowRect.y = Mathf.Max(margin, 20f);
+
+            _windowInitPositioned = true;
         }
+
+        private bool _windowInitPositioned;
+
+        private void ClampWindowToScreen()
+        {
+            float margin = 6f;
+
+            // Clamped size
+            _windowRect.width = Mathf.Clamp(_windowRect.width, 350f, Screen.width - margin * 2f);
+            _windowRect.height = Mathf.Clamp(_windowRect.height, 380f, Screen.height - margin * 2f);
+
+            // Clamped position
+            _windowRect.x = Mathf.Clamp(_windowRect.x, margin, Screen.width - _windowRect.width - margin);
+            _windowRect.y = Mathf.Clamp(_windowRect.y, margin, Screen.height - _windowRect.height - margin);
+        }
+
 
         private int DrawDropdown(int selectedIndex, string[] options)
         {
@@ -523,6 +681,7 @@ namespace AlpineTuning
                    _selectedDonorIndex != _lastAppliedDonorIndex;
         }
 
+        // Cleaner Engine Swaps = Happier Riders
         private void ApplyPartsAndSwap(bool persistPreset = true)
         {
             if (ActiveSO == null)
@@ -538,37 +697,50 @@ namespace AlpineTuning
                 return;
             }
 
-            // Engine source: donor or self
-            SledDefaults engineSource = baseDefaults;
-            if (_selectedDonorIndex > 0 && SelectableSleds != null &&
+            // 1) Resolve ENGINE BASELINE (self or donor)
+            SledDefaults engineDefaults = baseDefaults;
+
+            if (_selectedDonorIndex > 0 &&
+                SelectableSleds != null &&
                 _selectedDonorIndex - 1 < SelectableSleds.Count)
             {
                 var donor = SelectableSleds[_selectedDonorIndex - 1];
                 string donorKey = GetSledKey(donor);
+
                 if (DefaultDatabase.TryGetValue(donorKey, out var donorDefaults))
-                    engineSource = donorDefaults;
+                    engineDefaults = donorDefaults;
                 else
-                    MelonLogger.Warning($"Engine swap donor '{donor.name}' has no defaults entry; using self instead.");
+                    MelonLogger.Warning(
+                        $"Engine swap donor '{donor.name}' has no defaults entry; falling back to self.");
             }
 
-            // Resolve parts
+            // 2) Resolve PART SELECTIONS
             EnginePart enginePart = EngineParts[Mathf.Clamp(_selectedEngineIndex, 0, EngineParts.Count - 1)];
             TrackPart trackPart = TrackParts[Mathf.Clamp(_selectedTrackIndex, 0, TrackParts.Count - 1)];
             HandlingPart handlingPart = HandlingParts[Mathf.Clamp(_selectedHandlingIndex, 0, HandlingParts.Count - 1)];
 
-            // Compute final values
-            float finalHP = engineSource.HorsePower * enginePart.HpMult;
-            float finalPF = engineSource.PowerFactor * enginePart.PfMult;
+            // 3) ENGINE COMPUTE (ENGINE BASELINE ONLY)
+            float finalHP = engineDefaults.HorsePower * enginePart.HpMult;
+            float finalPF = engineDefaults.PowerFactor * enginePart.PfMult;
 
-            float finalLug = (baseDefaults.LugHeight * trackPart.LugHeightMultiplier) + trackPart.LugHeightOffset;
-            float finalFriction = baseDefaults.Friction * trackPart.FrictionMultiplier;
+            // 4) CHASSIS COMPUTE (SELF BASELINE ONLY)
+            float finalLug =
+                (baseDefaults.LugHeight * trackPart.LugHeightMultiplier) +
+                trackPart.LugHeightOffset;
+
+            float finalFriction =
+                baseDefaults.Friction * trackPart.FrictionMultiplier;
+
             finalLug = Mathf.Max(1f, finalLug);
             finalFriction = Mathf.Max(0.05f, finalFriction);
 
-            Vector3 finalCom = baseDefaults.CenterOfMassOffset + handlingPart.ComOffsetDelta;
-            Vector3 finalDriverCom = baseDefaults.DriverComOffset + handlingPart.DriverComOffsetDelta;
+            Vector3 finalCom =
+                baseDefaults.CenterOfMassOffset + handlingPart.ComOffsetDelta;
 
-            // Apply to active SO
+            Vector3 finalDriverCom =
+                baseDefaults.DriverComOffset + handlingPart.DriverComOffsetDelta;
+
+            // 5) APPLY (single write, no read-modify-write)
             ActiveSO.horsePower = finalHP;
             ActiveSO.powerFactor = finalPF;
             ActiveSO.lugHeight = finalLug;
@@ -576,9 +748,11 @@ namespace AlpineTuning
             ActiveSO.centerOfMassOffset = finalCom;
             ActiveSO.driverCenterOfMassOffset = finalDriverCom;
 
-            MelonLogger.Msg($"Applied tune to '{ActiveSO.name}': HP={finalHP:F1}, PF={finalPF:F2}, Lug={finalLug:F1}, Fric={finalFriction:F2}");
+            MelonLogger.Msg(
+                $"Applied tune to '{ActiveSO.name}': " +
+                $"HP={finalHP:F1}, PF={finalPF:F2}, Lug={finalLug:F1}, Fric={finalFriction:F2}");
 
-            // Save preset so Auto mode has the latest selection ready
+            // 6) PRESET SAVE
             if (persistPreset)
             {
                 var preset = new TunePreset
@@ -587,12 +761,17 @@ namespace AlpineTuning
                     EnginePartName = enginePart.Name,
                     TrackPartName = trackPart.Name,
                     HandlingPartName = handlingPart.Name,
-                    DonorSledKey = engineSource == baseDefaults ? null : GetSledKeyFromDefaults(engineSource)
+                    DonorSledKey = engineDefaults == baseDefaults
+                        ? null
+                        : engineDefaults.SledKey
                 };
+
                 SavePreset(preset);
             }
+
             RecordAppliedSelectionState();
         }
+
         private void ReloadSled()
         {
             try
