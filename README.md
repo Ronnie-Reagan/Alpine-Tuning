@@ -8,7 +8,7 @@
 
 ## Step Two: Installing the Menu
   1) Quit Sledders again
-  2) Download the __.dll__ file [here](https://github.com/Ronnie-Reagan/Alpine-Tuning/releases/download/2025.12.20/Alpine-Tuning.dll)
+  2) Download the __.dll__ file [here](https://github.com/Ronnie-Reagan/Alpine-Tuning/releases/latest)
   3) Move the __.dll__ file to `C:\Program Files (x86)\Steam\steamapps\common\Sledders\Mods`
      - Your location may be different;
      - In Steam **Library** -> Right Click **Sledders** -> **Manage** -> **Browse local files** -> [In Popup] Select the **Mods** folder
