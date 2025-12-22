@@ -1,4 +1,4 @@
-﻿using HarmonyLib;
+using HarmonyLib;
 using MelonLoader;
 using MelonLoader.Utils;
 using System;
@@ -8,7 +8,7 @@ using System.Linq;
 using System.Reflection;
 using UnityEngine;
 
-[assembly: MelonInfo(typeof(AlpineTuning.AlpineTuningMod), "Alpine Tuning", "2025.12.20", "Don")]
+[assembly: MelonInfo(typeof(AlpineTuning.AlpineTuningMod), "Alpine Tuning", "2025.12.21", "Don")]
 [assembly: MelonGame("Hanki Games", "Sledders")]
 
 namespace AlpineTuning
@@ -54,12 +54,21 @@ namespace AlpineTuning
         private Vector2 _resizeStartMouse;
         private Vector2 _resizeStartSize;
         private Vector2 _donorScroll;
+        private Rect _toggleIconRect = new Rect(12f, 34f, 44f, 44f);
+        private Texture2D _toggleIconTexture;
+
+        private bool _hasPendingChanges;
+        private int _lastAppliedEngineIndex = -1;
+        private int _lastAppliedTrackIndex = -1;
+        private int _lastAppliedHandlingIndex = -1;
+        private int _lastAppliedDonorIndex = -1;
 
         private GUIStyle _labelStyle;
         private GUIStyle _titleStyle;
         private GUIStyle _tooltipStyle;
         private GUIStyle _buttonStyle;
         private GUIStyle _dropdownStyle;
+        private GUIStyle _iconButtonStyle;
         private readonly Color _alpineAccent = new Color(0.74f, 0.88f, 1f, 1f);
 
         private static readonly string ConfigRoot =
@@ -133,25 +142,18 @@ namespace AlpineTuning
             }
         }
 
-        public override void OnUpdate()
-        {
-            // F4 toggle UI
-            if (Input.GetKeyDown(KeyCode.F4))
-            {
-                _showUI = !_showUI;
-            }
-        }
-
         public override void OnGUI()
         {
-            if (!_showUI || ActiveSO == null)
-                return;
-
             if (!_windowInit)
             {
                 _windowInit = true;
                 InitStyles();
             }
+
+            DrawToggleBadge();
+
+            if (!_showUI || ActiveSO == null)
+                return;
 
             Color prevColor = GUI.color;
             Color prevBg = GUI.backgroundColor;
@@ -179,6 +181,63 @@ namespace AlpineTuning
             GUI.backgroundColor = prevBg;
         }
 
+        private void DrawToggleBadge()
+        {
+            EnsureIconTexture();
+
+            Rect badgeRect = _toggleIconRect;
+            Rect backdropRect = new Rect(badgeRect.x - 4f, badgeRect.y - 4f, badgeRect.width + 8f, badgeRect.height + 8f);
+
+            Color prevColor = GUI.color;
+            GUI.color = _showUI
+                ? new Color(0.16f, 0.52f, 0.86f, 0.9f)
+                : new Color(0.16f, 0.16f, 0.16f, 0.7f);
+            GUI.DrawTexture(backdropRect, Texture2D.whiteTexture);
+
+            GUI.color = Color.white;
+            if (_toggleIconTexture != null)
+                GUI.DrawTexture(badgeRect, _toggleIconTexture);
+            else
+                GUI.Label(badgeRect, "AT", _titleStyle ?? GUI.skin.label);
+
+            string tooltip = _showUI ? "Hide Alpine Tuning" : "Show Alpine Tuning";
+            GUIStyle buttonStyle = _iconButtonStyle ?? GUIStyle.none;
+            if (GUI.Button(badgeRect, new GUIContent(string.Empty, tooltip), buttonStyle))
+                _showUI = !_showUI;
+
+            GUI.color = prevColor;
+        }
+
+        private void EnsureIconTexture()
+        {
+            if (_toggleIconTexture != null)
+                return;
+
+            try
+            {
+                if (!IconByteArray.IsValid())
+                {
+                    MelonLogger.Warning("Alpine icon data invalid; using text badge instead.");
+                    return;
+                }
+
+                _toggleIconTexture = new Texture2D(
+                    IconByteArray.Width,
+                    IconByteArray.Height,
+                    TextureFormat.RGBA32,
+                    false);
+
+                _toggleIconTexture.LoadRawTextureData(IconByteArray.RGBA);
+                _toggleIconTexture.Apply();
+                _toggleIconTexture.filterMode = FilterMode.Bilinear;
+            }
+            catch (Exception ex)
+            {
+                MelonLogger.Warning($"Could not build Alpine toggle icon: {ex}");
+                _toggleIconTexture = null;
+            }
+        }
+
         // ============================================================
         // WINDOW DRAW
         // ============================================================
@@ -190,6 +249,8 @@ namespace AlpineTuning
                 GUI.DragWindow(new Rect(0, 0, _windowRect.width, 20));
                 return;
             }
+
+            bool selectionChanged = false;
 
             GUILayout.BeginVertical();
             {
@@ -227,25 +288,31 @@ namespace AlpineTuning
 
                 // Engine section
                 GUILayout.Label(new GUIContent("Engine Package", "Choose an engine upgrade package."), _labelStyle);
+                int prevEngine = _selectedEngineIndex;
                 _selectedEngineIndex = DrawDropdown(
                     _selectedEngineIndex,
                     EngineParts.Select(p => p.Name).ToArray());
+                selectionChanged |= _selectedEngineIndex != prevEngine;
 
                 GUILayout.Space(4);
 
                 // Track section
                 GUILayout.Label(new GUIContent("Track Package", "Track choices now act as modifiers: we nudge lug height and friction instead of hard overrides."), _labelStyle);
+                int prevTrack = _selectedTrackIndex;
                 _selectedTrackIndex = DrawDropdown(
                     _selectedTrackIndex,
                     TrackParts.Select(p => p.Name).ToArray());
+                selectionChanged |= _selectedTrackIndex != prevTrack;
 
                 GUILayout.Space(4);
 
                 // Handling section
                 GUILayout.Label(new GUIContent("Handling Kit (COM/COG)", "Adjusts center of mass for handling behavior."), _labelStyle);
+                int prevHandling = _selectedHandlingIndex;
                 _selectedHandlingIndex = DrawDropdown(
                     _selectedHandlingIndex,
                     HandlingParts.Select(p => p.Name).ToArray());
+                selectionChanged |= _selectedHandlingIndex != prevHandling;
 
                 GUILayout.Space(8);
 
@@ -258,8 +325,10 @@ namespace AlpineTuning
                     GUILayout.Label("Donor:", GUILayout.Width(50));
 
                     string[] donorNames = BuildDonorNameArray();
+                    int prevDonor = _selectedDonorIndex;
                     int newIndex = DrawDropdown(_selectedDonorIndex, donorNames);
                     _selectedDonorIndex = newIndex;
+                    selectionChanged |= _selectedDonorIndex != prevDonor;
                 }
                 GUILayout.EndHorizontal();
 
@@ -270,7 +339,7 @@ namespace AlpineTuning
                 {
                     GUILayout.Label(
                         new GUIContent("Tune Mode:",
-                            "Default keeps factory data when you swap sleds. Auto Apply replays your saved Alpine tune whenever this sled loads."),
+                            "Default keeps factory data when you swap sleds. Auto Apply replays your saved Alpine tune whenever this sled loads and pushes changes instantly as you pick parts."),
                         _labelStyle,
                         GUILayout.Width(90));
 
@@ -296,6 +365,15 @@ namespace AlpineTuning
                 // Actions
                 GUILayout.BeginHorizontal();
                 {
+                    GUILayout.Label(
+                        new GUIContent(
+                            _hasPendingChanges ? "Pending apply" : "Live on sled",
+                            _tuneMode == TuneMode.Auto
+                                ? "Auto Apply is on: part changes immediately push to the sled and get saved."
+                                : "Manual mode: click Apply after you pick parts."),
+                        _labelStyle,
+                        GUILayout.Width(150));
+
                     if (GUILayout.Button(new GUIContent("Apply", "Apply parts + engine swap to the current sled."), _buttonStyle))
                     {
                         ApplyPartsAndSwap();
@@ -309,27 +387,10 @@ namespace AlpineTuning
                     if (GUILayout.Button(new GUIContent("Reset to Factory", "Restore this sled's original factory tune."), _buttonStyle))
                     {
                         ResetToFactory();
-                        ApplyPartsAndSwap();
+                        ApplyPartsAndSwap(false);
                     }
                 }
                 GUILayout.EndHorizontal();
-
-                GUILayout.Space(6);
-
-                // Donor list view (scroll)
-                GUILayout.Label(new GUIContent("Available Sleds (Engine Donors)", "All selectable sleds exposed by VehicleListScriptableObject."), _labelStyle);
-
-                _donorScroll = GUILayout.BeginScrollView(_donorScroll, GUILayout.Height(140));
-                {
-                    if (SelectableSleds != null)
-                    {
-                        foreach (var sled in SelectableSleds)
-                        {
-                            GUILayout.Label($"- {sled.name}", _labelStyle);
-                        }
-                    }
-                }
-                GUILayout.EndScrollView();
 
                 GUILayout.Space(4);
 
@@ -356,6 +417,14 @@ namespace AlpineTuning
             }
             GUILayout.EndVertical();
 
+            if (selectionChanged)
+            {
+                _hasPendingChanges = HasPendingSelectionChange();
+
+                if (_tuneMode == TuneMode.Auto)
+                    ApplyPartsAndSwap();
+            }
+
             HandleResize();
 
             // Drag via title bar
@@ -364,7 +433,7 @@ namespace AlpineTuning
 
         private void HandleResize()
         {
-            Rect resizeRect = new Rect(_windowRect.width - 16, _windowRect.height - 16, 16, 16);
+            Rect resizeRect = new Rect(0, _windowRect.height - 16, 16, 16);
             GUI.DrawTexture(resizeRect, Texture2D.whiteTexture);
 
             var e = Event.current;
@@ -437,7 +506,24 @@ namespace AlpineTuning
         // ============================================================
         // CORE LOGIC
         // ============================================================
-        private void ApplyPartsAndSwap()
+        private void RecordAppliedSelectionState()
+        {
+            _lastAppliedEngineIndex = _selectedEngineIndex;
+            _lastAppliedTrackIndex = _selectedTrackIndex;
+            _lastAppliedHandlingIndex = _selectedHandlingIndex;
+            _lastAppliedDonorIndex = _selectedDonorIndex;
+            _hasPendingChanges = false;
+        }
+
+        private bool HasPendingSelectionChange()
+        {
+            return _selectedEngineIndex != _lastAppliedEngineIndex ||
+                   _selectedTrackIndex != _lastAppliedTrackIndex ||
+                   _selectedHandlingIndex != _lastAppliedHandlingIndex ||
+                   _selectedDonorIndex != _lastAppliedDonorIndex;
+        }
+
+        private void ApplyPartsAndSwap(bool persistPreset = true)
         {
             if (ActiveSO == null)
                 return;
@@ -492,8 +578,8 @@ namespace AlpineTuning
 
             MelonLogger.Msg($"Applied tune to '{ActiveSO.name}': HP={finalHP:F1}, PF={finalPF:F2}, Lug={finalLug:F1}, Fric={finalFriction:F2}");
 
-            // Save preset if persistent mode is active
-            if (_tuneMode == TuneMode.Auto)
+            // Save preset so Auto mode has the latest selection ready
+            if (persistPreset)
             {
                 var preset = new TunePreset
                 {
@@ -505,27 +591,74 @@ namespace AlpineTuning
                 };
                 SavePreset(preset);
             }
+            RecordAppliedSelectionState();
         }
-
         private void ReloadSled()
         {
-            if (ActiveRespawn == null)
-            {
-                MelonLogger.Warning("ReloadSled: No Respawnable found on ActiveController.");
-                return;
-            }
-
             try
             {
-                // Use spawn position/rotation captured from LocalInit
-                ActiveRespawn.Respawn(ActiveSpawnPos, ActiveSpawnRot, false);
-                MelonLogger.Msg("[Alpine Tuning] Sled reloaded via Respawn(Vector3, Quaternion, bool).");
+                // Controller singleton
+                var controllerType = typeof(Controller);
+                var instanceProp = controllerType.GetProperty(
+                    "PKMPAOKMHCB",
+                    BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic);
+
+                var controllerInstance = instanceProp?.GetValue(null);
+                if (controllerInstance == null)
+                {
+                    MelonLogger.Error("ReloadSled: Controller singleton not found.");
+                    return;
+                }
+
+                // Method that actually destroys + recreates the sled
+                var controllerInstanceType = controllerInstance.GetType();
+                MethodInfo trySpawnMethod = controllerInstanceType.GetMethod(
+                    "TrySpawnPlayer",
+                    BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic,
+                    null,
+                    new[] { typeof(Transform), typeof(bool) },
+                    null);
+
+                // If overload resolution failed (e.g., extra overloads), fall back to manual filtering by name + parameter count.
+                if (trySpawnMethod == null)
+                {
+                    trySpawnMethod = controllerInstanceType
+                        .GetMethods(BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic)
+                        .FirstOrDefault(m =>
+                            m.Name == "TrySpawnPlayer" &&
+                            m.GetParameters().Length == 2 &&
+                            m.GetParameters()[0].ParameterType.IsAssignableFrom(typeof(Transform)) &&
+                            m.GetParameters()[1].ParameterType == typeof(bool));
+                }
+
+                if (trySpawnMethod == null)
+                {
+                    MelonLogger.Error("ReloadSled: TrySpawnPlayer method not found (overload not resolved).");
+                    return;
+                }
+
+                // Use current sled transform as spawn anchor
+                Transform spawnTransform = ActiveController != null
+                    ? ActiveController.transform
+                    : null;
+
+                if (spawnTransform == null)
+                {
+                    MelonLogger.Error("ReloadSled: ActiveController transform is null.");
+                    return;
+                }
+
+                // FORCE = true — destroy & recreate
+                trySpawnMethod.Invoke(controllerInstance, new object[] { spawnTransform, true });
+
+                MelonLogger.Msg("[Alpine Tuning] Full sled reload triggered (destroy + recreate).");
             }
             catch (Exception ex)
             {
-                MelonLogger.Error($"ReloadSled: Respawn call failed: {ex}");
+                MelonLogger.Error($"ReloadSled failed: {ex}");
             }
         }
+
 
         private void ResetToFactory()
         {
@@ -757,6 +890,7 @@ namespace AlpineTuning
                 _selectedTrackIndex = 0;
                 _selectedHandlingIndex = 0;
                 _selectedDonorIndex = 0;
+                RecordAppliedSelectionState();
                 return;
             }
 
@@ -768,6 +902,7 @@ namespace AlpineTuning
                 _selectedTrackIndex = 0;
                 _selectedHandlingIndex = 0;
                 _selectedDonorIndex = 0;
+                RecordAppliedSelectionState();
                 return;
             }
 
@@ -867,6 +1002,12 @@ namespace AlpineTuning
                 alignment = TextAnchor.MiddleLeft,
                 fontSize = 12,
                 normal = { textColor = _darkTheme ? Color.white : lightText }
+            };
+
+            _iconButtonStyle = new GUIStyle(GUIStyle.none)
+            {
+                padding = new RectOffset(0, 0, 0, 0),
+                margin = new RectOffset(0, 0, 0, 0)
             };
         }
 
