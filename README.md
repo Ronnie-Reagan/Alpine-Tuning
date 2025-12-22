@@ -16,10 +16,6 @@
 ## Step Three: How to tune a sled
   1) Load **Sledders**
   2) Start a local game or join a lobby
-  3) Review the menu for features then press F4 to hide it
+  3) Review the menu for features and notice the icon in the top right: thats for toggling the GUI
   4) Pause the game and change to your desired sled - unpausing when selected
-  5) Pause the game again and Press F4 to open the menu
-  6) Make changes to the sled in the menu
-  7) Enable `Auto Apply` then press `Apply` in the menu
-  8) Pause the game and change to a __differet__ sled - unpausing when selected
-  9) Pause the game and switch back to the **Tuned sled**
+  5) Tune your sled and **Reload** after setting it up
