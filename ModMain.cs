@@ -73,7 +73,7 @@ namespace AlpineTuning
 
         // FADE IN/OUT icon
         private float _toggleAlpha = 0.25f;   // current
-        private float _toggleAlphaVel;        // optional if you want SmoothDamp
+        private float _toggleAlphaVel;
         private const float ToggleAlphaIdle = 0.10f;
         private const float ToggleAlphaHover = 1.00f;
         private const float ToggleFadeSpeed = 10f; // higher = snappier
@@ -92,6 +92,29 @@ namespace AlpineTuning
 
         // Custom cursor
         private Texture2D _uiCursorTex;
+
+        // Dropdown state
+        private bool _drawDropdownPopup;
+        private Rect _dropdownPopupRect;
+        private string[] _dropdownPopupOptions;
+        private int _dropdownPopupSelected;
+        private int _dropdownPopupId;
+        private const int MainWindowId = 726400;
+        private const int DropdownWindowBaseId = 726500;
+        private const float DropdownItemHeight = 22f;
+        private const float DropdownPadding = 6f;
+        private const float DropdownMaxHeight = 200f;
+        // Lower depth draws on top in IMGUI; keep the popup above our window.
+        private const int DropdownDepth = -10000;
+        private int _openDropdownId = -1;
+        private Vector2 _dropdownScroll;
+        private const float DropdownPopupWidth = 300f;
+        private static readonly Color DropdownBgDark =
+            new Color(0.10f, 0.12f, 0.15f, 0.96f);
+
+        private static readonly Color DropdownBgLight =
+            new Color(0.95f, 0.97f, 0.99f, 0.98f);
+
 
         private void EnsureUiCursorTex()
         {
@@ -194,9 +217,13 @@ namespace AlpineTuning
                 InitStyles();
             }
 
+
+            if (ActiveSO == null)
+                return;
+
             DrawToggleBadge();
 
-            if (!_showUI || ActiveSO == null)
+            if (!_showUI)
                 return;
 
             Color prevColor = GUI.color;
@@ -216,18 +243,19 @@ namespace AlpineTuning
             InitWindowPositionOnceRightAligned();
             ClampWindowToScreen();
 
-
             _windowRect = GUI.Window(
-                726400,
+                MainWindowId,
                 _windowRect,
                 DrawWindow,
                 "Alpine Tuning");
 
+            DrawDropdownPopup();
             DrawUiCursorGlobal();
 
             GUI.color = prevColor;
             GUI.backgroundColor = prevBg;
         }
+
 
         private void DrawUiCursorGlobal()
         {
@@ -264,13 +292,18 @@ namespace AlpineTuning
             if (_uiCursorAlpha <= 0.01f)
                 return;
 
-            // 4) Draw cursor
-            Rect r = new Rect(mp.x + 2f, mp.y + 2f, 16f, 16f);
+            // 4) Draw cursor above all UI
+            Rect r = new Rect(mp.x - 8f, mp.y - 8f, 16f, 16f);
+
+            int prevDepth = GUI.depth;
+            GUI.depth = DropdownDepth - 100; // ensure cursor is front-most
 
             Color prev = GUI.color;
             GUI.color = new Color(1f, 1f, 1f, _uiCursorAlpha);
             GUI.DrawTexture(r, _uiCursorTex);
             GUI.color = prev;
+
+            GUI.depth = prevDepth;
         }
 
         private void DrawToggleBadge()
@@ -377,6 +410,7 @@ namespace AlpineTuning
         // ============================================================
         private void DrawWindow(int id)
         {
+
             if (ActiveSO == null)
             {
                 GUILayout.Label("No sled detected.", _labelStyle);
@@ -403,7 +437,7 @@ namespace AlpineTuning
 
                 GUILayout.Space(4);
 
-                GUILayout.Label("Alpine = top-shelf mods without killing the stock feel.", _labelStyle);
+                GUILayout.Label("Top-shelf mods without killing the stock feel.", _labelStyle);
 
                 GUILayout.Space(2);
 
@@ -424,8 +458,11 @@ namespace AlpineTuning
                 GUILayout.Label(new GUIContent("Engine Package", "Choose an engine upgrade package."), _labelStyle);
                 int prevEngine = _selectedEngineIndex;
                 _selectedEngineIndex = DrawDropdown(
-                    _selectedEngineIndex,
-                    EngineParts.Select(p => p.Name).ToArray());
+                    id: 1001,
+                    selectedIndex: _selectedEngineIndex,
+                    options: EngineParts.Select(p => p.Name).ToArray()
+                );
+
                 selectionChanged |= _selectedEngineIndex != prevEngine;
 
                 GUILayout.Space(4);
@@ -434,8 +471,11 @@ namespace AlpineTuning
                 GUILayout.Label(new GUIContent("Track Package", "Track choices now act as modifiers: we nudge lug height and friction instead of hard overrides."), _labelStyle);
                 int prevTrack = _selectedTrackIndex;
                 _selectedTrackIndex = DrawDropdown(
-                    _selectedTrackIndex,
-                    TrackParts.Select(p => p.Name).ToArray());
+                    id: 1002,
+                    selectedIndex: _selectedTrackIndex,
+                    options: TrackParts.Select(p => p.Name).ToArray()
+                );
+
                 selectionChanged |= _selectedTrackIndex != prevTrack;
 
                 GUILayout.Space(4);
@@ -444,8 +484,11 @@ namespace AlpineTuning
                 GUILayout.Label(new GUIContent("Handling Kit (COM/COG)", "Adjusts center of mass for handling behavior."), _labelStyle);
                 int prevHandling = _selectedHandlingIndex;
                 _selectedHandlingIndex = DrawDropdown(
-                    _selectedHandlingIndex,
-                    HandlingParts.Select(p => p.Name).ToArray());
+                    id: 1003,
+                    selectedIndex: _selectedHandlingIndex,
+                    options: HandlingParts.Select(p => p.Name).ToArray()
+                );
+
                 selectionChanged |= _selectedHandlingIndex != prevHandling;
 
                 GUILayout.Space(8);
@@ -460,8 +503,12 @@ namespace AlpineTuning
 
                     string[] donorNames = BuildDonorNameArray();
                     int prevDonor = _selectedDonorIndex;
-                    int newIndex = DrawDropdown(_selectedDonorIndex, donorNames);
-                    _selectedDonorIndex = newIndex;
+                    _selectedDonorIndex = DrawDropdown(
+                        id: 1004,
+                        selectedIndex: _selectedDonorIndex,
+                        options: BuildDonorNameArray()
+                    );
+
                     selectionChanged |= _selectedDonorIndex != prevDonor;
                 }
                 GUILayout.EndHorizontal();
@@ -511,6 +558,7 @@ namespace AlpineTuning
                     if (GUILayout.Button(new GUIContent("Apply", "Apply parts + engine swap to the current sled."), _buttonStyle))
                     {
                         ApplyPartsAndSwap();
+                        ReloadSled();
                     }
 
                     if (GUILayout.Button(new GUIContent("Reload Sled", "Respawn the sled at its spawn position to apply physics changes cleanly."), _buttonStyle))
@@ -522,6 +570,7 @@ namespace AlpineTuning
                     {
                         ResetToFactory();
                         ApplyPartsAndSwap(false);
+                        ReloadSled();
                     }
                 }
                 GUILayout.EndHorizontal();
@@ -538,16 +587,6 @@ namespace AlpineTuning
 
                 GUILayout.Space(4);
 
-                // Quick window resize controls
-                GUILayout.BeginHorizontal();
-                {
-                    GUILayout.Label("Window Size:", GUILayout.Width(80));
-                    if (GUILayout.Button("W+", GUILayout.Width(35))) _windowRect.width += 20;
-                    if (GUILayout.Button("W-", GUILayout.Width(35))) _windowRect.width = Mathf.Max(350, _windowRect.width - 20);
-                    if (GUILayout.Button("H+", GUILayout.Width(35))) _windowRect.height += 20;
-                    if (GUILayout.Button("H-", GUILayout.Width(35))) _windowRect.height = Mathf.Max(380, _windowRect.height - 20);
-                }
-                GUILayout.EndHorizontal();
             }
             GUILayout.EndVertical();
 
@@ -625,29 +664,173 @@ namespace AlpineTuning
             _windowRect.y = Mathf.Clamp(_windowRect.y, margin, Screen.height - _windowRect.height - margin);
         }
 
-
-        private int DrawDropdown(int selectedIndex, string[] options)
+        private int DrawDropdown(int id, int selectedIndex, string[] options, float width = 260f)
         {
             if (options == null || options.Length == 0)
             {
                 GUILayout.Label("No options.", _labelStyle);
-                return 0;
+                return selectedIndex;
             }
 
             if (selectedIndex < 0 || selectedIndex >= options.Length)
                 selectedIndex = 0;
 
+            Rect labelRect;
+
+            // Closed state (button only)
             GUILayout.BeginHorizontal();
-            GUILayout.Label(options[selectedIndex], _dropdownStyle);
-            if (GUILayout.Button("Next", GUILayout.Width(50)))
             {
-                // Simple cycling behavior instead of complex popup
-                selectedIndex = (selectedIndex + 1) % options.Length;
+                GUILayout.Label(options[selectedIndex], _dropdownStyle, GUILayout.Width(width));
+                labelRect = GUILayoutUtility.GetLastRect();
+
+                if (GUILayout.Button("▼", GUILayout.Width(22)))
+                {
+                    _openDropdownId = (_openDropdownId == id) ? -1 : id;
+
+                    if (_openDropdownId == id)
+                    {
+                        float popupHeight = Mathf.Min(DropdownMaxHeight, options.Length * DropdownItemHeight + DropdownPadding);
+
+                        // Convert WINDOW -> SCREEN space
+                        _drawDropdownPopup = true;
+                        _dropdownPopupId = id;
+                        _dropdownPopupOptions = options;
+                        _dropdownPopupSelected = selectedIndex;
+                        _dropdownScroll = Vector2.zero;
+
+                        _dropdownPopupRect = new Rect(
+                            _windowRect.x + labelRect.x,
+                            _windowRect.y + labelRect.yMax + 2f,
+                            DropdownPopupWidth,
+                            popupHeight
+                        );
+                    }
+                    else
+                    {
+                        CloseDropdownPopup();
+                    }
+                }
             }
             GUILayout.EndHorizontal();
 
+            // Sync selection back
+            if (_dropdownPopupId == id)
+                selectedIndex = _dropdownPopupSelected;
+
             return selectedIndex;
         }
+        private void DrawDropdownPopup()
+        {
+            if (!_drawDropdownPopup || _dropdownPopupOptions == null || _dropdownPopupOptions.Length == 0)
+                return;
+
+            // Keep popup on screen in case the window was dragged near edges.
+            _dropdownPopupRect = ClampRectToScreen(_dropdownPopupRect);
+
+            // Close on any mouse press outside the popup, even if another control already used the event.
+            Event e = Event.current;
+            EventType raw = e.rawType;
+            if ((raw == EventType.MouseDown || raw == EventType.MouseUp) &&
+                !_dropdownPopupRect.Contains(e.mousePosition))
+            {
+                CloseDropdownPopup();
+                return;
+            }
+
+            int prevDepth = GUI.depth;
+            GUI.depth = DropdownDepth;
+
+            int popupWindowId = DropdownWindowBaseId + _dropdownPopupId;
+            GUI.BringWindowToFront(popupWindowId);
+
+            _dropdownPopupRect = GUI.ModalWindow(
+                popupWindowId,
+                _dropdownPopupRect,
+                DrawDropdownWindowContents,
+                GUIContent.none,
+                GUIStyle.none);
+
+            GUI.depth = prevDepth;
+        }
+
+        private void DrawDropdownWindowContents(int windowId)
+        {
+            Color prevColor = GUI.color;
+            Color prevBg = GUI.backgroundColor;
+
+            Color bg = _darkTheme ? DropdownBgDark : DropdownBgLight;
+            GUI.color = bg;
+            GUI.DrawTexture(new Rect(0f, 0f, _dropdownPopupRect.width, _dropdownPopupRect.height), Texture2D.whiteTexture);
+            GUI.color = Color.white;
+
+            float contentHeight = _dropdownPopupOptions.Length * DropdownItemHeight;
+            float viewWidth = _dropdownPopupRect.width - DropdownPadding * 2f;
+            float viewHeight = _dropdownPopupRect.height - DropdownPadding * 2f;
+            bool needsScroll = contentHeight > viewHeight;
+
+            if (needsScroll)
+            {
+                Rect scrollRect = new Rect(DropdownPadding, DropdownPadding, viewWidth, viewHeight);
+                Rect innerRect = new Rect(0f, 0f, viewWidth - 16f, contentHeight);
+                _dropdownScroll = GUI.BeginScrollView(scrollRect, _dropdownScroll, innerRect, false, true);
+                DrawDropdownItems(innerRect.width, DropdownItemHeight);
+                GUI.EndScrollView();
+            }
+            else
+            {
+                GUI.BeginGroup(new Rect(DropdownPadding, DropdownPadding, viewWidth, viewHeight));
+                DrawDropdownItems(viewWidth, DropdownItemHeight);
+                GUI.EndGroup();
+            }
+
+            GUI.color = prevColor;
+            GUI.backgroundColor = prevBg;
+        }
+
+        private void DrawDropdownItems(float width, float itemHeight)
+        {
+            Event e = Event.current;
+
+            for (int i = 0; i < _dropdownPopupOptions.Length; i++)
+            {
+                Rect itemRect = new Rect(
+                    0f,
+                    i * itemHeight,
+                    width,
+                    itemHeight - 2f
+                );
+
+                if (itemRect.Contains(e.mousePosition))
+                {
+                    GUI.color = new Color(1f, 1f, 1f, 0.10f);
+                    GUI.DrawTexture(itemRect, Texture2D.whiteTexture);
+                    GUI.color = Color.white;
+                }
+
+                if (GUI.Button(itemRect, _dropdownPopupOptions[i], _dropdownStyle))
+                {
+                    _dropdownPopupSelected = i;
+                    CloseDropdownPopup();
+                    e.Use();
+                }
+            }
+        }
+
+        private Rect ClampRectToScreen(Rect r)
+        {
+            float margin = 4f;
+            float x = Mathf.Clamp(r.x, margin, Screen.width - r.width - margin);
+            float y = Mathf.Clamp(r.y, margin, Screen.height - r.height - margin);
+            return new Rect(x, y, r.width, r.height);
+        }
+
+        private void CloseDropdownPopup()
+        {
+            _openDropdownId = -1;
+            _drawDropdownPopup = false;
+        }
+
+
 
         private string[] BuildDonorNameArray()
         {
@@ -827,7 +1010,7 @@ namespace AlpineTuning
                     return;
                 }
 
-                // FORCE = true — destroy & recreate
+                // FORCE = true � destroy & recreate
                 trySpawnMethod.Invoke(controllerInstance, new object[] { spawnTransform, true });
 
                 MelonLogger.Msg("[Alpine Tuning] Full sled reload triggered (destroy + recreate).");
