@@ -7,3 +7,4 @@
 !SleddersTuner/
 !SleddersTuner/*.cs
 !.gitignore
+!license.txt
