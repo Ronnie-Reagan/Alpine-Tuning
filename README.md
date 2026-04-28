@@ -16,6 +16,19 @@
 ## Step Three: How to tune a sled
   1) Load **Sledders**
   2) Start a local game or join a lobby
-  3) Review the menu for features and notice the icon in the top right: thats for toggling the GUI
-  4) Pause the game and change to your desired sled - unpausing when selected
-  5) Tune your sled and **Reload** after setting it up
+  3) Open either the **vehicle select / garage** menu or the **pause** menu
+  4) Click **ALPINE TUNING 2.0** to open the native GUI
+  5) Use the tabs to work through the tune:
+     - **Build**: pick the sled, donor engine, and parts
+     - **Fine Tune**: adjust the sliders for the last bit of setup
+     - **Library**: load, apply, or delete saved profiles for that sled
+     - **Share**: publish a tune to lobby peers or apply a shared tune
+  6) Use **Apply** to save the current build, **Apply + Reload** when the menu says reload is needed, and **Factory Reset** to return the sled to stock
+
+--- 
+
+# Warning:
+Network based tune sharing is **completely un-tested** and has a high likely hood of causing issues.
+**Use at your own risk!**
+
+---
