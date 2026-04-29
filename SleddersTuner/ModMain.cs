@@ -52,6 +52,27 @@ namespace AlpineTuning
         private int _pendingEngineAudioLastControllerId = int.MinValue;
         private bool _pendingEngineAudioLoggedReady;
 
+        // Balance knobs
+        private const float HpMinMult = 0.60f;
+        private const float HpMaxMult = 2.30f;
+        private const float HpAbsoluteMin = 20f;
+        private const float HpAbsoluteMax = 420f;
+
+        private const float PfMinMult = 0.55f;
+        private const float PfMaxMult = 1.85f;
+        private const float PfAbsoluteMin = 0.20f;
+        private const float PfAbsoluteMax = 3.50f;
+
+        private const float LugMinMult = 0.50f;
+        private const float LugMaxMult = 1.85f;
+        private const float LugAbsoluteMin = 1f;
+        private const float LugAbsoluteMax = 80f;
+
+        private const float FrictionMinMult = 0.55f;
+        private const float FrictionMaxMult = 1.65f;
+        private const float FrictionAbsoluteMin = 0.05f;
+        private const float FrictionAbsoluteMax = 3.00f;
+
         public override void OnInitializeMelon()
         {
             Instance = this;
@@ -626,10 +647,10 @@ namespace AlpineTuning
                 baseDefaults.skisXDistanceOffset +
                 effect.skisXDistanceOffset;
 
-            hp = ClampRelative(hp, engineDefaults.horsePower, 0.60f, 2.30f, 20f, 420f);
-            pf = ClampRelative(pf, engineDefaults.powerFactor, 0.55f, 1.85f, 0.20f, 3.50f);
-            lug = ClampRelative(lug, baseDefaults.lugHeight, 0.50f, 1.85f, 1f, 80f);
-            friction = ClampRelative(friction, baseDefaults.friction, 0.55f, 1.65f, 0.05f, 3.00f);
+            hp = ClampRelative(hp, engineDefaults.horsePower, HpMinMult, HpMaxMult, HpAbsoluteMin, HpAbsoluteMax);
+            pf = ClampRelative(pf, engineDefaults.powerFactor, PfMinMult, PfMaxMult, PfAbsoluteMin, PfAbsoluteMax);
+            lug = ClampRelative(lug, baseDefaults.lugHeight, LugMinMult, LugMaxMult, LugAbsoluteMin, LugAbsoluteMax);
+            friction = ClampRelative(friction, baseDefaults.friction, FrictionMinMult, FrictionMaxMult, FrictionAbsoluteMin, FrictionAbsoluteMax);
             if (baseDefaults.weight > 1f)
                 weight = Mathf.Clamp(weight, baseDefaults.weight * 0.75f, baseDefaults.weight * 1.35f);
             else

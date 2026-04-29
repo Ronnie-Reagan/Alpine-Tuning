@@ -59,7 +59,7 @@ namespace AlpineTuning
             switch (category)
             {
                 case EngineCore:
-                    return "Engine Core";
+                    return "Engine Block";
                 case Turbo:
                     return "Turbo / Induction";
                 case Intake:
