@@ -7,9 +7,14 @@ namespace AlpineTuning
     internal static class AlpineConstants
     {
         public const int SchemaVersion = 1;
-        public const string ModVersion = "2026.04.28";
-        public const string CatalogVersion = "2026.04.v1";
+        public const string ModVersion = "2026.04.30";
+        public const string CatalogVersion = "2026.04.v5";
         public const int SteamP2PChannel = 7264;
+        public const int MaxPeerMessageBytes = 65536;
+        public const int MaxPeerProfileBytes = 32768;
+        public const int MaxProfileIdLength = 64;
+        public const int MaxProfileNameLength = 96;
+        public const int MaxSledIdentityLength = 128;
     }
 
     [Serializable]
@@ -146,6 +151,10 @@ namespace AlpineTuning
         public bool requiresReload;
         public long createdUnixTime;
         public long updatedUnixTime;
+        public string sourceProfileId;
+        public ulong sourceSenderId;
+        public string sourceSenderName;
+        public long importedUnixTime;
         public string checksum;
 
         public string GetPartId(string category)
@@ -207,6 +216,11 @@ namespace AlpineTuning
         public string engineText;
         public Vec3Data centerOfMassOffset = new Vec3Data();
         public Vec3Data driverCenterOfMassOffset = new Vec3Data();
+        public float boostTargetPsi;
+        public float boostLimitPsi;
+        public float estimatedBoostPsi;
+        public float altitudeCompensationPercent;
+        public float estimatedManifoldPressureKpa;
     }
 
     internal class TunePart
@@ -224,6 +238,7 @@ namespace AlpineTuning
         public float horsePowerMultiplier = 1f;
         public float powerFactorMultiplier = 1f;
         public float lugHeightMultiplier = 1f;
+        public float lugHeightTargetMm;
         public float lugHeightOffset;
         public float frictionMultiplier = 1f;
         public float weightMultiplier = 1f;
@@ -237,6 +252,10 @@ namespace AlpineTuning
         public float throttleExponentDelta;
         public float rpmSensitivityMultiplier = 1f;
         public float rpmSensitivityDownMultiplier = 1f;
+        public float turboAltitudeCompensation;
+        public float boostResponseMultiplier = 1f;
+        public float boostTargetPsi;
+        public float boostLimitPsi;
         public float clutchRpmMinOffset;
         public float clutchRpmMaxOffset;
         public float minThrottleOnClutchEngagementOffset;
@@ -244,6 +263,12 @@ namespace AlpineTuning
         public float stabilizerDampingMultiplier = 1f;
         public float trackSpeedDampingMultiplier = 1f;
         public float trackSpeedGyroMultiplier = 1f;
+        public bool hasHeadlightColor;
+        public Color headlightColor = Color.white;
+        public float headlightIntensityMultiplier = 1f;
+        public float headlightRangeMultiplier = 1f;
+        public float headlightSpotAngleMultiplier = 1f;
+        public float headlightPitchOffsetDegrees;
         public string accessoryMode;
     }
 
@@ -257,6 +282,80 @@ namespace AlpineTuning
         public VehicleScriptableObject audioSource;
         public List<TunePart> parts = new List<TunePart>();
         public PartEffect mergedEffect = new PartEffect();
+        public EngineSimulationInput simulationInput;
+        public EngineSimulationResult simulationResult;
+    }
+
+    internal class PowerGainBreakdown
+    {
+        public float engineHorsepowerGain;
+        public float turboHorsepowerGain;
+        public float intakeHorsepowerGain;
+        public float otherHorsepowerGain;
+        public float fineTuneHorsepowerGain;
+
+        public float enginePowerFactorGain;
+        public float turboPowerFactorGain;
+        public float intakePowerFactorGain;
+        public float otherPowerFactorGain;
+        public float fineTunePowerFactorGain;
+
+        public float TotalHorsepowerGain
+        {
+            get
+            {
+                return engineHorsepowerGain +
+                       turboHorsepowerGain +
+                       intakeHorsepowerGain +
+                       otherHorsepowerGain +
+                       fineTuneHorsepowerGain;
+            }
+        }
+
+        public float TotalPowerFactorGain
+        {
+            get
+            {
+                return enginePowerFactorGain +
+                       turboPowerFactorGain +
+                       intakePowerFactorGain +
+                       otherPowerFactorGain +
+                       fineTunePowerFactorGain;
+            }
+        }
+    }
+
+    internal class EngineSimulationInput
+    {
+        public bool altitudeCompensationEnabled;
+        public bool hasAltitudeMeters;
+        public float altitudeMeters;
+        public bool hasThrottle01;
+        public float throttle01;
+        public bool hasNormalizedRpm;
+        public float normalizedRpm;
+        public bool hasSpeedMetersPerSecond;
+        public float speedMetersPerSecond;
+        public bool hasLoad01;
+        public float load01;
+    }
+
+    internal class EngineSimulationResult
+    {
+        public PowerGainBreakdown gains = new PowerGainBreakdown();
+        public float altitudeMeters;
+        public float altitudePressureRatio = 1f;
+        public float turboAltitudeCompensation;
+        public float effectiveAirRatio = 1f;
+        public float loadFactor = 1f;
+        public float horsepowerBeforeEnvironment;
+        public float horsepowerAfterEnvironment;
+        public float powerFactorBeforeEnvironment;
+        public float powerFactorAfterEnvironment;
+        public float boostTargetPsi;
+        public float boostLimitPsi;
+        public float estimatedBoostPsi;
+        public float estimatedManifoldPressureKpa;
     }
 
     [Serializable]
