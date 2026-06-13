@@ -137,7 +137,7 @@ namespace AlpineTuning
                 case Clutch: return "clutch.stock";
                 case ClutchWeights: return "weights.stock";
                 case RatioFeel: return "ratio.stock";
-                case Track: return "track.trail";
+                case Track: return "track.stock";
                 case TrackLimiter: return "limiter.stock";
                 case RearShock: return "shock.stock";
                 case RearSpring: return "spring.stock";
@@ -381,22 +381,22 @@ namespace AlpineTuning
             Add("clutch.stock", Clutch, "Stock Calibration", "Factory clutch calibration.", false,
                 e => { });
             Add("clutch.trail", Clutch, "TrapLine Smooth", "Smoother engagement and forgiving backshift.", false,
-                e => { e.clutchRpmMinOffset = -100f; e.clutchRpmMaxOffset = 70f; e.minThrottleOnClutchEngagementOffset = -0.015f; e.rpmSensitivityMultiplier = 1.025f; e.rpmSensitivityDownMultiplier = 1.02f; });
+                e => { e.clutchRpmMinOffset = -140f; e.clutchRpmMaxOffset = 110f; e.minThrottleOnClutchEngagementOffset = -0.02f; e.rpmSensitivityMultiplier = 1.04f; e.rpmSensitivityDownMultiplier = 1.03f; });
             Add("clutch.mountain", Clutch, "ClimberClub Mountain", "Holds RPM under load for better climb response.", false,
-                e => { e.clutchRpmMinOffset = 120f; e.clutchRpmMaxOffset = 230f; e.minThrottleOnClutchEngagementOffset = 0.01f; e.rpmSensitivityMultiplier = 1.08f; e.rpmSensitivityDownMultiplier = 0.96f; });
+                e => { e.clutchRpmMinOffset = 180f; e.clutchRpmMaxOffset = 320f; e.minThrottleOnClutchEngagementOffset = 0.015f; e.rpmSensitivityMultiplier = 1.13f; e.rpmSensitivityDownMultiplier = 0.93f; });
             Add("clutch.race", Clutch, "IceRacer Aggressive", "Quick engagement and sharp throttle response.", false,
-                e => { e.clutchRpmMinOffset = 240f; e.clutchRpmMaxOffset = 340f; e.minThrottleOnClutchEngagementOffset = 0.025f; e.rpmSensitivityMultiplier = 1.12f; e.rpmSensitivityDownMultiplier = 0.95f; e.throttleExponentDelta = -0.06f; });
+                e => { e.clutchRpmMinOffset = 320f; e.clutchRpmMaxOffset = 460f; e.minThrottleOnClutchEngagementOffset = 0.035f; e.rpmSensitivityMultiplier = 1.20f; e.rpmSensitivityDownMultiplier = 0.90f; e.throttleExponentDelta = -0.08f; });
 
             Add("weights.stock", ClutchWeights, "Stock Weights", "Factory clutch weight feel.", false,
                 e => { });
             Add("weights.light", ClutchWeights, "Light Weights", "Lighter weight feel with quicker engagement response.", false,
-                e => { e.clutchRpmMinOffset = 110f; e.clutchRpmMaxOffset = 80f; e.rpmSensitivityMultiplier = 1.035f; e.throttleExponentDelta = -0.015f; });
+                e => { e.clutchRpmMinOffset = 150f; e.clutchRpmMaxOffset = 120f; e.rpmSensitivityMultiplier = 1.055f; e.throttleExponentDelta = -0.02f; });
             Add("weights.heavy", ClutchWeights, "Heavy Weights", "Heavier weight feel with calmer shift response.", false,
-                e => { e.clutchRpmMinOffset = -90f; e.clutchRpmMaxOffset = -50f; e.rpmSensitivityMultiplier = 0.98f; e.rpmSensitivityDownMultiplier = 1.02f; });
+                e => { e.clutchRpmMinOffset = -140f; e.clutchRpmMaxOffset = -90f; e.rpmSensitivityMultiplier = 0.955f; e.rpmSensitivityDownMultiplier = 1.045f; });
             Add("weights.mountain", ClutchWeights, "Adjustable Mountain Weights", "Mountain weight feel that keeps RPM responsive under load.", false,
-                e => { e.clutchRpmMinOffset = 60f; e.clutchRpmMaxOffset = 160f; e.rpmSensitivityMultiplier = 1.055f; e.rpmSensitivityDownMultiplier = 0.975f; });
+                e => { e.clutchRpmMinOffset = 95f; e.clutchRpmMaxOffset = 230f; e.rpmSensitivityMultiplier = 1.085f; e.rpmSensitivityDownMultiplier = 0.955f; });
             Add("weights.race", ClutchWeights, "Race Weights", "Aggressive weight feel for fast RPM changes.", false,
-                e => { e.clutchRpmMinOffset = 180f; e.clutchRpmMaxOffset = 220f; e.rpmSensitivityMultiplier = 1.085f; e.throttleExponentDelta = -0.025f; });
+                e => { e.clutchRpmMinOffset = 240f; e.clutchRpmMaxOffset = 300f; e.rpmSensitivityMultiplier = 1.12f; e.throttleExponentDelta = -0.035f; });
 
             Add("ratio.stock", RatioFeel, "Stock Ratio Feel", "Factory drive response feel.", false,
                 e => { });
@@ -406,6 +406,8 @@ namespace AlpineTuning
                 e => { e.powerFactorMultiplier = 0.992f; e.clutchRpmMinOffset = -60f; e.clutchRpmMaxOffset = -40f; e.rpmSensitivityMultiplier = 0.985f; e.rpmSensitivityDownMultiplier = 1.015f; });
 
             // Track: traction, lug height, and weight. Most changes require reload because sled physics are rebuilt.
+            Add("track.stock", Track, "Stock Track", "Factory track setup.", false,
+                e => { });
             Add("track.trail", Track, "Trail Track", "Quick, light, and close to factory behavior.", true,
                 e => { e.lugHeightMultiplier = 0.95f; e.frictionMultiplier = 0.95f; e.lugHeightOffset = -1f; e.weightOffset = -3f; });
             Add("track.mountain", Track, "Mountain Track", "More bite and lug for mixed climbs.", true,
@@ -416,7 +418,7 @@ namespace AlpineTuning
                 e => { e.lugHeightMultiplier = 0.86f; e.frictionMultiplier = 0.90f; e.lugHeightOffset = -2f; e.weightOffset = -6f; });
             Add("track.ice", Track, "Ice Studded Track", "Extra hard-surface bite.", true,
                 e => { e.lugHeightMultiplier = 1.00f; e.frictionMultiplier = 1.18f; e.lugHeightOffset = 1f; e.weightOffset = 7f; });
-            Add("track.long", Track, "Long Track Conversion", "Stable climbing with slower rotation.", true,
+            Add("track.long", Track, "Long Track Kit", "Stable climbing feel with deeper snow bite. Visual track length depends on game model support.", true,
                 e => { e.lugHeightMultiplier = 1.12f; e.frictionMultiplier = 1.10f; e.lugHeightOffset = 5f; e.weightOffset = 12f; e.centerOfMassDelta = new Vec3Data(0f, -0.01f, -0.06f); });
 
             AddPaddleTrack("track.paddle.2_25", 2.25f, "2.25\" Paddle Track", "Light trail paddle with direct lugHeight mapping.", 0.98f, -2f);
@@ -428,22 +430,22 @@ namespace AlpineTuning
             Add("limiter.stock", TrackLimiter, "Stock Limiter Strap", "Factory weight-transfer setup.", false,
                 e => { });
             Add("limiter.loose", TrackLimiter, "Loose / Long Strap", "Playful weight-transfer setup that allows easier ski lift.", false,
-                e => { e.centerOfMassDelta = new Vec3Data(0f, 0f, -0.035f); e.wheelieThresholdOffset = -0.045f; e.trackSpeedGyroMultiplier = 0.965f; e.stabilizerDampingMultiplier = 0.985f; });
+                e => { e.centerOfMassDelta = new Vec3Data(0f, 0.005f, -0.055f); e.wheelieThresholdOffset = -0.070f; e.trackSpeedGyroMultiplier = 0.94f; e.stabilizerDampingMultiplier = 0.965f; });
             Add("limiter.tight", TrackLimiter, "Tight / Short Strap", "Front-pressure setup that reduces lift and improves climbing control.", false,
-                e => { e.centerOfMassDelta = new Vec3Data(0f, 0f, 0.045f); e.wheelieThresholdOffset = 0.055f; e.trackSpeedGyroMultiplier = 1.035f; e.stabilizerDampingMultiplier = 1.035f; });
+                e => { e.centerOfMassDelta = new Vec3Data(0f, -0.005f, 0.065f); e.wheelieThresholdOffset = 0.080f; e.trackSpeedGyroMultiplier = 1.055f; e.stabilizerDampingMultiplier = 1.055f; });
             Add("limiter.hillclimb", TrackLimiter, "Hillclimb Tight Strap", "Strongest anti-lift weight-transfer setup for controlled climbs.", false,
-                e => { e.centerOfMassDelta = new Vec3Data(0f, -0.015f, 0.065f); e.wheelieThresholdOffset = 0.085f; e.trackSpeedGyroMultiplier = 1.065f; e.stabilizerDampingMultiplier = 1.055f; e.trackSpeedDampingMultiplier = 1.035f; });
+                e => { e.centerOfMassDelta = new Vec3Data(0f, -0.025f, 0.090f); e.wheelieThresholdOffset = 0.115f; e.trackSpeedGyroMultiplier = 1.095f; e.stabilizerDampingMultiplier = 1.085f; e.trackSpeedDampingMultiplier = 1.065f; });
 
             Add("shock.stock", RearShock, "Stock Shock", "Factory rear shock setup.", false,
                 e => { });
             Add("shock.comfort", RearShock, "Comfort Shock", "Softer rear damping feel through available stabilizer fields.", false,
-                e => { e.stabilizerDampingMultiplier = 0.94f; e.trackSpeedDampingMultiplier = 0.96f; e.trackSpeedGyroMultiplier = 0.985f; });
+                e => { e.stabilizerDampingMultiplier = 0.90f; e.trackSpeedDampingMultiplier = 0.92f; e.trackSpeedGyroMultiplier = 0.970f; });
             Add("shock.mountain", RearShock, "Mountain Shock", "Controlled rear damping feel for uneven climbs.", false,
-                e => { e.stabilizerDampingMultiplier = 1.05f; e.trackSpeedDampingMultiplier = 1.06f; e.trackSpeedGyroMultiplier = 1.02f; });
+                e => { e.stabilizerDampingMultiplier = 1.085f; e.trackSpeedDampingMultiplier = 1.095f; e.trackSpeedGyroMultiplier = 1.035f; });
             Add("shock.race", RearShock, "Race Shock", "Firm, fast-response rear damping feel.", false,
-                e => { e.stabilizerDampingMultiplier = 1.12f; e.trackSpeedDampingMultiplier = 1.10f; e.trackSpeedGyroMultiplier = 1.04f; });
+                e => { e.stabilizerDampingMultiplier = 1.17f; e.trackSpeedDampingMultiplier = 1.15f; e.trackSpeedGyroMultiplier = 1.065f; });
             Add("shock.heavyduty", RearShock, "Heavy Duty Shock", "Extra controlled rear support feel for heavier setups.", false,
-                e => { e.stabilizerDampingMultiplier = 1.16f; e.trackSpeedDampingMultiplier = 1.14f; e.trackSpeedGyroMultiplier = 1.055f; e.weightOffset = 1.5f; });
+                e => { e.stabilizerDampingMultiplier = 1.20f; e.trackSpeedDampingMultiplier = 1.18f; e.trackSpeedGyroMultiplier = 1.075f; e.weightOffset = 1.5f; });
 
             Add("spring.light", RearSpring, "Light Rider Spring Setup", "Approximates lighter rear support through damping and transfer fields.", false,
                 e => { e.stabilizerDampingMultiplier = 0.965f; e.trackSpeedDampingMultiplier = 0.965f; e.wheelieThresholdOffset = -0.025f; e.centerOfMassDelta = new Vec3Data(0f, 0f, -0.015f); });
@@ -460,13 +462,13 @@ namespace AlpineTuning
             Add("suspension.stock", Suspension, "Stock Suspension", "Factory suspension behavior.", false,
                 e => { });
             Add("suspension.lowcg", Suspension, "Low CG Kit", "Lower center of mass and calmer rollover behavior.", false,
-                e => { e.centerOfMassDelta = new Vec3Data(0f, -0.10f, 0f); e.stabilizerDampingMultiplier = 1.08f; });
+                e => { e.centerOfMassDelta = new Vec3Data(0f, -0.12f, 0f); e.stabilizerDampingMultiplier = 1.13f; e.trackSpeedDampingMultiplier = 1.06f; });
             Add("suspension.frontbite", Suspension, "Front Bite Setup", "More front authority for technical lines.", false,
-                e => { e.centerOfMassDelta = new Vec3Data(0f, -0.03f, 0.08f); e.trackSpeedGyroMultiplier = 0.96f; });
+                e => { e.centerOfMassDelta = new Vec3Data(0f, -0.04f, 0.11f); e.trackSpeedGyroMultiplier = 0.93f; e.stabilizerDampingMultiplier = 1.04f; });
             Add("suspension.freeride", Suspension, "Freeride Setup", "Rear bias for playful lift.", false,
-                e => { e.centerOfMassDelta = new Vec3Data(0f, -0.02f, -0.08f); e.wheelieThresholdOffset = -0.05f; });
+                e => { e.centerOfMassDelta = new Vec3Data(0f, -0.02f, -0.11f); e.wheelieThresholdOffset = -0.075f; e.trackSpeedGyroMultiplier = 0.96f; });
             Add("suspension.precision", Suspension, "Precision Kit", "Stable, responsive all-round handling.", false,
-                e => { e.centerOfMassDelta = new Vec3Data(0f, -0.05f, 0.04f); e.trackSpeedDampingMultiplier = 1.06f; });
+                e => { e.centerOfMassDelta = new Vec3Data(0f, -0.065f, 0.055f); e.trackSpeedDampingMultiplier = 1.10f; e.stabilizerDampingMultiplier = 1.08f; });
 
             // Chassis: global weight and center-of-mass personality.
             Add("chassis.stock", Chassis, "Stock Chassis", "Factory chassis.", true,
@@ -500,22 +502,42 @@ namespace AlpineTuning
                 e => { e.hasHeadlightColor = true; e.headlightColor = new Color(0.78f, 0.88f, 1.00f, 1f); });
             Add("light.color.amber", HeadlightColor, "Amber", "Amber headlight color for storm visibility.", false,
                 e => { e.hasHeadlightColor = true; e.headlightColor = new Color(1.00f, 0.62f, 0.24f, 1f); });
+            Add("light.color.gold", HeadlightColor, "Golden Fog", "Deep gold headlight color for flat light and storms.", false,
+                e => { e.hasHeadlightColor = true; e.headlightColor = new Color(1.00f, 0.72f, 0.32f, 1f); });
             Add("light.color.blue", HeadlightColor, "Blue Tint", "Subtle blue-tint headlight color.", false,
                 e => { e.hasHeadlightColor = true; e.headlightColor = new Color(0.55f, 0.70f, 1.00f, 1f); });
+            Add("light.color.ice", HeadlightColor, "Ice Blue", "Crisp ice-blue headlight color.", false,
+                e => { e.hasHeadlightColor = true; e.headlightColor = new Color(0.50f, 0.88f, 1.00f, 1f); });
+            Add("light.color.green", HeadlightColor, "Trail Green", "Green-tinted headlight color for a custom trail look.", false,
+                e => { e.hasHeadlightColor = true; e.headlightColor = new Color(0.55f, 1.00f, 0.62f, 1f); });
+            Add("light.color.red", HeadlightColor, "Red Lens", "Red-tinted headlight color for night visibility experiments.", false,
+                e => { e.hasHeadlightColor = true; e.headlightColor = new Color(1.00f, 0.30f, 0.26f, 1f); });
 
             Add("light.brightness.stock", HeadlightBrightness, "Stock Brightness", "Factory headlight intensity.", false,
                 e => { });
+            Add("light.brightness.low", HeadlightBrightness, "Low Output", "Reduced runtime headlight intensity.", false,
+                e => { e.headlightIntensityMultiplier = 0.70f; e.headlightRangeMultiplier = 0.88f; });
             Add("light.brightness.bright", HeadlightBrightness, "Bright", "Moderately brighter runtime headlight intensity.", false,
                 e => { e.headlightIntensityMultiplier = 1.25f; e.headlightRangeMultiplier = 1.08f; });
             Add("light.brightness.rally", HeadlightBrightness, "Rally", "High-output runtime headlight intensity.", false,
                 e => { e.headlightIntensityMultiplier = 1.55f; e.headlightRangeMultiplier = 1.18f; });
+            Add("light.brightness.baja", HeadlightBrightness, "Baja", "Maximum runtime headlight intensity within Alpine's safety clamp.", false,
+                e => { e.headlightIntensityMultiplier = 1.90f; e.headlightRangeMultiplier = 1.35f; });
 
             Add("light.beam.stock", HeadlightBeam, "Stock Beam", "Factory headlight beam.", false,
                 e => { });
             Add("light.beam.spot", HeadlightBeam, "Narrow Spot", "Narrower runtime beam with longer reach.", false,
-                e => { e.headlightSpotAngleMultiplier = 1.0f; e.headlightRangeMultiplier = 100.0f; });
+                e => { e.headlightSpotAngleMultiplier = 0.72f; e.headlightRangeMultiplier = 1.18f; });
+            Add("light.beam.longrange", HeadlightBeam, "Long Range Pencil", "Tight long-range runtime beam.", false,
+                e => { e.headlightSpotAngleMultiplier = 0.55f; e.headlightRangeMultiplier = 1.35f; });
+            Add("light.beam.driving", HeadlightBeam, "Driving Beam", "Slightly focused runtime beam with extra reach.", false,
+                e => { e.headlightSpotAngleMultiplier = 0.88f; e.headlightRangeMultiplier = 1.15f; });
             Add("light.beam.flood", HeadlightBeam, "Wide Flood", "Wider runtime beam with broader near-field coverage.", false,
                 e => { e.headlightSpotAngleMultiplier = 1.22f; e.headlightRangeMultiplier = 1.0f; });
+            Add("light.beam.fog", HeadlightBeam, "Low Fog Flood", "Very wide shorter runtime beam for near-field visibility.", false,
+                e => { e.headlightSpotAngleMultiplier = 1.50f; e.headlightRangeMultiplier = 0.92f; e.headlightPitchOffsetDegrees = 2f; });
+            Add("light.beam.combo", HeadlightBeam, "Combo Beam", "Mixed width and reach for general night riding.", false,
+                e => { e.headlightSpotAngleMultiplier = 1.08f; e.headlightRangeMultiplier = 1.12f; });
 
             Add("light.aim.stock", HeadlightAim, "Stock Aim", "Factory vertical headlight alignment.", false,
                 e => { });

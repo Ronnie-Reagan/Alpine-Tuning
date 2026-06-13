@@ -17,6 +17,9 @@ namespace AlpineTuning
         private readonly Dictionary<string, SledDefaults> _defaults = new Dictionary<string, SledDefaults>();
         private readonly Dictionary<string, TuneProfile> _profiles = new Dictionary<string, TuneProfile>();
         private readonly Dictionary<string, string> _activeProfileIdsBySled = new Dictionary<string, string>();
+        private readonly Dictionary<string, CurrentSetupRecord> _currentSetupsByIdentity =
+            new Dictionary<string, CurrentSetupRecord>(StringComparer.OrdinalIgnoreCase);
+        private AlpineUserSettings _settings = new AlpineUserSettings();
 
         private static readonly string ConfigRoot =
             Path.Combine(MelonEnvironment.UserDataDirectory, "AlpineTuning");
@@ -27,7 +30,9 @@ namespace AlpineTuning
         private static string DefaultsDir => Path.Combine(ConfigRoot, "Defaults");
         private static string LegacyPresetsDir => Path.Combine(ConfigRoot, "Presets");
         private static string ProfilesDir => Path.Combine(ConfigRoot, "Profiles");
+        private static string CurrentSetupsDir => Path.Combine(ConfigRoot, "CurrentSetups");
         private static string ActiveMapPath => Path.Combine(ConfigRoot, "active-profiles.json");
+        private static string SettingsPath => Path.Combine(ConfigRoot, "user-settings.json");
 
         private readonly JsonSerializerSettings _jsonSettings = new JsonSerializerSettings
         {
@@ -42,20 +47,34 @@ namespace AlpineTuning
 
         public IReadOnlyDictionary<string, SledDefaults> Defaults => _defaults;
         public IReadOnlyDictionary<string, TuneProfile> Profiles => _profiles;
+        public AlpineUserSettings Settings => _settings;
         public int ActiveProfileMapCount => _activeProfileIdsBySled.Count;
+        public int CurrentSetupCount => _currentSetupsByIdentity.Values.Distinct().Count();
         public string DiagnosticsSummary =>
-            $"Store: defaults={_defaults.Count}, profiles={_profiles.Count}, activeMaps={_activeProfileIdsBySled.Count}, root={ConfigRoot}";
+            $"Store: defaults={_defaults.Count}, profiles={_profiles.Count}, currentSetups={CurrentSetupCount}, activeMaps={_activeProfileIdsBySled.Count}, root={ConfigRoot}";
 
         public void Initialize()
         {
             Directory.CreateDirectory(ConfigRoot);
             Directory.CreateDirectory(DefaultsDir);
             Directory.CreateDirectory(ProfilesDir);
+            Directory.CreateDirectory(CurrentSetupsDir);
             MaybeMigrateLegacyConfig();
             LoadDefaults();
             LoadProfiles();
+            LoadCurrentSetups();
             LoadActiveMap();
+            LoadSettings();
             PruneMissingActiveProfiles();
+        }
+
+        public bool SaveSettings()
+        {
+            if (_settings == null)
+                _settings = new AlpineUserSettings();
+
+            _settings.Normalize();
+            return WriteJsonAtomic(SettingsPath, _settings, "user settings");
         }
 
         public SledDefaults GetDefaults(string sledKey)
@@ -160,15 +179,105 @@ namespace AlpineTuning
         public TuneProfile CreateWorkingProfile(VehicleScriptableObject sled, string author)
         {
             string sledKey = AlpineTuningMod.GetSledKey(sled);
-            var active = GetActiveProfileForSled(sledKey);
+            string vehicleId = AlpineTuningMod.GetVehicleId(sled);
+            var current = GetCurrentSetupForSled(sledKey, vehicleId);
+            if (current != null)
+                return current;
+
+            var active = GetActiveProfileForSled(sledKey, vehicleId);
             if (active != null)
             {
                 var clone = Clone(active);
                 _catalog.EnsureProfileSelections(clone);
+                MarkSetupMetadata(clone, active.profileId, active.name, false, true);
                 return clone;
             }
 
-            return _catalog.CreateDefaultProfile(sled, author);
+            var profile = _catalog.CreateDefaultProfile(sled, author);
+            MarkSetupMetadata(profile, profile.profileId, profile.name, false, true);
+            return profile;
+        }
+
+        public CurrentSetupRecord GetCurrentSetupRecordForSled(string sledKey, string vehicleId)
+        {
+            return FindCurrentSetupRecord(sledKey, vehicleId);
+        }
+
+        public TuneProfile GetCurrentSetupForSled(string sledKey, string vehicleId)
+        {
+            var record = FindCurrentSetupRecord(sledKey, vehicleId);
+            if (record == null || record.profile == null)
+                return null;
+
+            var clone = Clone(record.profile);
+            if (clone == null)
+                return null;
+
+            _catalog.EnsureProfileSelections(clone);
+            MarkSetupMetadata(
+                clone,
+                record.setupSlotId,
+                record.setupSlotName,
+                record.setupEdited,
+                true);
+            return clone;
+        }
+
+        public bool SetCurrentSetup(
+            TuneProfile profile,
+            string sledKey,
+            string vehicleId,
+            string displayName,
+            string setupSlotId,
+            string setupSlotName,
+            bool setupEdited,
+            bool writeNow)
+        {
+            if (profile == null || (!IsSafeIdentity(sledKey) && !IsSafeIdentity(vehicleId)))
+                return false;
+
+            _catalog.EnsureProfileSelections(profile);
+            if (string.IsNullOrWhiteSpace(profile.profileId))
+                profile.profileId = Guid.NewGuid().ToString("N");
+
+            long now = NowUnix();
+            if (profile.createdUnixTime <= 0)
+                profile.createdUnixTime = now;
+            profile.updatedUnixTime = now;
+            profile.schemaVersion = AlpineConstants.SchemaVersion;
+            profile.modVersion = AlpineConstants.ModVersion;
+            profile.catalogVersion = AlpineConstants.CatalogVersion;
+            profile.targetSledKey = sledKey;
+            profile.targetVehicleId = vehicleId;
+            MarkSetupMetadata(profile, setupSlotId, setupSlotName, setupEdited, true);
+            profile.checksum = null;
+
+            if (!TryValidateProfileForCatalog(profile, _catalog, false, false, out var reason))
+            {
+                MelonLogger.Warning($"Could not preserve current setup for '{sledKey ?? vehicleId}': {reason}");
+                return false;
+            }
+
+            var record = new CurrentSetupRecord
+            {
+                sledKey = sledKey,
+                vehicleId = vehicleId,
+                displayName = displayName,
+                setupSlotId = setupSlotId,
+                setupSlotName = setupSlotName,
+                setupEdited = setupEdited,
+                updatedUnixTime = now,
+                profile = Clone(profile)
+            };
+
+            IndexCurrentSetup(record);
+            return !writeNow || WriteCurrentSetup(record);
+        }
+
+        public bool FlushCurrentSetup(string sledKey, string vehicleId)
+        {
+            var record = FindCurrentSetupRecord(sledKey, vehicleId);
+            return record != null && WriteCurrentSetup(record);
         }
 
         public bool SaveProfile(TuneProfile profile, bool makeActive)
@@ -187,6 +296,10 @@ namespace AlpineTuning
             profile.schemaVersion = AlpineConstants.SchemaVersion;
             profile.modVersion = AlpineConstants.ModVersion;
             profile.catalogVersion = AlpineConstants.CatalogVersion;
+            profile.isCurrentSetup = false;
+            profile.setupEdited = false;
+            profile.setupSlotId = profile.profileId;
+            profile.setupSlotName = profile.name;
             profile.checksum = null;
             if (!TryValidateProfileForCatalog(profile, _catalog, false, false, out var reason))
             {
@@ -241,7 +354,7 @@ namespace AlpineTuning
             imported.profileId = Guid.NewGuid().ToString("N");
 
             imported.name = string.IsNullOrWhiteSpace(imported.name)
-                ? "Shared Tune"
+                ? "Shared Setup"
                 : imported.name;
 
             return SaveProfile(imported, false) ? imported : null;
@@ -377,7 +490,7 @@ namespace AlpineTuning
                 try
                 {
                     var profile = JsonConvert.DeserializeObject<TuneProfile>(File.ReadAllText(file));
-                    if (!TryValidateProfileForCatalog(profile, _catalog, false, false, out var reason))
+                    if (!TryValidateProfileForCatalog(profile, _catalog, false, false, true, out var reason))
                     {
                         MelonLogger.Warning($"Skipped invalid profile {file}: {reason}");
                         continue;
@@ -400,6 +513,81 @@ namespace AlpineTuning
                 {
                     MelonLogger.Warning($"Could not load profile {file}: {ex.Message}");
                 }
+            }
+        }
+
+        private void LoadCurrentSetups()
+        {
+            _currentSetupsByIdentity.Clear();
+            if (!Directory.Exists(CurrentSetupsDir))
+                return;
+
+            foreach (string file in Directory.GetFiles(CurrentSetupsDir, "*.json"))
+            {
+                try
+                {
+                    var record = JsonConvert.DeserializeObject<CurrentSetupRecord>(File.ReadAllText(file));
+                    if (record == null || record.profile == null)
+                        continue;
+
+                    if (!IsSafeIdentity(record.sledKey) && !IsSafeIdentity(record.vehicleId))
+                    {
+                        MelonLogger.Warning($"Skipped current setup with invalid sled identity: {file}");
+                        continue;
+                    }
+
+                    if (!TryValidateProfileForCatalog(record.profile, _catalog, false, false, true, out var reason))
+                    {
+                        MelonLogger.Warning($"Skipped invalid current setup {file}: {reason}");
+                        continue;
+                    }
+
+                    _catalog.EnsureProfileSelections(record.profile);
+                    MarkSetupMetadata(
+                        record.profile,
+                        record.setupSlotId,
+                        record.setupSlotName,
+                        record.setupEdited,
+                        true);
+
+                    string normalizedChecksum = ComputeChecksum(record.profile);
+                    bool repaired = !string.Equals(record.profile.checksum, normalizedChecksum, StringComparison.OrdinalIgnoreCase);
+                    if (repaired)
+                        record.profile.checksum = normalizedChecksum;
+
+                    IndexCurrentSetup(record);
+
+                    if (repaired)
+                        WriteJsonAtomic(file, record, $"current setup {IdentityKey(record.sledKey, record.vehicleId)} checksum repair");
+                }
+                catch (Exception ex)
+                {
+                    MelonLogger.Warning($"Could not load current setup {file}: {ex.Message}");
+                }
+            }
+        }
+
+        private bool WriteCurrentSetup(CurrentSetupRecord record)
+        {
+            if (record == null || record.profile == null)
+                return false;
+
+            try
+            {
+                Directory.CreateDirectory(CurrentSetupsDir);
+                string key = IdentityKey(record.sledKey, record.vehicleId);
+                if (!IsSafeIdentity(key))
+                    return false;
+
+                record.updatedUnixTime = NowUnix();
+                record.profile.updatedUnixTime = record.updatedUnixTime;
+                string path = Path.Combine(CurrentSetupsDir, SafeFileName(key) + ".json");
+                return WriteJsonAtomic(path, record, $"current setup {key}");
+            }
+            catch (Exception ex)
+            {
+                MelonLogger.Warning($"Could not save current setup for {record.sledKey ?? record.vehicleId}: {ex.Message}");
+                return false;
             }
         }
 
@@ -431,6 +619,81 @@ namespace AlpineTuning
             {
                 MelonLogger.Warning($"Could not load active profile map: {ex.Message}");
             }
+        }
+
+        private void LoadSettings()
+        {
+            _settings = new AlpineUserSettings();
+
+            if (!File.Exists(SettingsPath))
+            {
+                _settings.Normalize();
+                SaveSettings();
+                return;
+            }
+
+            try
+            {
+                var loaded = JsonConvert.DeserializeObject<AlpineUserSettings>(File.ReadAllText(SettingsPath));
+                _settings = loaded ?? new AlpineUserSettings();
+                _settings.Normalize();
+            }
+            catch (Exception ex)
+            {
+                MelonLogger.Warning($"Could not load Alpine user settings: {ex.Message}");
+                _settings = new AlpineUserSettings();
+                _settings.Normalize();
+            }
+        }
+
+        private void IndexCurrentSetup(CurrentSetupRecord record)
+        {
+            if (record == null)
+                return;
+
+            if (IsSafeIdentity(record.vehicleId))
+                _currentSetupsByIdentity[record.vehicleId] = record;
+
+            if (IsSafeIdentity(record.sledKey))
+                _currentSetupsByIdentity[record.sledKey] = record;
+        }
+
+        private CurrentSetupRecord FindCurrentSetupRecord(string sledKey, string vehicleId)
+        {
+            if (IsSafeIdentity(vehicleId) &&
+                _currentSetupsByIdentity.TryGetValue(vehicleId, out var byVehicleId))
+            {
+                return byVehicleId;
+            }
+
+            if (IsSafeIdentity(sledKey) &&
+                _currentSetupsByIdentity.TryGetValue(sledKey, out var bySledKey))
+            {
+                return bySledKey;
+            }
+
+            return null;
+        }
+
+        private static string IdentityKey(string sledKey, string vehicleId)
+        {
+            return IsSafeIdentity(vehicleId) ? vehicleId : sledKey;
+        }
+
+        private static void MarkSetupMetadata(
+            TuneProfile profile,
+            string setupSlotId,
+            string setupSlotName,
+            bool setupEdited,
+            bool isCurrentSetup)
+        {
+            if (profile == null)
+                return;
+
+            profile.setupSlotId = setupSlotId;
+            profile.setupSlotName = setupSlotName;
+            profile.setupEdited = setupEdited;
+            profile.isCurrentSetup = isCurrentSetup;
         }
 
         private bool SaveActiveMap()
@@ -499,6 +762,23 @@ namespace AlpineTuning
             bool requireChecksum,
             out string reason)
         {
+            return TryValidateProfileForCatalog(
+                profile,
+                catalog,
+                strictCatalog,
+                requireChecksum,
+                false,
+                out reason);
+        }
+
+        private static bool TryValidateProfileForCatalog(
+            TuneProfile profile,
+            PartCatalog catalog,
+            bool strictCatalog,
+            bool requireChecksum,
+            bool allowChecksumRepair,
+            out string reason)
+        {
             reason = null;
 
             if (profile == null)
@@ -538,7 +818,9 @@ namespace AlpineTuning
                 return false;
             }
 
-            if (!string.IsNullOrWhiteSpace(profile.checksum) && !ChecksumMatches(profile))
+            if (!allowChecksumRepair &&
+                !string.IsNullOrWhiteSpace(profile.checksum) &&
+                !ChecksumMatches(profile))
             {
                 reason = "checksum mismatch";
                 return false;

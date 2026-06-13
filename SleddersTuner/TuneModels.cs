@@ -1,20 +1,154 @@
 using System;
 using System.Collections.Generic;
+using Newtonsoft.Json;
 using UnityEngine;
 
 namespace AlpineTuning
 {
     internal static class AlpineConstants
     {
-        public const int SchemaVersion = 1;
-        public const string ModVersion = "2026.04.30";
-        public const string CatalogVersion = "2026.04.v5";
+        public const int SchemaVersion = 2;
+        public const string ModVersion = "2026.06.13";
+        public const string CatalogVersion = "2026.06.v1";
+        public static readonly bool PeerSharingTemporarilyDisabled = true;
+        public const string PeerSharingPausedNotice =
+            "Networked setup sharing is paused for this build. It may return if new P2P sharing methods are found.";
         public const int SteamP2PChannel = 7264;
+        public const byte SleddersInternalMessageId = 252;
+        public const int SleddersInternalMaxChunkBytes = 5600;
         public const int MaxPeerMessageBytes = 65536;
         public const int MaxPeerProfileBytes = 32768;
         public const int MaxProfileIdLength = 64;
         public const int MaxProfileNameLength = 96;
         public const int MaxSledIdentityLength = 128;
+    }
+
+    internal enum AlpineDisplayUnits
+    {
+        Metric,
+        Imperial
+    }
+
+    [Serializable]
+    internal class AlpineCapabilityStatus
+    {
+        public string id;
+        public string label;
+        public string state;
+        public bool required;
+        public string detail;
+
+        [JsonIgnore]
+        public bool IsReady => string.Equals(state, "ready", StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Serializable]
+    internal class AlpineCompatibilityReport
+    {
+        public string overallStatus;
+        public string assemblyPath;
+        public string assemblyLastWriteUtc;
+        public long assemblyLengthBytes;
+        public string assemblyLightHash;
+        public List<AlpineCapabilityStatus> capabilities = new List<AlpineCapabilityStatus>();
+
+        [JsonIgnore]
+        public string SummaryLine =>
+            $"Compatibility {DisplayStatus(overallStatus)} | Assembly {DisplayOrUnknown(assemblyLightHash)} | " +
+            $"{ReadyCapabilityCount}/{capabilities.Count} capabilities ready";
+
+        [JsonIgnore]
+        public int ReadyCapabilityCount
+        {
+            get
+            {
+                int count = 0;
+                foreach (var capability in capabilities)
+                {
+                    if (capability != null && capability.IsReady)
+                        count++;
+                }
+
+                return count;
+            }
+        }
+
+        private static string DisplayStatus(string status)
+        {
+            return string.IsNullOrWhiteSpace(status) ? "unknown" : status;
+        }
+
+        private static string DisplayOrUnknown(string value)
+        {
+            return string.IsNullOrWhiteSpace(value) ? "unknown" : value;
+        }
+    }
+
+    [Serializable]
+    internal class AlpineUserSettings
+    {
+        public int schemaVersion = AlpineConstants.SchemaVersion;
+        public AlpineDisplayUnits units = AlpineDisplayUnits.Metric;
+        public bool advancedDetails;
+        public bool diagnosticSteamIdScanEnabled;
+
+        public bool headlightToggleEnabled;
+        public string headlightKeyboardKey;
+        public string headlightControllerButton;
+        public bool headlightBindingConfigured;
+
+        public bool shareMySetup = false;
+        public bool alwaysShareMySetup = false;
+        public bool shareLighting = true;
+        public bool shareAudio = true;
+        public bool shareVisualEquipment = false;
+        public bool receivePeerSetups = true;
+        public bool receivePeerLighting = true;
+        public bool receivePeerAudio = true;
+        public bool receivePeerVisualEquipment;
+
+        public void Normalize()
+        {
+            schemaVersion = AlpineConstants.SchemaVersion;
+
+            if (!headlightBindingConfigured)
+            {
+                bool hasKeyboard = !string.IsNullOrWhiteSpace(headlightKeyboardKey);
+                bool hasController = !string.IsNullOrWhiteSpace(headlightControllerButton);
+                bool onlyLegacyDefaults =
+                    (!hasKeyboard || IsLegacyDefaultHeadlightBinding(headlightKeyboardKey)) &&
+                    (!hasController || IsLegacyDefaultHeadlightBinding(headlightControllerButton));
+
+                if (onlyLegacyDefaults)
+                {
+                    headlightKeyboardKey = null;
+                    headlightControllerButton = null;
+                    headlightToggleEnabled = false;
+                }
+                else if (hasKeyboard || hasController)
+                {
+                    headlightBindingConfigured = true;
+                }
+            }
+
+            if (string.IsNullOrWhiteSpace(headlightKeyboardKey))
+                headlightKeyboardKey = null;
+
+            if (string.IsNullOrWhiteSpace(headlightControllerButton))
+                headlightControllerButton = null;
+
+            if (string.IsNullOrWhiteSpace(headlightKeyboardKey) &&
+                string.IsNullOrWhiteSpace(headlightControllerButton))
+            {
+                headlightToggleEnabled = false;
+            }
+        }
+
+        private static bool IsLegacyDefaultHeadlightBinding(string value)
+        {
+            return string.Equals(value, "H", StringComparison.OrdinalIgnoreCase) ||
+                   string.Equals(value, "JoystickButton7", StringComparison.OrdinalIgnoreCase);
+        }
     }
 
     [Serializable]
@@ -148,6 +282,7 @@ namespace AlpineTuning
         public List<PartSelection> selectedParts = new List<PartSelection>();
         public FineTuneSettings fineTune = new FineTuneSettings();
         public ResolvedStats resolvedStats = new ResolvedStats();
+        public bool? headlightEnabled;
         public bool requiresReload;
         public long createdUnixTime;
         public long updatedUnixTime;
@@ -156,6 +291,10 @@ namespace AlpineTuning
         public string sourceSenderName;
         public long importedUnixTime;
         public string checksum;
+        [JsonIgnore] public string setupSlotId;
+        [JsonIgnore] public string setupSlotName;
+        [JsonIgnore] public bool setupEdited;
+        [JsonIgnore] public bool isCurrentSetup;
 
         public string GetPartId(string category)
         {
@@ -365,10 +504,15 @@ namespace AlpineTuning
         public int schemaVersion = AlpineConstants.SchemaVersion;
         public string type;
         public ulong senderId;
+        public ulong senderSteamId;
+        public ulong senderSleddersClientId;
+        public ulong targetSleddersClientId;
+        public string transport;
         public string senderName;
         public string profileId;
         public string checksum;
         public RemoteTuneSummary summary;
+        public RemoteActiveTuneState activeState;
         public TuneProfile profile;
     }
 
@@ -385,5 +529,66 @@ namespace AlpineTuning
         public string checksum;
         public bool hasPayload;
         public long receivedUnixTime;
+    }
+
+    [Serializable]
+    internal class RemoteActiveTuneState
+    {
+        public ulong senderId;
+        public string senderName;
+        public string profileId;
+        public string profileName;
+        public string checksum;
+        public string targetSledKey;
+        public string targetVehicleId;
+        public string catalogVersion;
+        public bool hasPayload;
+        public bool payloadRequested;
+        public bool shareSetup;
+        public bool shareLighting;
+        public bool shareAudio;
+        public bool shareVisualEquipment;
+        public long lastSeenUnixTime;
+        public long lastAppliedUnixTime;
+        public string applyStatus;
+    }
+
+    [Serializable]
+    internal class RemotePeerState
+    {
+        public ulong senderId;
+        public ulong sleddersClientId;
+        public ulong steamId;
+        public string senderName;
+        public bool modDetected;
+        public bool sharingEnabled;
+        public string activeSetupName;
+        public long firstSeenUnixTime;
+        public long lastSeenUnixTime;
+        public string status;
+    }
+
+    internal sealed class AlpineDiscoveredPeer
+    {
+        public ulong sleddersClientId;
+        public ulong steamId;
+        public string name;
+        public string source;
+        public bool hasSteamId;
+        public bool hasInternalClientId;
+    }
+
+    [Serializable]
+    internal class CurrentSetupRecord
+    {
+        public int schemaVersion = 1;
+        public string sledKey;
+        public string vehicleId;
+        public string displayName;
+        public string setupSlotId;
+        public string setupSlotName;
+        public bool setupEdited;
+        public long updatedUnixTime;
+        public TuneProfile profile;
     }
 }
