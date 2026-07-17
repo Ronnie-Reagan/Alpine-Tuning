@@ -47,6 +47,7 @@ namespace AlpineTuning.ReleaseTests
 
         private static readonly string[] RequiredPublicFiles =
         {
+            ".github/FUNDING.yml",
             ".gitignore",
             "README.md",
             "license.txt",
@@ -77,6 +78,13 @@ namespace AlpineTuning.ReleaseTests
             "ReleaseTests/Fixtures/tune-modified.json",
             "ReleaseTests/Fixtures/tune-legacy.json"
         };
+
+        private static readonly HashSet<string> IntentionalPublicIdentifiers =
+            new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+            {
+                "donreagan",
+                "Ronnie-Reagan"
+            };
 
         private static int _passed;
         private static int _failed;
@@ -244,7 +252,8 @@ namespace AlpineTuning.ReleaseTests
                 .ToArray();
 
             Require(entries.Length >= 15, "inventory-too-small");
-            Require(entries.All(IsAllowedPublicPath), "unexpected-public-file");
+            string unexpectedFile = entries.FirstOrDefault(path => !IsAllowedPublicPath(path));
+            Require(unexpectedFile == null, "unexpected-public-file:" + unexpectedFile);
 
             foreach (string path in RequiredPublicFiles)
                 Require(entries.Contains(path, StringComparer.OrdinalIgnoreCase), "required-file-not-published");
@@ -364,11 +373,11 @@ namespace AlpineTuning.ReleaseTests
                     RegexOptions.CultureInvariant) &&
                     Regex.Matches(ui, @"CancelHeadlightCaptureIfActive\(").Count >= 5,
                 "binding-capture-close-lifecycle");
-            Require(ui.IndexOf("AlpineRoot-Setups", StringComparison.Ordinal) >= 0 &&
+            Require(ui.IndexOf("\"action.setups\"", StringComparison.Ordinal) >= 0 &&
                     ui.IndexOf("tertiaryLabel = \"Setups\"", StringComparison.Ordinal) < 0,
                 "setups-root-tile-not-context-action");
             Require(Regex.IsMatch(ui,
-                    @"captured\.name\s*\?\?\s*\"\(unnamed setup\)\"[\s\S]{0,220}isPreviewSelected,",
+                    @"captured\.name\s*\?\?\s*""\(unnamed setup\)""[\s\S]{0,220}isPreviewSelected,",
                     RegexOptions.CultureInvariant),
                 "setup-preview-checkmark");
             Require(Regex.IsMatch(ui,
@@ -1437,15 +1446,21 @@ namespace AlpineTuning.ReleaseTests
             bool wholeWord,
             bool contextOnly = false)
         {
-            if (!string.IsNullOrWhiteSpace(value) && value.Length >= 3)
+            value = value?.Trim();
+
+            if (string.IsNullOrWhiteSpace(value) ||
+                value.Length < 3 ||
+                IntentionalPublicIdentifiers.Contains(value))
             {
-                markers.Add(new PrivacyMarker
-                {
-                    Value = value,
-                    WholeWord = wholeWord,
-                    ContextOnly = contextOnly
-                });
+                return;
             }
+
+            markers.Add(new PrivacyMarker
+            {
+                Value = value,
+                WholeWord = wholeWord,
+                ContextOnly = contextOnly
+            });
         }
 
         private static bool ContainsPrivacyMarker(string file, IEnumerable<PrivacyMarker> markers)

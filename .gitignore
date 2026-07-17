@@ -1,5 +1,7 @@
 *
 !/.gitignore
+!/.github/
+!/.github/FUNDING.yml
 !/build-release.bat
 !/SleddersTuner/
 !/SleddersTuner/SleddersTuner.csproj

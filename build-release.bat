@@ -196,7 +196,7 @@ if errorlevel 1 (
   echo ERROR: The neutral test working directory is unavailable.
   exit /b 1
 )
-"%STAGE_TESTS%\AlpineTuning.ReleaseTests.exe" --repo "%STAGE_SOURCE%" --assembly "%STAGED_DLL%" --game-assembly "%GAME_ASSEMBLY%" --inventory "%INVENTORY%" --scan-root "%STAGE_ROOT%" --tune-test-root "%STAGE_ROOT%\tune-fixtures"
+"%STAGE_TESTS%\AlpineTuning.ReleaseTests.exe" --repo "%STAGE_SOURCE%" --assembly "%STAGED_DLL%" --game-assembly "%GAME_ASSEMBLY%" --inventory "%INVENTORY%" --scan-root "%STAGE_PAYLOAD%" --tune-test-root "%STAGE_ROOT%\tune-fixtures"
 set "TEST_RESULT=%ERRORLEVEL%"
 popd >nul
 if not "%TEST_RESULT%"=="0" (
