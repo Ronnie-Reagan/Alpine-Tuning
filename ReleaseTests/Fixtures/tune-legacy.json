@@ -1,0 +1,28 @@
+{
+  "schemaVersion": 2,
+  "modVersion": "2026.01.01",
+  "catalogVersion": "2026.01.v1",
+  "profileId": "fixture-legacy",
+  "name": "Legacy Trail Tune",
+  "usesAutomaticName": false,
+  "author": "Legacy Fixture",
+  "targetSledKey": "fixture_sled_legacy",
+  "selectedParts": [
+    { "category": "engineCore", "partId": "engine.stage1" },
+    { "category": "track", "partId": "track.trail" },
+    { "category": "skis", "partId": "skis.wide" }
+  ],
+  "fineTune": { "skiStanceTrim": -0.05 },
+  "resolvedStats": {
+    "horsePower": 130.0,
+    "powerFactor": 1.0,
+    "lugHeight": 57.2,
+    "friction": 1.05,
+    "weight": 225.0,
+    "skiStance": 889.8,
+    "centerOfMassOffset": {},
+    "driverCenterOfMassOffset": {}
+  },
+  "createdUnixTime": 1600000000,
+  "updatedUnixTime": 1600000000
+}

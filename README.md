@@ -1,66 +1,178 @@
-## How to install
+# Alpine Tuning
 
-## Step One: Installing [MelonLoader](https://melonwiki.xyz/)
-   1) Quit Sledders if running
-   2) Download MelonLoader [here](https://melonwiki.xyz/#/?id=automated-installation)
-   3) Run the exe, select Sledders, and install
-   4) Start Sledders once, then quit again
+Alpine Tuning adds mechanical tuning and setup options to the Sledders garage while matching the style of the game's existing menus.
 
-## Step Two: Installing Alpine Tuning
-  1) Download the __.dll__ file [here](https://github.com/Ronnie-Reagan/Alpine-Tuning/releases/latest)
-  2) Move the __.dll__ file to `C:\Program Files (x86)\Steam\steamapps\common\Sledders\Mods`
-     - Your location may be different
-     - In Steam: **Library** -> Right Click **Sledders** -> **Manage** -> **Browse local files** -> open the **Mods** folder
+Current public version: **2026.07.17**
+Made for Sledders **1.1.6**
 
-## Step Three: How to tune a sled
-  1) Load **Sledders**
-  2) Start a local game or join a lobby
-  3) Open the **vehicle select / garage** menu
-  4) Click **SLED SETUP** to open the native Alpine setup tab
-  5) Use the tabs to work through the setup:
-     - **Track**: choose paddle tracks, limiter strap setup, rear shock setup, and rear spring setup
-     - **Engine**: choose engine block, pistons, crank, intake/exhaust, turbo, and view boost estimates
-     - **Clutching**: choose clutch calibration, clutch weights, ratio feel, and clutch trim
-     - **Suspension**: adjust suspension, chassis, skis/stance, and setup trims
-     - **Lighting**: adjust headlight color, brightness, beam/focus, aim, and the headlight toggle binding
-     - **Performance**: view estimated stat bars and an estimated power curve compared to stock
-     - **Setup Slots**: save, equip, duplicate, rename, or remove setup slots
-     - **Multiplayer**: currently disbaled and non-operational P2P tune sharing and tune replication
-     - **Guide**: read short explanations for categories, statuses, units, and limitations
-     - **Settings**: choose Metric or Imperial units and toggle Advanced Details
-  6) Changes are preserved automatically for the selected sled
-  7) Use **Test Ride** when you want to reload the current sled for a test
-  8) Use **Reset to Stock** from Setup Slots to reset Alpine tuning fields
+## Installation
 
-## Pause Menu
+1. Close Sledders.
+2. Install [MelonLoader](https://melonwiki.xyz/) for Sledders.
+3. Launch the game once, then close it.
+4. Download `Alpine Tuning.dll` from the [official releases page](https://github.com/Ronnie-Reagan/Alpine-Tuning/releases/latest).
+5. Copy the DLL into the Sledders `Mods` folder.
 
-The pause menu version is compact and only exposes **Setup Slots** and **Multiplayer**.  
-Use the garage / vehicle select menu for the full tuner.
+For a standard Steam installation, the folder is:
 
-## Tuning Guide
+```text
+C:\Program Files (x86)\Steam\steamapps\common\Sledders\Mods
+```
 
-Alpine Tuning uses setup parts for normal users and keeps raw physics values behind **Advanced Details**.
+When Sledders is installed somewhere else:
 
-- **Engine Output** is shown as kW in Metric and hp in Imperial.
-- **Weight** is shown as kg in Metric and lb in Imperial.
-- **Track Bite** replaces raw friction in the normal UI.
-- **Ready for next ride** means the setup is saved and will equip when that sled spawns or reloads.
-- **Performance Estimate** is a garage estimate based on setup parts and Alpine tune math, not a measured dyno result.
+1. Open Steam.
+2. Right-click Sledders.
+3. Select **Manage > Browse local files**.
+4. Open the `Mods` folder.
 
-## Multiplayer Sharing
+## Using Alpine Tuning
 
-Networked Tune sharing is currently being redeveloped and options for P2P data transfers are being explored.
+Open the garage, select a sled, and choose **TUNING**.
 
-## Known Limitations
+The normal **STYLE** option remains the game's cosmetic editor. Alpine Tuning is used for mechanical and performance changes.
 
-- The **Long Track Kit** changes handling, track bite, weight, and balance to behave more like a longer track. Visual track length is not supported.
-- Live telemetry such as RPM, speed, boost, slip, and heat is not required for the current Performance Estimate. A future version may add a live ride data panel.
-- Peer sharing is currently a no-op system until options for networking are discovered and tested.
+The main tuning categories are:
 
----
+* **Engine** — engines, internal parts, intake, exhaust, turbo, and engine swaps.
+* **Drivetrain** — clutch setup, clutch weights, gearing, and brake calibration.
+* **Suspension** — suspension parts, chassis setup, shocks, springs, balance, and weight transfer.
+* **Track** — track type, lug height, grip, and traction adjustments.
+* **Steering** — skis, ski stance, grip, and steering geometry.
+* **Lighting** — headlight colour, brightness, beam type, and aim.
+* **Settings** — display units and headlight hotkey settings.
+* **Setups** — save, load, rename, recover, and manage tunes.
 
-# Warning:
-I am not responsible for any issues that may arise from the use of this mod and my attempts to address any issues are not to be seen as an admission of guilt but rather an attempt at ensuring everyone is getting the same fun experience.
-Use at your own risk.
+Changes are added to your current working setup immediately.
 
----
+Use:
+
+* **Save** to keep the setup.
+* **Reset** to return the current sled to its factory setup.
+* **DYNO** to view estimated performance information.
+* **Back** to return to the previous menu.
+
+Some changes require the sled to be rebuilt before they take effect. Alpine handles this automatically when the setup is saved.
+
+When leaving with unsaved changes, you can:
+
+* Save and exit.
+* Continue tuning.
+* Exit without saving.
+
+## Comparing Parts
+
+Alpine shows how the current sled compares with its factory setup.
+
+When viewing another part or adjustment, it also previews how that choice would change the sled.
+
+Comparison bars use the following colours:
+
+* **Gray** — factory value.
+* **Lime** — an improvement.
+* **Orange** — a reduction.
+* **Blue** — a change that is not automatically better or worse, such as ski stance.
+
+Exact values are shown where Sledders provides enough information. Alpine avoids displaying made-up values when the game does not provide the required data.
+
+## Dyno
+
+The **DYNO** window provides two types of information:
+
+### Game Model
+
+Shows performance calculated from values provided by Sledders, including delivered track power and force where available.
+
+### Estimated Engine
+
+Shows estimated horsepower and torque curves for the selected engine family.
+
+These results are clearly marked as estimates because Sledders does not provide a complete engine torque curve.
+
+The Dyno window can be moved and resized. Select **FIT** to return it to its default size and position.
+
+Press Back or Escape to close it.
+
+## Settings
+
+Open **Settings** to change:
+
+* **Display Units** — Metric or Imperial.
+* **Headlight Hotkey** — enable, disable, change, or clear the binding.
+
+While choosing a new hotkey, the menu will display **Waiting**.
+
+Press Escape, use the controller Cancel button, or select Cancel to stop without changing the binding.
+
+Clearing an existing binding requires confirmation.
+
+## Saved Setups
+
+Open **Setups** from the main tuning menu.
+
+The list includes:
+
+* **Current Draft** — the setup currently being edited.
+* Saved setups.
+* **Recovery** options when older or damaged setup data can be restored.
+
+Saved setups include names and short summaries to help identify them.
+
+You can:
+
+* Save the current tune as a new setup.
+* Rename saved setups.
+* Choose a default setup.
+* Preview a setup before loading it.
+* Recover removed or damaged setups.
+* Restore older revisions.
+
+Alpine keeps setups separated by sled. A setup created for one sled cannot accidentally overwrite a different sled.
+
+Loading a saved setup while you have unsaved changes requires confirmation.
+
+Existing compatible setups from older versions are kept when possible.
+
+## Units and Tuning Behaviour
+
+* Engine output is shown in **kW** with Metric units and **hp** with Imperial units.
+* Weight is shown in **kg** or **lb**.
+* Ski stance is shown in millimetres or inches.
+* The game's Power, Climbing, and Agility ratings remain on their normal 0–100 scale.
+* Brake settings are shown as a percentage of the factory brake strength.
+* Steering, suspension, grip, and drivetrain changes are applied from the sled's original factory values to prevent repeated setup changes from stacking incorrectly.
+* The Climbing Track Kit changes traction, rotating weight, overall weight, and balance. It does not replace the visible track model.
+
+## Updating
+
+Close Sledders before replacing the mod DLL.
+
+It is recommended that you back up important saved setups before installing a major update.
+
+## Developer Build Instructions
+
+This section is only needed when building Alpine Tuning from source.
+
+Run:
+
+```text
+build-release.bat
+```
+
+The completed DLL will be placed at:
+
+```text
+SleddersTuner\bin\x64\Release\Alpine Tuning.dll
+```
+
+The build script checks the release files, runs automated tests, and installs the verified DLL into the standard Sledders `Mods` folder.
+
+When Steam uses another library location, edit `GAME_DIR` near the top of `build-release.bat`.
+
+## License and Attribution
+
+Alpine Tuning is an unofficial community mod and is not affiliated with the developers of Sledders.
+
+See [license.txt](license.txt) for source use, redistribution, attribution, and warranty terms.
+
+Back up important setup data before updating. Use the mod at your own risk.

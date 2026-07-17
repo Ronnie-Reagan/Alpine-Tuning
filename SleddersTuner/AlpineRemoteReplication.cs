@@ -6,11 +6,16 @@ namespace AlpineTuning
 {
     internal sealed class AlpineRemoteReplication
     {
-        private readonly Dictionary<int, RemoteHeadlightDefaults> _headlightDefaultsByRoot =
-            new Dictionary<int, RemoteHeadlightDefaults>();
+        private static readonly string[] AccessoryObjectFields =
+        {
+            "windshieldObjects",
+            "snowFlapObjects",
+            "rearPartObjects",
+            "tunnelReflectors"
+        };
 
-        private readonly Dictionary<int, string> _lastAppliedChecksumByRoot =
-            new Dictionary<int, string>();
+        private readonly Dictionary<ulong, RemoteMutationState> _mutationsBySender =
+            new Dictionary<ulong, RemoteMutationState>();
 
         public bool TryApply(
             ulong senderId,
@@ -34,6 +39,12 @@ namespace AlpineTuning
                 return false;
             }
 
+            if (!DiscardReplacedRootState(senderId, root))
+            {
+                status = "Remote tune apply deferred: the previous remote sled state could not be restored yet.";
+                return false;
+            }
+
             if (!SleddersGameBindings.TryGetRemoteNetworkVehicle(senderId, out var remoteVehicle) ||
                 remoteVehicle == null)
             {
@@ -43,14 +54,16 @@ namespace AlpineTuning
 
             if (!TargetMatches(remoteVehicle, profile))
             {
+                ClearSender(senderId);
                 status = "Remote tune skipped: remote sled target does not match active tune.";
                 return false;
             }
 
-            int rootId = root.GetInstanceID();
+            RemoteMutationState state = GetOrCreateState(senderId, root);
+            string applicationSignature = BuildApplicationSignature(profile, settings);
             if (!string.IsNullOrWhiteSpace(profile.checksum) &&
-                _lastAppliedChecksumByRoot.TryGetValue(rootId, out var lastChecksum) &&
-                string.Equals(lastChecksum, profile.checksum, StringComparison.OrdinalIgnoreCase))
+                !state.engineAudioRestorePending &&
+                string.Equals(state.lastAppliedSignature, applicationSignature, StringComparison.Ordinal))
             {
                 status = "Remote tune already applied to current sled instance.";
                 return true;
@@ -62,22 +75,31 @@ namespace AlpineTuning
             settings = settings ?? new AlpineUserSettings();
 
             if (settings.receivePeerAudio)
-                ApplyEngineAudio(root, computation.audioDefaults, applied, skipped);
+                ApplyEngineAudio(state, root, computation.audioDefaults, applied, skipped);
             else
+            {
+                RestoreEngineAudio(state);
                 skipped.Add("engine audio sharing off");
+            }
 
             if (settings.receivePeerLighting)
-                ApplyHeadlights(root, effect, applied, skipped);
+                ApplyHeadlights(state, root, effect, applied, skipped);
             else
+            {
+                RestoreHeadlights(state);
                 skipped.Add("headlight sharing off");
+            }
 
             if (settings.receivePeerVisualEquipment)
-                ApplyAccessories(root, effect.accessoryMode, computation.baseDefaults, applied, skipped);
+                ApplyAccessories(state, root, effect.accessoryMode, applied, skipped);
             else
+            {
+                RestoreAccessories(state);
                 skipped.Add("visual equipment sharing off");
+            }
 
             if (!string.IsNullOrWhiteSpace(profile.checksum))
-                _lastAppliedChecksumByRoot[rootId] = profile.checksum;
+                state.lastAppliedSignature = applicationSignature;
 
             if (applied.Count > 0)
             {
@@ -96,14 +118,20 @@ namespace AlpineTuning
             if (senderId == 0)
                 return;
 
-            if (!SleddersGameBindings.TryFindRemoteSnowmobileRoot(senderId, out var root, out _) ||
-                root == null)
-            {
+            if (!_mutationsBySender.TryGetValue(senderId, out var state))
                 return;
-            }
 
-            int rootId = root.GetInstanceID();
-            _lastAppliedChecksumByRoot.Remove(rootId);
+            RestoreAll(state);
+            if (!state.engineAudioRestorePending)
+                _mutationsBySender.Remove(senderId);
+        }
+
+        public void Shutdown()
+        {
+            foreach (var state in new List<RemoteMutationState>(_mutationsBySender.Values))
+                RestoreAll(state);
+
+            _mutationsBySender.Clear();
         }
 
         private static bool TargetMatches(VehicleScriptableObject remoteVehicle, TuneProfile profile)
@@ -119,8 +147,57 @@ namespace AlpineTuning
             }
 
             string remoteSledKey = AlpineTuningMod.GetSledKey(remoteVehicle);
+            if (SledIdentity.HasNativeVehicleIdentity(remoteSledKey, remoteVehicleId) ||
+                SledIdentity.HasNativeVehicleIdentity(profile.targetSledKey, profile.targetVehicleId))
+            {
+                return false;
+            }
+
             return !string.IsNullOrWhiteSpace(profile.targetSledKey) &&
                    string.Equals(remoteSledKey, profile.targetSledKey, StringComparison.OrdinalIgnoreCase);
+        }
+
+        private static string BuildApplicationSignature(TuneProfile profile, AlpineUserSettings settings)
+        {
+            settings = settings ?? new AlpineUserSettings();
+            return (profile != null ? profile.checksum : null) + "|" +
+                   (settings.receivePeerAudio ? "a1" : "a0") + "|" +
+                   (settings.receivePeerLighting ? "l1" : "l0") + "|" +
+                   (settings.receivePeerVisualEquipment ? "v1" : "v0");
+        }
+
+        private RemoteMutationState GetOrCreateState(ulong senderId, Component root)
+        {
+            if (_mutationsBySender.TryGetValue(senderId, out var existing) &&
+                existing != null &&
+                existing.rootId == root.GetInstanceID())
+            {
+                return existing;
+            }
+
+            var created = new RemoteMutationState
+            {
+                rootId = root.GetInstanceID()
+            };
+            _mutationsBySender[senderId] = created;
+            return created;
+        }
+
+        private bool DiscardReplacedRootState(ulong senderId, Component root)
+        {
+            if (!_mutationsBySender.TryGetValue(senderId, out var existing) ||
+                existing == null ||
+                existing.rootId == root.GetInstanceID())
+            {
+                return true;
+            }
+
+            RestoreAll(existing);
+            if (existing.engineAudioRestorePending)
+                return false;
+
+            _mutationsBySender.Remove(senderId);
+            return true;
         }
 
         private static bool HasEngineAudioToken(SledDefaults defaults)
@@ -132,6 +209,7 @@ namespace AlpineTuning
         }
 
         private static void ApplyEngineAudio(
+            RemoteMutationState state,
             Component root,
             SledDefaults audioDefaults,
             List<string> applied,
@@ -139,6 +217,7 @@ namespace AlpineTuning
         {
             if (!HasEngineAudioToken(audioDefaults))
             {
+                RestoreEngineAudio(state);
                 skipped.Add("engine audio token missing");
                 return;
             }
@@ -146,7 +225,14 @@ namespace AlpineTuning
             Component audioController = SleddersGameBindings.FindEngineAudioController(root);
             if (audioController == null)
             {
+                RestoreEngineAudio(state);
                 skipped.Add("engine audio controller");
+                return;
+            }
+
+            if (!CaptureEngineAudioDefault(state, audioController))
+            {
+                skipped.Add("engine audio baseline unavailable");
                 return;
             }
 
@@ -157,6 +243,7 @@ namespace AlpineTuning
                     audioDefaults.engineAudioEnumRawValue,
                     out var reason))
             {
+                state.engineAudioRestorePending = false;
                 applied.Add("engine audio");
                 return;
             }
@@ -164,7 +251,76 @@ namespace AlpineTuning
             skipped.Add("engine audio: " + reason);
         }
 
-        private void ApplyHeadlights(
+        private static bool CaptureEngineAudioDefault(RemoteMutationState state, Component audioController)
+        {
+            if (state.engineAudio != null && state.engineAudio.controller == audioController)
+                return true;
+
+            if (state.engineAudio != null)
+            {
+                RestoreEngineAudio(state);
+                if (state.engineAudio != null)
+                    return false;
+            }
+
+            object value = SleddersGameBindings.GetFieldValue<object>(audioController, "GILHLLEEAEH");
+            if (value == null || !value.GetType().IsEnum)
+                return false;
+
+            try
+            {
+                Type enumType = value.GetType();
+                state.engineAudio = new RemoteEngineAudioDefault
+                {
+                    controller = audioController,
+                    enumTypeName = enumType.AssemblyQualifiedName,
+                    enumName = Enum.GetName(enumType, value),
+                    enumRawValue = Convert.ToInt32(value)
+                };
+                state.engineAudioRestorePending = false;
+                return true;
+            }
+            catch
+            {
+                state.engineAudio = null;
+                return false;
+            }
+        }
+
+        private static void RestoreEngineAudio(RemoteMutationState state)
+        {
+            if (state == null || state.engineAudio == null)
+            {
+                if (state != null)
+                    state.engineAudioRestorePending = false;
+                return;
+            }
+
+            RemoteEngineAudioDefault defaults = state.engineAudio;
+            if (defaults.controller == null)
+            {
+                state.engineAudio = null;
+                state.engineAudioRestorePending = false;
+                return;
+            }
+
+            if (SleddersGameBindings.TryApplyEngineAudioToken(
+                    defaults.controller,
+                    defaults.enumTypeName,
+                    defaults.enumName,
+                    defaults.enumRawValue,
+                    out _))
+            {
+                state.engineAudio = null;
+                state.engineAudioRestorePending = false;
+                return;
+            }
+
+            state.engineAudioRestorePending = true;
+        }
+
+        private static void ApplyHeadlights(
+            RemoteMutationState state,
             Component root,
             PartEffect effect,
             List<string> applied,
@@ -177,12 +333,15 @@ namespace AlpineTuning
                 return;
             }
 
-            int rootId = root.GetInstanceID();
-            if (!_headlightDefaultsByRoot.TryGetValue(rootId, out var defaults))
+            RemoteHeadlightDefaults defaults = state.headlights ?? new RemoteHeadlightDefaults();
+            CaptureHeadlightDefaults(defaults, lights);
+            if (defaults.lights.Count == 0)
             {
-                defaults = CaptureHeadlightDefaults(lights);
-                _headlightDefaultsByRoot[rootId] = defaults;
+                skipped.Add("headlight baseline unavailable");
+                return;
             }
+
+            state.headlights = defaults;
 
             float pitch = Mathf.Clamp(effect != null ? effect.headlightPitchOffsetDegrees : 0f, -5f, 5f);
             foreach (var item in defaults.lights)
@@ -209,12 +368,13 @@ namespace AlpineTuning
             applied.Add("headlights");
         }
 
-        private static RemoteHeadlightDefaults CaptureHeadlightDefaults(IEnumerable<Light> lights)
+        private static void CaptureHeadlightDefaults(
+            RemoteHeadlightDefaults captured,
+            IEnumerable<Light> lights)
         {
-            var captured = new RemoteHeadlightDefaults();
             foreach (var light in lights)
             {
-                if (light == null)
+                if (light == null || !captured.instanceIds.Add(light.GetInstanceID()))
                     continue;
 
                 captured.lights.Add(new RemoteHeadlightDefault
@@ -227,26 +387,61 @@ namespace AlpineTuning
                     localRotation = light.transform.localRotation
                 });
             }
+        }
 
-            return captured;
+        private static void RestoreHeadlights(RemoteMutationState state)
+        {
+            if (state == null || state.headlights == null)
+                return;
+
+            foreach (var defaults in state.headlights.lights)
+            {
+                if (defaults == null || defaults.light == null)
+                    continue;
+
+                try
+                {
+                    defaults.light.color = defaults.color;
+                    defaults.light.intensity = defaults.intensity;
+                    defaults.light.range = defaults.range;
+                    defaults.light.spotAngle = defaults.spotAngle;
+                    defaults.light.transform.localRotation = defaults.localRotation;
+                }
+                catch
+                {
+                }
+            }
+
+            state.headlights = null;
         }
 
         private static void ApplyAccessories(
+            RemoteMutationState state,
             Component root,
             string accessoryMode,
-            SledDefaults defaults,
             List<string> applied,
             List<string> skipped)
         {
             if (string.IsNullOrWhiteSpace(accessoryMode))
             {
+                RestoreAccessories(state);
                 skipped.Add("accessory mode");
                 return;
             }
 
             if (string.Equals(accessoryMode, "stock", StringComparison.OrdinalIgnoreCase))
             {
-                skipped.Add("stock accessory mode keeps local visual equipment");
+                RestoreAccessories(state);
+                skipped.Add("stock accessory mode restored local visual equipment");
+                return;
+            }
+
+            bool utility = string.Equals(accessoryMode, "utility", StringComparison.OrdinalIgnoreCase);
+            bool raceTrim = string.Equals(accessoryMode, "race_trim", StringComparison.OrdinalIgnoreCase);
+            if (!utility && !raceTrim)
+            {
+                RestoreAccessories(state);
+                skipped.Add("unknown accessory mode keeps local visual equipment");
                 return;
             }
 
@@ -257,97 +452,93 @@ namespace AlpineTuning
                 return;
             }
 
-            object accessories = components[0];
-            bool utility = string.Equals(accessoryMode, "utility", StringComparison.OrdinalIgnoreCase);
-            bool raceTrim = string.Equals(accessoryMode, "race_trim", StringComparison.OrdinalIgnoreCase);
-
-            if (utility || raceTrim)
+            if (!CaptureAccessoryDefaults(state, components))
             {
-                SetGameObjectListActive(accessories, "windshieldObjects", utility);
-                SetGameObjectListActive(accessories, "snowFlapObjects", utility);
-                SetGameObjectListActive(accessories, "rearPartObjects", utility);
-                SetGameObjectListActive(accessories, "tunnelReflectors", utility);
-                applied.Add("accessories");
+                skipped.Add("accessory baseline unavailable");
                 return;
             }
 
-            skipped.Add("unknown accessory mode keeps local visual equipment");
+            foreach (object accessories in components)
+            {
+                if (accessories == null)
+                    continue;
+
+                foreach (string fieldName in AccessoryObjectFields)
+                    SetGameObjectListActive(accessories, fieldName, utility);
+            }
+
+            applied.Add("accessories");
         }
 
-        private static void ApplyControllerFeel(
-            ulong senderId,
-            TuneComputation computation,
-            TuneProfile profile,
-            List<string> applied,
-            List<string> skipped)
+        private static bool CaptureAccessoryDefaults(
+            RemoteMutationState state,
+            IEnumerable<Component> components)
         {
-            if (!SleddersGameBindings.TryFindRemoteSnowmobileController(senderId, out var controller) ||
-                controller == null)
+            RemoteAccessoryDefaults captured = state.accessories ?? new RemoteAccessoryDefaults();
+            foreach (object component in components)
             {
-                skipped.Add("controller feel");
+                if (component == null)
+                    continue;
+
+                foreach (string fieldName in AccessoryObjectFields)
+                {
+                    object value = SleddersGameBindings.GetFieldValue<object>(component, fieldName);
+                    if (!(value is System.Collections.IEnumerable objects))
+                        continue;
+
+                    foreach (object item in objects)
+                    {
+                        GameObject gameObject = item as GameObject;
+                        if (gameObject == null || !captured.instanceIds.Add(gameObject.GetInstanceID()))
+                            continue;
+
+                        captured.objects.Add(new RemoteAccessoryDefault
+                        {
+                            gameObject = gameObject,
+                            active = gameObject.activeSelf
+                        });
+                    }
+                }
+            }
+
+            if (captured.objects.Count == 0)
+                return false;
+
+            state.accessories = captured;
+            return true;
+        }
+
+        private static void RestoreAccessories(RemoteMutationState state)
+        {
+            if (state == null || state.accessories == null)
                 return;
+
+            foreach (var defaults in state.accessories.objects)
+            {
+                if (defaults == null || defaults.gameObject == null)
+                    continue;
+
+                try
+                {
+                    defaults.gameObject.SetActive(defaults.active);
+                }
+                catch
+                {
+                }
             }
 
-            if (computation.baseDefaults == null || computation.baseDefaults.controller == null)
-            {
-                skipped.Add("controller defaults");
+            state.accessories = null;
+        }
+
+        private static void RestoreAll(RemoteMutationState state)
+        {
+            if (state == null)
                 return;
-            }
 
-            var defaults = computation.baseDefaults.controller;
-            var effect = computation.mergedEffect ?? new PartEffect();
-            var fine = profile.fineTune ?? new FineTuneSettings();
-            ClampFineTune(fine);
-
-            float clutchTrim = 1f + fine.clutchTrimPercent / 100f;
-            float boostResponse = Mathf.Clamp(effect.boostResponseMultiplier, 0.70f, 1.35f);
-
-            if (defaults.hasThrottleExponent)
-                SetFloatField(controller, "throttleExponent", ClampOffset(defaults.throttleExponent + effect.throttleExponentDelta, defaults.throttleExponent, 0.20f, 0.25f, 4f));
-
-            if (defaults.hasRpmSensitivity)
-                SetFloatField(controller, "rpmSensitivity", ClampRelative(defaults.rpmSensitivity * effect.rpmSensitivityMultiplier * boostResponse, defaults.rpmSensitivity, 0.50f, 1.70f, 0.05f, 10f));
-
-            if (defaults.hasRpmSensitivityDown)
-                SetFloatField(controller, "rpmSensitivityDown", ClampRelative(defaults.rpmSensitivityDown * effect.rpmSensitivityDownMultiplier, defaults.rpmSensitivityDown, 0.50f, 1.70f, 0.05f, 10f));
-
-            float clutchMin = defaults.hasClutchRpmMin
-                ? ClampRelative((defaults.clutchRpmMin + effect.clutchRpmMinOffset) * clutchTrim, defaults.clutchRpmMin, 0.75f, 1.35f, 0f, 14000f)
-                : 0f;
-
-            float clutchMax = defaults.hasClutchRpmMax
-                ? ClampRelative((defaults.clutchRpmMax + effect.clutchRpmMaxOffset) * clutchTrim, defaults.clutchRpmMax, 0.75f, 1.35f, 0f, 14000f)
-                : 0f;
-
-            if (defaults.hasClutchRpmMin && defaults.hasClutchRpmMax && clutchMax < clutchMin + 100f)
-                clutchMax = Mathf.Min(14000f, clutchMin + 100f);
-
-            if (defaults.hasClutchRpmMin)
-                SetFloatField(controller, "clutchRpmMin", clutchMin);
-
-            if (defaults.hasClutchRpmMax)
-                SetFloatField(controller, "clutchRpmMax", clutchMax);
-
-            if (defaults.hasMinThrottleOnClutchEngagement)
-                SetFloatField(controller, "minThrottleOnClutchEngagement", Mathf.Clamp01(defaults.minThrottleOnClutchEngagement + effect.minThrottleOnClutchEngagementOffset));
-
-            if (defaults.hasWheelieThreshold)
-                SetFloatField(controller, "wheelieThreshold", ClampOffset(defaults.wheelieThreshold + effect.wheelieThresholdOffset, defaults.wheelieThreshold, 0.25f, 0.05f, 3f));
-
-            object stabilizer = SleddersGameBindings.GetStabilizer(controller);
-            if (stabilizer != null)
-            {
-                if (defaults.hasStabilizerDamping)
-                    SleddersGameBindings.SetFieldValue(stabilizer, "damping", ClampVectorRelative(defaults.stabilizerDamping.ToVector3() * effect.stabilizerDampingMultiplier, defaults.stabilizerDamping.ToVector3(), 0.50f, 1.80f));
-
-                if (defaults.hasTrackSpeedDamping)
-                    SleddersGameBindings.SetFieldValue(stabilizer, "trackSpeedDamping", ClampVectorRelative(defaults.trackSpeedDamping.ToVector3() * effect.trackSpeedDampingMultiplier, defaults.trackSpeedDamping.ToVector3(), 0.50f, 1.80f));
-
-                if (defaults.hasTrackSpeedGyroMultiplier)
-                    SleddersGameBindings.SetFieldValue(stabilizer, "trackSpeedGyroMultiplier", ClampRelative(defaults.trackSpeedGyroMultiplier * effect.trackSpeedGyroMultiplier, defaults.trackSpeedGyroMultiplier, 0.60f, 1.50f, 0.01f, 10f));
-            }
-
-            applied.Add("controller feel");
+            RestoreEngineAudio(state);
+            RestoreHeadlights(state);
+            RestoreAccessories(state);
+            state.lastAppliedSignature = null;
         }
 
         private static void SetGameObjectListActive(object owner, string fieldName, bool active)
@@ -355,59 +546,10 @@ namespace AlpineTuning
             SleddersGameBindings.SetGameObjectListActive(owner, fieldName, active);
         }
 
-        private static void SetFloatField(object target, string fieldName, float value)
-        {
-            SleddersGameBindings.SetFloatField(target, fieldName, value);
-        }
-
-        private static float ClampRelative(float value, float baseline, float minMult, float maxMult, float absoluteMin, float absoluteMax)
-        {
-            if (baseline > 0.01f)
-                return Mathf.Clamp(value, Mathf.Max(absoluteMin, baseline * minMult), Mathf.Min(absoluteMax, baseline * maxMult));
-
-            return Mathf.Clamp(value, absoluteMin, absoluteMax);
-        }
-
-        private static float ClampOffset(float value, float baseline, float maxDelta, float absoluteMin, float absoluteMax)
-        {
-            return Mathf.Clamp(value, Mathf.Max(absoluteMin, baseline - maxDelta), Mathf.Min(absoluteMax, baseline + maxDelta));
-        }
-
-        private static Vector3 ClampVectorRelative(Vector3 value, Vector3 baseline, float minMult, float maxMult)
-        {
-            return new Vector3(
-                ClampRelativeSigned(value.x, baseline.x, minMult, maxMult),
-                ClampRelativeSigned(value.y, baseline.y, minMult, maxMult),
-                ClampRelativeSigned(value.z, baseline.z, minMult, maxMult));
-        }
-
-        private static float ClampRelativeSigned(float value, float baseline, float minMult, float maxMult)
-        {
-            if (Mathf.Abs(baseline) <= 0.001f)
-                return Mathf.Clamp(value, -10f, 10f);
-
-            float a = baseline * minMult;
-            float b = baseline * maxMult;
-            return Mathf.Clamp(value, Mathf.Min(a, b), Mathf.Max(a, b));
-        }
-
-        private static void ClampFineTune(FineTuneSettings fine)
-        {
-            if (fine == null)
-                return;
-
-            fine.powerTrimPercent = Mathf.Clamp(fine.powerTrimPercent, -10f, 10f);
-            fine.tractionTrimPercent = Mathf.Clamp(fine.tractionTrimPercent, -10f, 10f);
-            fine.weightTrimPercent = Mathf.Clamp(fine.weightTrimPercent, -8f, 8f);
-            fine.clutchTrimPercent = Mathf.Clamp(fine.clutchTrimPercent, -10f, 10f);
-            fine.centerOfMassYTrim = Mathf.Clamp(fine.centerOfMassYTrim, -0.08f, 0.08f);
-            fine.centerOfMassZTrim = Mathf.Clamp(fine.centerOfMassZTrim, -0.12f, 0.12f);
-            fine.skiStanceTrim = Mathf.Clamp(fine.skiStanceTrim, -0.08f, 0.08f);
-        }
-
         private sealed class RemoteHeadlightDefaults
         {
             public readonly List<RemoteHeadlightDefault> lights = new List<RemoteHeadlightDefault>();
+            public readonly HashSet<int> instanceIds = new HashSet<int>();
         }
 
         private sealed class RemoteHeadlightDefault
@@ -418,6 +560,36 @@ namespace AlpineTuning
             public float range;
             public float spotAngle;
             public Quaternion localRotation;
+        }
+
+        private sealed class RemoteAccessoryDefaults
+        {
+            public readonly List<RemoteAccessoryDefault> objects = new List<RemoteAccessoryDefault>();
+            public readonly HashSet<int> instanceIds = new HashSet<int>();
+        }
+
+        private sealed class RemoteAccessoryDefault
+        {
+            public GameObject gameObject;
+            public bool active;
+        }
+
+        private sealed class RemoteEngineAudioDefault
+        {
+            public Component controller;
+            public string enumTypeName;
+            public string enumName;
+            public int enumRawValue;
+        }
+
+        private sealed class RemoteMutationState
+        {
+            public int rootId;
+            public string lastAppliedSignature;
+            public bool engineAudioRestorePending;
+            public RemoteEngineAudioDefault engineAudio;
+            public RemoteHeadlightDefaults headlights;
+            public RemoteAccessoryDefaults accessories;
         }
     }
 }

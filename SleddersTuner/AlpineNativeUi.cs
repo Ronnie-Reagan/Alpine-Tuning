@@ -1,7 +1,9 @@
 using MelonLoader;
 using System;
+using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
+using System.Reflection;
 using UnityEngine;
 using UnityEngine.UIElements;
 
@@ -11,94 +13,27 @@ namespace AlpineTuning
     {
         // Element names / IDs.
         public const string RootName = "alpine-tuning-root";
-        public const string PanelName = "alpine-tuning-panel";
-        public const string GarageTabName = "Tab_AlpineTuning";
-        public const string GarageTabButtonName = "AlpineTuningTabButton";
-        public const string PauseButtonName = "AlpineTuningPauseButton";
-
-        // Button / tab labels.
-        public const string ModTitle = "SLED SETUP";
-        public const string BuildTabLabel = "Setup";
-        public const string TrackTabLabel = "Track";
-        public const string EngineTabLabel = "Engine";
-        public const string ClutchTabLabel = "Clutching";
-        public const string SetupTabLabel = "Suspension";
-        public const string LightsTabLabel = "Lighting";
-        public const string PerformanceTabLabel = "Performance";
-        public const string FineTuneTabLabel = "Adjustment";
-        public const string LibraryTabLabel = "Setup Slots";
-        public const string ShareTabLabel = "Multiplayer";
-        public const string GuideTabLabel = "Guide";
-        public const string UiSettingsTabLabel = "Settings";
-        public const string RefreshSledLabel = "Find Sled";
+        public const string GarageTuningButtonName = "AlpineTuningActionButton";
+        public const string GarageStyleButtonName = "SUITuning";
 
         // Feature switches.
-        public const bool EnableRuntimeUiSettingsTab = true;
-        public static readonly bool ShowRefreshSledButton = true;
-        public const bool ShowNativeAccessoriesCategory = false;
-        public const bool EnablePeerReplicationToggle = true;
-
         // Reflection field/method names used by the native game UI.
         // These are intentionally centralized because obfuscated game updates may change them.
         public const string VehicleRootFieldName = "NPAACPBJNOL";
-        public const string VehicleNativeTabManagerFieldName = "CDOJAEOEMDH";
-        public const string NativeTabPanelsFieldName = "FLNOHFIPDDN";
-        public const string NativeTabButtonsFieldName = "PJBNPIEGJFB";
-        public const string NativeTabCallbacksFieldName = "BFLLJAMNBEK";
-        public const string NativeSelectTabMethodName = "PJFAFBFMOIK";
-
-        // Native UI lookup names.
-        public const string GarageTabsButtonsName = "TabsButtons";
-        public const string GarageTabsName = "Tabs";
-        public const string PauseSelectVehicleButtonName = "SelectVehicle";
-        public const string PauseOptionsButtonName = "Options";
 
         // Default UI layout values.
-        public const float DefaultPanelMaxWidth = 1180f;
-        public const float DefaultPanelMaxHeight = 360f;
-        public const float DefaultInlineSurfaceMaxHeight = 340f;
-        public const float DefaultInlinePanelMaxHeight = 240f;
-        public const float DefaultPanelMinWidth = 520f;
-        public const float DefaultPanelWidthPercent = 68f;
-        public const float DefaultRootMarginTop = 6f;
-        public const float DefaultRootMarginBottom = 8f;
-        public const float DefaultRootMarginLeft = 4f;
-        public const float DefaultRootMarginRight = 4f;
-        public const float DefaultPanelPadding = 12f;
-        public const float DefaultPanelMarginTop = 4f;
-        public const float DefaultTabsMarginBottom = 8f;
-        public const float DefaultStatusMarginTop = 6f;
         public const float DefaultButtonHeight = 28f;
         public const float DefaultButtonMarginRight = 4f;
         public const float DefaultButtonMarginTop = 2f;
         public const float DefaultButtonMarginBottom = 2f;
-        public const float DefaultControlMarginTop = 6f;
         public const float DefaultMutedLabelMarginTop = 2f;
-        public const float DefaultRowMarginTop = 4f;
         public const float DefaultButtonRowMarginTop = 8f;
         public const float DefaultTitleFontSize = 17f;
         public const float SectionGap = 12f;
         public const float RowGap = 6f;
         public const float InlineGap = 6f;
-        public const float CardPadding = 8f;
-        public const float CardGap = 8f;
-        public const float FooterGap = 10f;
         public const float StatChipPaddingHorizontal = 6f;
         public const float StatChipPaddingVertical = 3f;
-
-        // Runtime UI settings slider limits.
-        public const float RuntimePanelWidthMin = 420f;
-        public const float RuntimePanelWidthMax = 1400f;
-        public const float RuntimePanelHeightMin = 200f;
-        public const float RuntimePanelHeightMax = 1000f;
-        public const float RuntimePaddingMin = 2f;
-        public const float RuntimePaddingMax = 28f;
-        public const float RuntimeButtonHeightMin = 20f;
-        public const float RuntimeButtonHeightMax = 44f;
-        public const float RuntimeFontSizeMin = 10f;
-        public const float RuntimeFontSizeMax = 24f;
-        public const float RuntimeOpacityMin = 0.35f;
-        public const float RuntimeOpacityMax = 1f;
 
         // Fine tune clamp ranges.
         public const float PowerTrimMin = -10f;
@@ -124,81 +59,606 @@ namespace AlpineTuning
         public static readonly Color RowTextColor = Color.white;
         public static readonly Color AccentColor = new Color(0.78f, 0.92f, 0.08f, 1f);
         public static readonly Color ButtonBackgroundColor = new Color(0.16f, 0.18f, 0.20f, 0.92f);
-        public static readonly Color ButtonHoverColor = new Color(0.22f, 0.25f, 0.27f, 0.94f);
-        public static readonly Color ActiveButtonBackgroundColor = new Color(0.78f, 0.92f, 0.08f, 0.95f);
         public static readonly Color ActiveButtonTextColor = new Color(0.04f, 0.05f, 0.05f, 1f);
-        public static readonly Color CardBackgroundColor = new Color(0.10f, 0.12f, 0.14f, 0.72f);
-        public static readonly Color SelectedCardBackgroundColor = new Color(0.14f, 0.17f, 0.19f, 0.88f);
         public static readonly Color ChipBackgroundColor = new Color(0.18f, 0.21f, 0.23f, 0.88f);
         public static readonly Color DangerButtonColor = new Color(0.42f, 0.14f, 0.12f, 0.92f);
         public static readonly Color DangerTextColor = new Color(1f, 0.82f, 0.78f, 1f);
 
         // Text.
-        public const string NoSavedProfilesText = "No setup slots for this sled yet.";
-        public const string NoSharedTunesText = "Networked setup sharing is paused for this build.";
-        public const string FineTuneHelpText = "Adjustments are clamped to keep setups predictable.";
+        public const string NoSavedProfilesText = "No Saved Tunes.";
         public const string ReloadRequiredHintText = "Ready for next ride";
-        public const string RefreshedSledText = "Selected sled found.";
-        public const string PreviewUpdatedText = "Setup updated.";
-        public const string FactoryDefaultsRestoredText = "Returned to stock.";
-        public const string ActiveProfileSavedText = "Setup saved.";
-        public const string AppliedSavedActiveText = "Setup saved.";
-        public const string AppliedSavedReloadedText = "Setup saved.";
-        public const string InstalledBuildText = "Installed.";
-        public const string InstalledRebuiltBuildText = "Ready for next ride.";
-        public const string FineTuneAppliedText = "Adjusted.";
-        public const string PublishedTuneText = "Shared setup summary sent to discovered lobby peers.";
-        public const string PeerHelloText = "Sent peer discovery hello.";
-        public const string PeerReplicationUnavailableText = "Replicate Peers Coming Soon!";
-        public const string SharedPayloadMissingText = "Shared payload not available.";
         public const string ApplyFailedText = "Setup update failed.";
         public const string SaveFailedText = "Setup save failed.";
-        public const string ResetFailedText = "Could not return to stock.";
-        public const string SharingUnavailableText = AlpineConstants.PeerSharingPausedNotice;
-    }
-
-    internal sealed class AlpineNativeUiRuntimeSettings
-    {
-        public float PanelMaxWidth = AlpineNativeUiConfig.DefaultPanelMaxWidth;
-        public float PanelMaxHeight = AlpineNativeUiConfig.DefaultPanelMaxHeight;
-        public float PanelPadding = AlpineNativeUiConfig.DefaultPanelPadding;
-        public float ButtonHeight = AlpineNativeUiConfig.DefaultButtonHeight;
-        public float TitleFontSize = AlpineNativeUiConfig.DefaultTitleFontSize;
-        public float PanelOpacity = AlpineNativeUiConfig.PanelBackgroundColor.a;
-
-        public void ResetToDefaults()
-        {
-            PanelMaxWidth = AlpineNativeUiConfig.DefaultPanelMaxWidth;
-            PanelMaxHeight = AlpineNativeUiConfig.DefaultPanelMaxHeight;
-            PanelPadding = AlpineNativeUiConfig.DefaultPanelPadding;
-            ButtonHeight = AlpineNativeUiConfig.DefaultButtonHeight;
-            TitleFontSize = AlpineNativeUiConfig.DefaultTitleFontSize;
-            PanelOpacity = AlpineNativeUiConfig.PanelBackgroundColor.a;
-        }
     }
 
     internal static class AlpineNativeUi
     {
-        private enum AlpineUiSurfaceMode
+        private sealed class GarageNavigationNode
         {
-            GarageTab,
-            PauseInline,
-            FallbackInline
+            public string Kind;
+            public string Id;
+            public string Title;
+            public string FocusedElementName;
+            public Vector2 ScrollOffset;
+            public Vector2 DetailScrollOffset;
+
+            public GarageNavigationNode(string kind, string id, string title)
+            {
+                Kind = kind;
+                Id = id;
+                Title = title;
+            }
         }
 
-        private static readonly AlpineNativeUiRuntimeSettings RuntimeUi = new AlpineNativeUiRuntimeSettings();
-        private static readonly Dictionary<int, Action> GarageRenderActions = new Dictionary<int, Action>();
-        private static int _attachedMenuCount;
-        private static float _lastUiRefreshLogTime;
+        private sealed class GarageEngineCandidate
+        {
+            public readonly VehicleScriptableObject Vehicle;
+            public readonly SledDefaults StockDefaults;
+            public readonly string Signature;
 
+            public GarageEngineCandidate(
+                VehicleScriptableObject vehicle,
+                SledDefaults stockDefaults)
+            {
+                Vehicle = vehicle;
+                StockDefaults = stockDefaults;
+                Signature = EngineSignature(stockDefaults, vehicle);
+            }
+        }
+
+        private enum GarageMetricDirection
+        {
+            HigherIsBetter,
+            LowerIsBetter,
+            Preference
+        }
+
+        /// <summary>
+        /// One comparison is used by the landing card, category cards, part
+        /// previews and Dyno. Factory and Current always travel through
+        /// PreviewProfile; Candidate is present only while another part is being
+        /// inspected. This prevents an installed snapshot from accidentally
+        /// becoming the stock baseline.
+        /// </summary>
+        private sealed class GarageComparisonSnapshot
+        {
+            public SledDefaults Defaults;
+            public TuneProfile FactoryProfile;
+            public TuneProfile CurrentProfile;
+            public TuneProfile CandidateProfile;
+            public ResolvedStats Factory => FactoryProfile?.resolvedStats;
+            public ResolvedStats Current => CurrentProfile?.resolvedStats;
+            public ResolvedStats Candidate => CandidateProfile?.resolvedStats;
+            public PartEffect FactoryEffect;
+            public PartEffect CurrentEffect;
+            public PartEffect CandidateEffect;
+        }
+
+        private sealed class GarageMetricDescriptor
+        {
+            public string Label;
+            public string Tooltip;
+            public float Factory;
+            public float Current;
+            public float Candidate;
+            public bool HasCandidate;
+            public bool Available = true;
+            public float? SafetyMinimum;
+            public float? SafetyMaximum;
+            public GarageMetricDirection Direction;
+            public Func<float, string> Format;
+        }
+
+        private sealed class GaragePlotSeries
+        {
+            public string Name;
+            public Color Color;
+            public readonly List<Vector2> Points = new List<Vector2>();
+        }
+
+        private sealed class GarageElementState
+        {
+            public readonly VisualElement Element;
+            public readonly StyleEnum<DisplayStyle> Display;
+            public readonly bool Enabled;
+
+            public GarageElementState(VisualElement element)
+            {
+                Element = element;
+                Display = element.style.display;
+                Enabled = element.enabledSelf;
+            }
+
+            public void Restore()
+            {
+                if (Element == null)
+                    return;
+
+                Element.style.display = Display;
+                Element.SetEnabled(Enabled);
+            }
+        }
+
+        /// <summary>
+        /// Owns only the elements Alpine temporarily replaces in one live garage
+        /// template. A VehicleSelectionUiController may outlive its pushed visual
+        /// tree, so identity is the controller plus the exact current root.
+        /// </summary>
+        private sealed class GarageNativeSession
+        {
+            private readonly VehicleSelectionUiController _controller;
+            private readonly VisualElement _nativeVehicleList;
+            private readonly VisualElement _bottomDock;
+            private readonly VisualElement _controlInfo;
+            private readonly VisualElement _sidePanelBody;
+            private readonly bool _usesNativeHost;
+            private readonly VisualElement[] _nativeActions;
+            private readonly List<GarageElementState> _nativeActionStates = new List<GarageElementState>();
+            private readonly List<GarageElementState> _sidePanelStates = new List<GarageElementState>();
+            private readonly List<ControlIndicatorButton> _contextActions = new List<ControlIndicatorButton>();
+
+            private GarageElementState _nativeVehicleListState;
+            private GarageElementState[] _pendingNativeActionRestoreStates;
+            private VisualElement _previousFocus;
+            private bool _sidePanelReplaced;
+
+            public readonly VisualElement TemplateRoot;
+            public VisualElement Surface { get; private set; }
+            public VisualElement DetailHost { get; set; }
+            public VisualElement DynoOverlay { get; set; }
+            public ControlIndicatorButton EntryButton { get; set; }
+            public ControlIndicatorButton StyleButton { get; set; }
+            public string OriginalStyleText { get; set; }
+            public bool IsOpen { get; private set; }
+            public bool IsDisposed { get; private set; }
+            public VehicleSelectionUiController Controller => _controller;
+            public VisualElement ControlInfo => _controlInfo;
+            public bool UsesNativeHost => _usesNativeHost;
+
+            public GarageNativeSession(
+                VehicleSelectionUiController controller,
+                VisualElement templateRoot,
+                VisualElement nativeVehicleList,
+                VisualElement bottomDock,
+                VisualElement controlInfo,
+                VisualElement sidePanelBody,
+                bool usesNativeHost,
+                params VisualElement[] nativeActions)
+            {
+                _controller = controller;
+                TemplateRoot = templateRoot;
+                _nativeVehicleList = nativeVehicleList;
+                _bottomDock = bottomDock;
+                _controlInfo = controlInfo;
+                _sidePanelBody = sidePanelBody;
+                _usesNativeHost = usesNativeHost;
+                _nativeActions = nativeActions ?? Array.Empty<VisualElement>();
+            }
+
+            public void Mount(VisualElement surface)
+            {
+                if (surface == null)
+                    throw new ArgumentNullException(nameof(surface));
+
+                Surface = surface;
+                ApplyNativeGarageRailStyle(surface, !UsesNativeHost);
+                if (DetailHost != null && _sidePanelBody == null)
+                    ApplyFallbackGarageDetailStyle(DetailHost);
+            }
+
+            public void Open()
+            {
+                if (IsDisposed || IsOpen)
+                    return;
+
+                // A close normally restores these on the next UI tick so the
+                // Cancel event cannot also reach the native garage actions. If
+                // Alpine is reopened before that tick, restore the old snapshot
+                // before taking a fresh one from the native controls.
+                RestorePendingNativeActions();
+                IsOpen = true;
+                EnsureSurfaceMounted();
+                _previousFocus = FocusedElement(TemplateRoot);
+                _nativeVehicleListState = _nativeVehicleList != null
+                    ? new GarageElementState(_nativeVehicleList)
+                    : null;
+                if (_nativeVehicleList != null)
+                {
+                    _nativeVehicleList.SetEnabled(false);
+                    _nativeVehicleList.style.display = DisplayStyle.None;
+                }
+
+                _nativeActionStates.Clear();
+                foreach (VisualElement action in _nativeActions.Concat(new VisualElement[] { EntryButton }))
+                {
+                    if (action == null || _nativeActionStates.Any(state => ReferenceEquals(state.Element, action)))
+                        continue;
+
+                    _nativeActionStates.Add(new GarageElementState(action));
+                    action.SetEnabled(false);
+                    action.style.display = DisplayStyle.None;
+                }
+
+                if (Surface != null)
+                    Surface.style.display = DisplayStyle.Flex;
+            }
+
+            public void ShowDetails(bool show)
+            {
+                if (DetailHost == null)
+                    return;
+
+                if (!show)
+                {
+                    RestoreSidePanel();
+                    return;
+                }
+
+                VisualElement expectedParent = _sidePanelBody ?? TemplateRoot;
+                if (!ReferenceEquals(DetailHost.parent, expectedParent))
+                {
+                    _sidePanelStates.Clear();
+                    _sidePanelReplaced = false;
+                    expectedParent?.Add(DetailHost);
+                }
+
+                if (!_sidePanelReplaced)
+                {
+                    _sidePanelStates.Clear();
+                    if (_sidePanelBody != null)
+                    {
+                        VisualElement vendorLogo = _sidePanelBody.Q<VisualElement>("VendorLogo");
+                        VisualElement sledName = _sidePanelBody.Q<VisualElement>("SnowmobileName");
+                        for (int i = 0; i < _sidePanelBody.childCount; i++)
+                        {
+                            VisualElement child = _sidePanelBody[i];
+                            if (child == null || ReferenceEquals(child, DetailHost) ||
+                                ContainsElement(child, vendorLogo) || ContainsElement(child, sledName))
+                            {
+                                continue;
+                            }
+
+                            _sidePanelStates.Add(new GarageElementState(child));
+                            child.SetEnabled(false);
+                            child.style.display = DisplayStyle.None;
+                        }
+                    }
+
+                    _sidePanelReplaced = true;
+                }
+
+                DetailHost.style.display = DisplayStyle.Flex;
+            }
+
+            public void ReassertOpenOwnership()
+            {
+                if (!IsOpen || IsDisposed)
+                    return;
+
+                EnsureSurfaceMounted();
+                if (_nativeVehicleList != null)
+                {
+                    _nativeVehicleList.SetEnabled(false);
+                    _nativeVehicleList.style.display = DisplayStyle.None;
+                }
+                foreach (GarageElementState state in _nativeActionStates)
+                {
+                    if (state.Element == null)
+                        continue;
+                    state.Element.SetEnabled(false);
+                    state.Element.style.display = DisplayStyle.None;
+                }
+                if (_sidePanelReplaced)
+                {
+                    foreach (GarageElementState state in _sidePanelStates)
+                    {
+                        if (state.Element == null)
+                            continue;
+                        state.Element.SetEnabled(false);
+                        state.Element.style.display = DisplayStyle.None;
+                    }
+                    if (DetailHost != null)
+                        DetailHost.style.display = DisplayStyle.Flex;
+                }
+                if (Surface != null)
+                    Surface.style.display = DisplayStyle.Flex;
+            }
+
+            public void SetContextActions(
+                string backLabel,
+                Action back,
+                string secondaryLabel,
+                Action secondary,
+                string tertiaryLabel,
+                Action tertiary,
+                ControlIndicatorButton classAnchor,
+                ControlIndicatorButton readyButton,
+                string utilityLabel = null,
+                Action utility = null)
+            {
+                ClearContextActions();
+                if (_controlInfo == null)
+                    return;
+
+                AddContextAction("Cancel", backLabel, "alpine-button-back", back, classAnchor, null);
+                AddContextAction("Secondary", secondaryLabel, "alpine-button-save", secondary, classAnchor, null);
+                AddContextAction("Tertiary", tertiaryLabel, "alpine-button-reset", tertiary, classAnchor, readyButton);
+                AddContextAction("Utility", utilityLabel, "alpine-button-dyno", utility, classAnchor, null);
+            }
+
+            public VisualElement FindContextAction(string name)
+            {
+                if (string.IsNullOrWhiteSpace(name))
+                    return null;
+                return _contextActions.FirstOrDefault(action => action != null && action.name == name);
+            }
+
+            public VisualElement FirstContextAction()
+            {
+                return _contextActions.FirstOrDefault(CanFocus);
+            }
+
+            public void Close()
+            {
+                CancelHeadlightCaptureIfActive();
+                if (!IsOpen)
+                    return;
+
+                IsOpen = false;
+                ClearContextActions();
+                RestoreSidePanel();
+                DynoOverlay?.RemoveFromHierarchy();
+                DynoOverlay = null;
+
+                if (Surface != null)
+                    Surface.style.display = DisplayStyle.None;
+                Surface?.RemoveFromHierarchy();
+                _nativeVehicleListState?.Restore();
+                _nativeVehicleListState = null;
+                GarageElementState[] actionStates = _nativeActionStates.ToArray();
+                _nativeActionStates.Clear();
+                _pendingNativeActionRestoreStates = actionStates;
+
+                // Cancel is dispatched to every attached ControlIndicator. Keep
+                // native actions disabled until this dispatch has fully unwound so
+                // Alpine Back cannot also close the owning garage menu. Retain the
+                // snapshot on this session: MenuController.Close may synchronously
+                // detach TemplateRoot before this scheduled item can run, in which
+                // case Dispose restores the same snapshot synchronously.
+                TemplateRoot?.schedule.Execute(() =>
+                {
+                    if (IsOpen)
+                        return;
+                    RestorePendingNativeActions(actionStates);
+                });
+
+                VisualElement focus = _previousFocus;
+                _previousFocus = null;
+                TemplateRoot?.schedule.Execute(() =>
+                {
+                    if (CanFocus(focus) && focus.panel == TemplateRoot.panel)
+                        focus.Focus();
+                    else if (CanFocus(EntryButton) && EntryButton.panel == TemplateRoot.panel)
+                        EntryButton.Focus();
+                });
+            }
+
+            public void Dispose()
+            {
+                if (IsDisposed)
+                    return;
+
+                Close();
+                // A detached template may never run scheduled items. Close keeps
+                // its snapshot on the session, so a synchronous native detach can
+                // restore every display/enabled state here exactly once.
+                RestorePendingNativeActions();
+                IsDisposed = true;
+                ClearContextActions();
+                RestoreSidePanel();
+                DetailHost?.RemoveFromHierarchy();
+                DynoOverlay?.RemoveFromHierarchy();
+                DynoOverlay = null;
+                Surface?.RemoveFromHierarchy();
+                EntryButton?.RemoveFromHierarchy();
+                if (StyleButton != null && OriginalStyleText != null)
+                    StyleButton.DisplayText = OriginalStyleText;
+            }
+
+            private void RestorePendingNativeActions(GarageElementState[] expectedStates = null)
+            {
+                GarageElementState[] states = _pendingNativeActionRestoreStates;
+                if (states == null ||
+                    (expectedStates != null && !ReferenceEquals(expectedStates, states)))
+                {
+                    return;
+                }
+
+                // Clear ownership before invoking UI Toolkit. A later scheduled
+                // callback or a repeated Dispose therefore cannot restore twice,
+                // even if a restore itself causes another lifecycle callback.
+                _pendingNativeActionRestoreStates = null;
+                foreach (GarageElementState state in states)
+                    state.Restore();
+            }
+
+            private void AddContextAction(
+                string actionName,
+                string label,
+                string elementName,
+                Action clicked,
+                ControlIndicatorButton classAnchor,
+                ControlIndicatorButton conflictButton)
+            {
+                if (clicked == null || string.IsNullOrWhiteSpace(label))
+                    return;
+
+                var button = new ControlIndicatorButton
+                {
+                    name = elementName,
+                    ActionName = actionName,
+                    DisplayText = label.ToUpperInvariant(),
+                    focusable = true
+                };
+                CopyClasses(classAnchor, button);
+                if (string.Equals(actionName, "Utility", StringComparison.OrdinalIgnoreCase))
+                {
+                    // Sledders has no bindable Utility action, so it cannot supply
+                    // a shortcut glyph. Keep the native indicator slot and its
+                    // exact button geometry, then place a neutral graph mark in
+                    // that slot. The button remains pointer/focus-submit only and
+                    // therefore does not reintroduce the removed D shortcut.
+                    VisualElement indicator = button.Q<VisualElement>(className: "control-indicator");
+                    if (indicator != null)
+                    {
+                        indicator.Clear();
+                        var graphMark = new Label("\u25A5")
+                        {
+                            name = "AlpineDynoIndicator",
+                            pickingMode = PickingMode.Ignore
+                        };
+                        graphMark.style.width = 20f;
+                        graphMark.style.height = 20f;
+                        graphMark.style.fontSize = 13f;
+                        graphMark.style.unityTextAlign = TextAnchor.MiddleCenter;
+                        graphMark.style.color = AlpineNativeUiConfig.TitleTextColor;
+                        graphMark.style.backgroundColor = Color.clear;
+                        indicator.Add(graphMark);
+                    }
+                }
+                button.clicked += () =>
+                {
+                    if (conflictButton != null && conflictButton.enabledInHierarchy)
+                        return;
+                    clicked();
+                };
+                _controlInfo.Add(button);
+                _contextActions.Add(button);
+            }
+
+            private void ClearContextActions()
+            {
+                foreach (ControlIndicatorButton action in _contextActions)
+                    action?.RemoveFromHierarchy();
+                _contextActions.Clear();
+            }
+
+            private void RestoreSidePanel()
+            {
+                if (!_sidePanelReplaced)
+                {
+                    if (DetailHost != null)
+                    {
+                        DetailHost.style.display = DisplayStyle.None;
+                        DetailHost.RemoveFromHierarchy();
+                    }
+                    return;
+                }
+
+                if (DetailHost != null)
+                {
+                    DetailHost.style.display = DisplayStyle.None;
+                    DetailHost.RemoveFromHierarchy();
+                }
+                foreach (GarageElementState state in _sidePanelStates)
+                    state.Restore();
+                _sidePanelStates.Clear();
+                _sidePanelReplaced = false;
+            }
+
+            private void EnsureSurfaceMounted()
+            {
+                if (Surface == null || Surface.parent != null)
+                    return;
+
+                if (_bottomDock != null)
+                {
+                    int index = UsesNativeHost &&
+                                _nativeVehicleList != null &&
+                                ReferenceEquals(_nativeVehicleList.parent, _bottomDock)
+                        ? _bottomDock.IndexOf(_nativeVehicleList)
+                        : (_controlInfo != null ? _bottomDock.IndexOf(_controlInfo) : _bottomDock.childCount);
+                    _bottomDock.Insert(Mathf.Clamp(index, 0, _bottomDock.childCount), Surface);
+                }
+                else
+                {
+                    TemplateRoot?.Add(Surface);
+                }
+            }
+
+            private static bool ContainsElement(VisualElement root, VisualElement candidate)
+            {
+                return candidate != null &&
+                       (ReferenceEquals(root, candidate) || IsDescendantOf(candidate, root));
+            }
+        }
+
+        private const string NavigationRoot = "root";
+        private const string NavigationCategory = "category";
+        private const string NavigationPart = "part";
+        private const string NavigationPanel = "panel";
+
+        private static readonly Dictionary<int, Action> GarageRenderActions = new Dictionary<int, Action>();
+        private static readonly Dictionary<int, GarageNativeSession> GarageSessions = new Dictionary<int, GarageNativeSession>();
+        private static readonly Dictionary<int, Func<bool>> GarageNativeCloseRequests = new Dictionary<int, Func<bool>>();
         public static bool HasAttachedMenus => HasAttachedNativeUiRoot();
+        public static bool IsGarageTuningOpen =>
+            GarageSessions.Values.Any(session => session != null && session.IsOpen && !session.IsDisposed);
+
+        private static bool CancelHeadlightCaptureIfActive(AlpineTuningMod mod = null)
+        {
+            if (mod == null)
+                mod = AlpineTuningMod.Instance;
+            if (mod == null || !mod.IsCapturingHeadlightBinding)
+                return false;
+
+            mod.CancelHeadlightBindingCapture();
+            mod.ConsumeHeadlightBindingCaptureResult();
+            return true;
+        }
+
+        public static void DetachGarageSessions()
+        {
+            CancelHeadlightCaptureIfActive();
+            foreach (GarageNativeSession session in GarageSessions.Values.ToArray())
+                session?.Dispose();
+            GarageSessions.Clear();
+            GarageRenderActions.Clear();
+            GarageNativeCloseRequests.Clear();
+            GarageIconResources.Release();
+        }
+
+        public static bool AllowGarageControllerClose(VehicleSelectionUiController controller)
+        {
+            if (controller == null)
+                return true;
+
+            if (!GarageNativeCloseRequests.TryGetValue(controller.GetInstanceID(), out Func<bool> request) ||
+                request == null)
+                return true;
+
+            try
+            {
+                return request();
+            }
+            catch (Exception ex)
+            {
+                MelonLogger.Warning($"Garage close guard failed open: {ex.GetType().Name}");
+                return true;
+            }
+        }
 
         public static void NotifyGarageSelectionChanged(VehicleSelectionUiController controller)
         {
             if (controller == null)
                 return;
 
-            if (!GarageRenderActions.TryGetValue(controller.GetInstanceID(), out var render) || render == null)
+            int controllerId = controller.GetInstanceID();
+            if (!GarageSessions.TryGetValue(controllerId, out GarageNativeSession session) ||
+                session.IsDisposed ||
+                !ReferenceEquals(session.Controller, controller) ||
+                !GarageRenderActions.TryGetValue(controllerId, out var render) ||
+                render == null)
                 return;
 
             try
@@ -207,7 +667,7 @@ namespace AlpineTuning
             }
             catch (Exception ex)
             {
-                MelonLogger.Warning($"Garage setup refresh skipped: {ex.Message}");
+                MelonLogger.Warning($"Garage setup refresh skipped: {ex.GetType().Name}");
             }
         }
 
@@ -222,14 +682,11 @@ namespace AlpineTuning
                 foreach (var vehicleMenu in Resources.FindObjectsOfTypeAll<VehicleSelectionUiController>())
                     attached |= AttachToVehicleSelection(mod, vehicleMenu);
 
-                foreach (var pauseMenu in Resources.FindObjectsOfTypeAll<PauseUIController>())
-                    attached |= AttachToPause(mod, pauseMenu);
-
                 return attached;
             }
             catch (Exception ex)
             {
-                MelonLogger.Warning($"Native UI scan skipped: {ex.Message}");
+                MelonLogger.Warning($"Native UI scan skipped: {ex.GetType().Name}");
                 return false;
             }
         }
@@ -241,20 +698,16 @@ namespace AlpineTuning
                 foreach (var vehicleMenu in Resources.FindObjectsOfTypeAll<VehicleSelectionUiController>())
                 {
                     VisualElement root = FindVisualRoot(vehicleMenu);
-                    if (root != null && root.Q<VisualElement>(AlpineNativeUiConfig.RootName) != null)
+                    if (root != null &&
+                        (root.Q<VisualElement>(AlpineNativeUiConfig.RootName) != null ||
+                         root.Q<VisualElement>(AlpineNativeUiConfig.GarageTuningButtonName) != null))
                         return true;
                 }
 
-                foreach (var pauseMenu in Resources.FindObjectsOfTypeAll<PauseUIController>())
-                {
-                    VisualElement root = FindVisualRoot(pauseMenu);
-                    if (root != null && root.Q<VisualElement>(AlpineNativeUiConfig.RootName) != null)
-                        return true;
-                }
             }
             catch (Exception ex)
             {
-                MelonLogger.Warning($"Native UI attachment check skipped: {ex.Message}");
+                MelonLogger.Warning($"Native UI attachment check skipped: {ex.GetType().Name}");
             }
 
             return false;
@@ -265,1033 +718,4884 @@ namespace AlpineTuning
             return AttachToGarage(mod, controller);
         }
 
-        public static bool AttachToPause(AlpineTuningMod mod, PauseUIController controller)
-        {
-            return AttachToPauseMenu(mod, controller);
-        }
-
         private static bool AttachToGarage(AlpineTuningMod mod, VehicleSelectionUiController controller)
         {
             if (mod == null || controller == null)
                 return false;
 
             VisualElement menuRoot = FindVisualRoot(controller);
-            if (menuRoot == null || menuRoot.Q<VisualElement>(AlpineNativeUiConfig.RootName) != null)
+            if (menuRoot == null)
                 return false;
 
-            object nativeTabManager = SleddersGameBindings.GetFieldValue<object>(
-                controller,
-                AlpineNativeUiConfig.VehicleNativeTabManagerFieldName);
-
-            VisualElement tabsButtons;
-            VisualElement tabs;
-            if (!TryFindNativeTabContainers(nativeTabManager, out tabsButtons, out tabs))
+            int garageId = controller.GetInstanceID();
+            if (GarageSessions.TryGetValue(garageId, out GarageNativeSession existingSession))
             {
-                tabsButtons = menuRoot.Q<VisualElement>(AlpineNativeUiConfig.GarageTabsButtonsName);
-                tabs = menuRoot.Q<VisualElement>(AlpineNativeUiConfig.GarageTabsName);
+                if (!existingSession.IsDisposed &&
+                    ReferenceEquals(existingSession.Controller, controller) &&
+                    ReferenceEquals(existingSession.TemplateRoot, menuRoot))
+                    return false;
+
+                existingSession.Dispose();
+                GarageSessions.Remove(garageId);
+                GarageRenderActions.Remove(garageId);
+                GarageNativeCloseRequests.Remove(garageId);
             }
 
-            if (tabsButtons == null || tabs == null)
+            if (menuRoot.Q<VisualElement>(AlpineNativeUiConfig.RootName) != null ||
+                menuRoot.Q<VisualElement>(AlpineNativeUiConfig.GarageTuningButtonName) != null)
+                return false;
+
+            // The game's SUITuning action belongs to the selected sled, while its
+            // top tab row is only a sled-class filter. Alpine therefore attaches
+            // beside the selected-sled action instead of registering another class.
+            ControlIndicatorButton styleButton =
+                menuRoot.Q<ControlIndicatorButton>(AlpineNativeUiConfig.GarageStyleButtonName) ??
+                SleddersGameBindings.GetFieldValue<ControlIndicatorButton>(controller, "IGCKHAEFCKN");
+            ControlIndicatorButton nativeBackButton =
+                menuRoot.Q<ControlIndicatorButton>("SUIBack") ??
+                SleddersGameBindings.GetFieldValue<ControlIndicatorButton>(controller, "NLIHFELCHMJ");
+            ControlIndicatorButton readyButton =
+                menuRoot.Q<ControlIndicatorButton>("SUINetGameReady") ??
+                SleddersGameBindings.GetFieldValue<ControlIndicatorButton>(controller, "FDLDGBGFFDH");
+
+            // Do not commit a fallback control at the wrong hierarchy level while
+            // the native selected-sled action bar is still being constructed. The
+            // periodic attachment scan will retry once STYLE has a real parent.
+            if (styleButton == null || styleButton.parent == null)
+                return false;
+
+            VisualElement actionParent = styleButton.parent;
+            VisualElement controlInfo = menuRoot.Q<VisualElement>("ControlInfo") ?? actionParent;
+            if (!ReferenceEquals(controlInfo, actionParent))
+                controlInfo = actionParent;
+
+            VisualElement nativeVehicleList = menuRoot.Q<VisualElement>("VehicleListContainer");
+            VisualElement bottomDock = nativeVehicleList != null ? nativeVehicleList.parent : controlInfo.parent;
+            bool nativeHostResolved = nativeVehicleList != null &&
+                                      bottomDock != null &&
+                                      ReferenceEquals(controlInfo.parent, bottomDock);
+            if (!nativeHostResolved)
             {
-                return AttachInlineFallback(mod, controller, "Garage", menuRoot);
+                bottomDock = controlInfo != null ? controlInfo.parent : null;
+                MelonLogger.Warning(
+                    "Native garage rail host was not resolved; Alpine is using the transparent bottom-rail fallback.");
             }
 
-            Action render;
-            VisualElement surface = CreateTuningSurface(
-                mod,
-                controller,
-                "Garage",
-                AlpineUiSurfaceMode.GarageTab,
-                out render);
+            VisualElement selectionSidePanel = menuRoot.Q<VisualElement>("SelectionSidePanel");
+            VisualElement selectionSidePanelBody = selectionSidePanel != null
+                ? selectionSidePanel.Q<VisualElement>("CustomMenu") ?? selectionSidePanel
+                : null;
 
-            var tabPanel = new VisualElement { name = AlpineNativeUiConfig.GarageTabName };
-            tabPanel.Add(surface);
-            tabPanel.style.display = DisplayStyle.None;
-            tabPanel.style.flexGrow = 1;
-            tabPanel.style.flexShrink = 1;
-
-            var tabButton = new Button
+            string originalStyleText = styleButton.DisplayText;
+            styleButton.DisplayText = "STYLE";
+            var nativeTuningButton = new ControlIndicatorButton
             {
-                name = AlpineNativeUiConfig.GarageTabButtonName,
-                text = AlpineNativeUiConfig.ModTitle
+                name = AlpineNativeUiConfig.GarageTuningButtonName,
+                // Tertiary is the native spare action in ordinary garage use. The
+                // activation handler below suppresses it dynamically whenever the
+                // native Ready control is enabled.
+                ActionName = "Tertiary",
+                DisplayText = "TUNING",
+                focusable = true
+            };
+            CopyClasses(styleButton, nativeTuningButton);
+            Button tuningButton = nativeTuningButton;
+
+            var session = new GarageNativeSession(
+                controller,
+                menuRoot,
+                nativeVehicleList,
+                bottomDock,
+                controlInfo,
+                selectionSidePanelBody,
+                nativeHostResolved,
+                nativeBackButton,
+                styleButton,
+                readyButton)
+            {
+                EntryButton = nativeTuningButton,
+                StyleButton = styleButton,
+                OriginalStyleText = originalStyleText
             };
 
-            tabButton.focusable = false;
-            CopyClasses(LastButtonChild(tabsButtons), tabButton);
-
-            int insertIndex = Mathf.Min(tabsButtons.childCount, tabs.childCount);
-            tabsButtons.Insert(insertIndex, tabButton);
-            tabs.Insert(insertIndex, tabPanel);
-
-            if (TryRegisterNativeTab(nativeTabManager, tabPanel, tabButton, insertIndex, render, out int nativeIndex))
+            VisualElement surface = null;
+            Action render = null;
+            Action requestSurfaceClose = null;
+            Func<bool> requestNativeClose = null;
+            bool entryAvailable = mod.ResolveTargetSledContext(controller).HasSled;
+            tuningButton.SetEnabled(entryAvailable);
+            Action closeSurface = null;
+            closeSurface = () =>
             {
-                tabButton.clicked += () => SelectNativeTab(nativeTabManager, nativeIndex);
-            }
-            else
-            {
-                tabButton.clicked += () =>
+                if (surface == null || !session.IsOpen)
+                    return;
+
+                session.Close();
+                tuningButton.EnableInClassList("open", false);
+                menuRoot.schedule.Execute(() =>
                 {
-                    render();
-                    SelectTabWithoutNativeManager(tabs, tabsButtons, tabPanel, tabButton);
-                };
-            }
-
-            _attachedMenuCount++;
-            return true;
-        }
-
-        private static bool TryFindNativeTabContainers(
-            object nativeTabManager,
-            out VisualElement tabsButtons,
-            out VisualElement tabs)
-        {
-            tabsButtons = null;
-            tabs = null;
-
-            if (nativeTabManager == null)
-                return false;
+                    if (!session.IsOpen && !session.IsDisposed)
+                    {
+                        entryAvailable = mod.ResolveTargetSledContext(controller).HasSled;
+                        tuningButton.SetEnabled(entryAvailable);
+                    }
+                });
+            };
 
             try
             {
-                var nativePanels = SleddersGameBindings.GetFieldValue<List<VisualElement>>(
-                    nativeTabManager,
-                    AlpineNativeUiConfig.NativeTabPanelsFieldName);
+                surface = CreateGarageTuningSurface(
+                    mod,
+                    controller,
+                    session,
+                    closeSurface,
+                    readyButton,
+                    nativeBackButton,
+                    out render,
+                    out requestSurfaceClose,
+                    out requestNativeClose);
+                surface.style.display = DisplayStyle.None;
 
-                var nativeButtons = SleddersGameBindings.GetFieldValue<List<Button>>(
-                    nativeTabManager,
-                    AlpineNativeUiConfig.NativeTabButtonsFieldName);
-
-                if (nativePanels != null)
-                    tabs = nativePanels.LastOrDefault(p => p != null && p.parent != null)?.parent;
-
-                if (nativeButtons != null)
-                    tabsButtons = nativeButtons.LastOrDefault(b => b != null && b.parent != null)?.parent;
-
-                return tabsButtons != null && tabs != null;
+                int actionIndex = Mathf.Clamp(actionParent.IndexOf(styleButton) + 1, 0, actionParent.childCount);
+                actionParent.Insert(actionIndex, tuningButton);
+                session.Mount(surface);
             }
-            catch
+            catch (Exception ex)
             {
-                tabsButtons = null;
-                tabs = null;
+                session.Dispose();
+                styleButton.DisplayText = originalStyleText;
+                MelonLogger.Warning($"Native garage tuning surface could not attach: {ex.GetType().Name}");
                 return false;
             }
-        }
 
-        private static bool AttachToPauseMenu(AlpineTuningMod mod, PauseUIController controller)
-        {
-            if (mod == null || controller == null)
-                return false;
-
-            VisualElement menuRoot = FindVisualRoot(controller);
-            if (menuRoot == null || menuRoot.Q<VisualElement>(AlpineNativeUiConfig.RootName) != null)
-                return false;
-
-            Button anchor =
-                menuRoot.Q<Button>(AlpineNativeUiConfig.PauseSelectVehicleButtonName) ??
-                menuRoot.Q<Button>(AlpineNativeUiConfig.PauseOptionsButtonName) ??
-                FirstDescendant<Button>(menuRoot);
-
-            VisualElement parent = anchor != null && anchor.parent != null
-                ? anchor.parent
-                : menuRoot;
-
-            Action render;
-            VisualElement surface = CreateTuningSurface(
-                mod,
-                controller,
-                "Pause",
-                AlpineUiSurfaceMode.PauseInline,
-                out render);
-            surface.style.display = DisplayStyle.None;
-
-            var button = new Button
+            Action renderSurface = render;
+            render = () =>
             {
-                name = AlpineNativeUiConfig.PauseButtonName,
-                text = AlpineNativeUiConfig.ModTitle
+                entryAvailable = mod.ResolveTargetSledContext(controller).HasSled;
+                if (!session.IsOpen)
+                {
+                    tuningButton.SetEnabled(entryAvailable);
+                    return;
+                }
+
+                renderSurface?.Invoke();
             };
 
-            CopyClasses(anchor, button);
-            ApplyNativeAttachedButtonStyle(button);
-
-            int insertIndex = anchor != null ? parent.IndexOf(anchor) + 1 : parent.childCount;
-            insertIndex = Mathf.Clamp(insertIndex, 0, parent.childCount);
-
-            parent.Insert(insertIndex, button);
-            parent.Insert(insertIndex + 1, surface);
-
-            button.clicked += () =>
+            GarageSessions[garageId] = session;
+            GarageRenderActions[garageId] = render;
+            GarageNativeCloseRequests[garageId] = requestNativeClose;
+            menuRoot.RegisterCallback<DetachFromPanelEvent>(_ =>
             {
-                bool open = surface.style.display == DisplayStyle.None;
-                surface.style.display = open ? DisplayStyle.Flex : DisplayStyle.None;
-                button.EnableInClassList("open", open);
+                bool ownedRegisteredSession = false;
+                if (GarageSessions.TryGetValue(garageId, out GarageNativeSession registeredSession) &&
+                    ReferenceEquals(registeredSession, session))
+                {
+                    GarageSessions.Remove(garageId);
+                    ownedRegisteredSession = true;
+                }
+                if (GarageRenderActions.TryGetValue(garageId, out Action registered) && registered == render)
+                    GarageRenderActions.Remove(garageId);
+                if (GarageNativeCloseRequests.TryGetValue(garageId, out Func<bool> registeredClose) &&
+                    registeredClose == requestNativeClose)
+                {
+                    GarageNativeCloseRequests.Remove(garageId);
+                }
+                session.Dispose();
+                if (ownedRegisteredSession)
+                    mod.ForgetGarageSelection(controller);
+            });
 
+            Action toggleSurface = () =>
+            {
+                bool open = !session.IsOpen;
                 if (open)
-                    render();
+                {
+                    entryAvailable = mod.ResolveTargetSledContext(controller).HasSled;
+                    if (!entryAvailable)
+                    {
+                        tuningButton.SetEnabled(false);
+                        return;
+                    }
+
+                    tuningButton.EnableInClassList("open", true);
+                    try
+                    {
+                        session.Open();
+                        render?.Invoke();
+                    }
+                    catch (Exception ex)
+                    {
+                        MelonLogger.Warning($"Native garage tuning surface failed to open: {ex.GetType().Name}");
+                        session.Close();
+                        tuningButton.EnableInClassList("open", false);
+                    }
+                }
+                else
+                {
+                    requestSurfaceClose?.Invoke();
+                }
             };
 
-            _attachedMenuCount++;
+            // ControlIndicatorButton hides Button.clicked. Pointer/focus-submit
+            // activates the base event, whose constructor delegate then forwards to
+            // the derived event; Tertiary activates only the derived event. Defer the
+            // latter for one UI tick so a base activation can mark the frame first.
+            // This distinguishes focus-submit from the global shortcut without
+            // relying on private game state, and lets Ready win Tertiary dynamically.
+            int lastBaseActivationFrame = -1;
+            int lastIndicatorActivationFrame = -1;
+            ((Button)nativeTuningButton).clicked += () =>
+            {
+                lastBaseActivationFrame = Time.frameCount;
+                toggleSurface();
+            };
+            nativeTuningButton.clicked += () =>
+            {
+                int activationFrame = Time.frameCount;
+                if (lastIndicatorActivationFrame == activationFrame)
+                    return;
+
+                lastIndicatorActivationFrame = activationFrame;
+                nativeTuningButton.schedule.Execute(() =>
+                {
+                    if (lastBaseActivationFrame == activationFrame)
+                        return;
+
+                    // ControlIndicator gates input on enabledInHierarchy, not visual
+                    // display. If Ready can consume Tertiary, Alpine must not do so.
+                    if (readyButton != null && readyButton.enabledInHierarchy)
+                        return;
+
+                    toggleSurface();
+                });
+            };
+
             return true;
         }
 
-        private static bool AttachInlineFallback(AlpineTuningMod mod, object menuContext, string source, VisualElement parent)
-        {
-            if (mod == null || menuContext == null)
-                return false;
-
-            if (parent == null || parent.Q<VisualElement>(AlpineNativeUiConfig.RootName) != null)
-                return false;
-
-            Action render;
-            VisualElement surface = CreateTuningSurface(
-                mod,
-                menuContext,
-                source,
-                AlpineUiSurfaceMode.FallbackInline,
-                out render);
-            surface.style.display = DisplayStyle.None;
-
-            var button = new Button { text = AlpineNativeUiConfig.ModTitle };
-            Button nativeButton = FirstDescendant<Button>(parent);
-            CopyClasses(nativeButton, button);
-            ApplyNativeAttachedButtonStyle(button);
-
-            if (nativeButton == null)
-                ApplyFallbackAttachedButtonStyle(button);
-
-            button.clicked += () =>
-            {
-                bool open = surface.style.display == DisplayStyle.None;
-                surface.style.display = open ? DisplayStyle.Flex : DisplayStyle.None;
-
-                if (open)
-                    render();
-            };
-
-            parent.Add(button);
-            parent.Add(surface);
-            _attachedMenuCount++;
-            return true;
-        }
-
-        private static VisualElement CreateTuningSurface(
+        private static VisualElement CreateGarageTuningSurface(
             AlpineTuningMod mod,
-            object menuContext,
-            string source,
-            AlpineUiSurfaceMode mode,
-            out Action renderAction)
+            VehicleSelectionUiController controller,
+            GarageNativeSession session,
+            Action closeSurface,
+            ControlIndicatorButton readyButton,
+            ControlIndicatorButton actionClassAnchor,
+            out Action renderAction,
+            out Action requestSurfaceCloseAction,
+            out Func<bool> requestNativeCloseAction)
         {
-            var resolvedTarget = mod.ResolveTargetSledContext(menuContext);
-            var target = resolvedTarget.sled;
-            var working = target != null ? mod.CreateWorkingProfile(target) : null;
-            string activeTab = mode == AlpineUiSurfaceMode.PauseInline
-                ? AlpineNativeUiConfig.LibraryTabLabel
-                : AlpineNativeUiConfig.EngineTabLabel;
+            var resolvedTarget = mod.ResolveTargetSledContext(controller);
+            VehicleScriptableObject target = resolvedTarget.sled;
+            TuneProfile working = target != null ? mod.CreateWorkingProfile(target) : null;
+            TuneProfile installedReference = PreviewClone(mod, target, working);
+            var navigation = new List<GarageNavigationNode>
+            {
+                new GarageNavigationNode(NavigationRoot, "tuning", "Tuning")
+            };
+
             string librarySelectedProfileId = null;
             string pendingDeleteProfileId = null;
+            string pendingLoadProfileId = null;
             bool factoryResetArmed = false;
+            bool skipNavigationStateCapture = false;
+            bool hasUnsavedChanges = working != null && working.setupEdited;
+            bool exitPromptVisible = false;
+            bool saveInProgress = false;
+            bool closeGarageAfterPrompt = false;
+            bool clearBindingArmed = false;
+            int lastBackFrame = -1;
 
             var root = new VisualElement { name = AlpineNativeUiConfig.RootName };
-            var panel = new VisualElement { name = AlpineNativeUiConfig.PanelName };
-            var title = new Label();
-            var stats = new VisualElement();
-            var tabRow = new VisualElement();
-            var actionRow = new VisualElement();
-            var primaryActions = new VisualElement();
-            var dangerActions = new VisualElement();
-            var status = new Label();
-            var content = new ScrollView();
-            var tooltip = CreateTooltipOverlay();
-            var diagnostics = new Foldout
-            {
-                text = "Diagnostics",
-                value = false
-            };
-            var tabButtons = new Dictionary<string, Button>();
-            var scrollByTab = new Dictionary<string, Vector2>(StringComparer.OrdinalIgnoreCase);
-            Button testRideButton = null;
-            Button resetButton = null;
-            Button refreshSledButton = null;
-            string lastRenderedTab = activeTab;
-            string lastFocusedElementName = null;
-            bool hasRenderedOnce = false;
+            var chrome = new VisualElement { name = "AlpineGarageRailHeader" };
+            chrome.AddToClassList("tab-buttons");
+            chrome.AddToClassList("sledders-container");
+            chrome.AddToClassList("sledders-container-no-padding");
+            var breadcrumb = new Label { name = "AlpineBreadcrumb" };
+            var status = new Label { name = "AlpineGarageStatus" };
+            var rail = new SUIManagedList { name = "AlpineGarageHorizontalList" };
+            var detailHost = new VisualElement { name = "AlpineGarageDetailHost" };
+            var detailContent = new ScrollView(ScrollViewMode.Vertical) { name = "AlpineGarageDetailContent" };
 
-            ApplyRootStyle(root, mode);
-            ApplyPanelStyle(panel, mode);
-            ApplyTitleStyle(title);
-            ApplyStatRowStyle(stats);
-            ApplyTabRowStyle(tabRow);
-            ApplyActionRowStyle(actionRow, primaryActions, dangerActions);
-            ApplyStatusStyle(status);
-            ApplyContentStyle(content, mode);
-            ApplyDiagnosticsStyle(diagnostics);
+            ApplyNativeGarageChromeStyle(root, chrome, breadcrumb, status, rail, detailHost, detailContent);
+            chrome.Add(breadcrumb);
+            chrome.Add(status);
+            root.Add(chrome);
+            root.Add(rail);
+            detailHost.Add(detailContent);
+            session.DetailHost = detailHost;
 
             Action render = null;
             Action refreshChrome = null;
+            Action goBack = null;
+            Action requestBack = null;
+            Action refreshDyno = null;
+            Action closeDyno = null;
+            Action toggleDyno = null;
+            ScrollView dynoContent = null;
 
-            Action<string> setStatus = message =>
-            {
-                status.text = message ?? string.Empty;
-            };
-            setStatus(resolvedTarget.status);
+            Action<string> setStatus = message => SetGarageStatus(status, message);
+            setStatus(hasUnsavedChanges ? "Staged" : resolvedTarget.status);
 
             Action<TuneProfile> setWorking = profile =>
             {
                 working = profile;
                 pendingDeleteProfileId = null;
+                pendingLoadProfileId = null;
                 factoryResetArmed = false;
+                if (working != null && target != null)
+                    mod.PreviewProfile(working, target);
+                hasUnsavedChanges = true;
+                setStatus("Staged");
+                refreshDyno?.Invoke();
             };
 
             Action setupChanged = () =>
             {
-                if (target == null || working == null)
+                if (working == null || target == null)
                     return;
 
+                mod.PreviewProfile(working, target);
+                hasUnsavedChanges = true;
                 factoryResetArmed = false;
                 pendingDeleteProfileId = null;
-                string message;
-                mod.UpdateCurrentSetup(working, target, out message);
+                pendingLoadProfileId = null;
+                setStatus("Staged");
+                refreshDyno?.Invoke();
+            };
+
+            refreshDyno = () =>
+            {
+                if (session.DynoOverlay == null || session.DynoOverlay.panel == null)
+                    return;
+                PopulateGarageDyno(mod, target, working, dynoContent);
+            };
+
+            closeDyno = () =>
+            {
+                session.DynoOverlay?.RemoveFromHierarchy();
+                session.DynoOverlay = null;
+                dynoContent = null;
+            };
+
+            toggleDyno = () =>
+            {
+                if (session.DynoOverlay == null)
+                {
+                    session.DynoOverlay = CreateGarageDynoOverlay(
+                        session.TemplateRoot,
+                        () =>
+                        {
+                            closeDyno?.Invoke();
+                        },
+                        out dynoContent);
+                    refreshDyno();
+                }
+                else
+                {
+                    closeDyno?.Invoke();
+                }
+            };
+
+            Func<bool> saveSetup = () =>
+            {
+                if (target == null || working == null)
+                    return false;
+
+                if (saveInProgress)
+                {
+                    setStatus("Saving");
+                    return false;
+                }
+
+                if (!hasUnsavedChanges)
+                {
+                    setStatus("Saved");
+                    return true;
+                }
+
+                saveInProgress = true;
+                try
+                {
+                    factoryResetArmed = false;
+                    pendingDeleteProfileId = null;
+                    pendingLoadProfileId = null;
+                    string message;
+                    bool saved = mod.SaveCurrentSetupAsSlot(working, target, out message);
+                    if (!saved)
+                    {
+                        if (string.IsNullOrWhiteSpace(message))
+                            message = AlpineNativeUiConfig.ApplyFailedText;
+                        setStatus(message);
+                        return false;
+                    }
+
+                    // Persistence succeeds before the native recreation path runs.
+                    // From this point the draft is clean even if recreation fails.
+                    hasUnsavedChanges = false;
+                    working.setupEdited = false;
+                    installedReference = PreviewClone(mod, target, working);
+                    if (mod.HasRuntimeInstanceForSled(target))
+                    {
+                        string reloadStatus;
+                        bool reloaded = mod.ReloadSled(out reloadStatus);
+                        message = reloaded
+                            ? "Saved"
+                            : (string.IsNullOrWhiteSpace(reloadStatus)
+                                ? "Setup saved, but the sled could not be reloaded."
+                                : "Setup saved. " + reloadStatus);
+                    }
+                    else
+                    {
+                        message = "Saved · Next ride";
+                    }
+
+                    if (string.IsNullOrWhiteSpace(message))
+                        message = AlpineNativeUiConfig.ApplyFailedText;
+                    setStatus(message);
+                    refreshChrome?.Invoke();
+                    refreshDyno?.Invoke();
+                    return true;
+                }
+                finally
+                {
+                    saveInProgress = false;
+                }
+            };
+
+            Func<bool> saveAsNewSetup = () =>
+            {
+                if (target == null || working == null || saveInProgress)
+                    return false;
+
+                saveInProgress = true;
+                try
+                {
+                    factoryResetArmed = false;
+                    pendingDeleteProfileId = null;
+                    pendingLoadProfileId = null;
+                    string message;
+                    if (!mod.SaveCurrentSetupAsNewSlot(working, target, out message))
+                    {
+                        setStatus(string.IsNullOrWhiteSpace(message) ? AlpineNativeUiConfig.SaveFailedText : message);
+                        return false;
+                    }
+
+                    hasUnsavedChanges = false;
+                    working.setupEdited = false;
+                    installedReference = PreviewClone(mod, target, working);
+                    if (mod.HasRuntimeInstanceForSled(target))
+                    {
+                        string reloadStatus;
+                        if (!mod.ReloadSled(out reloadStatus) && !string.IsNullOrWhiteSpace(reloadStatus))
+                            message = reloadStatus;
+                    }
+                    setStatus(string.IsNullOrWhiteSpace(message) ? "Saved as new" : message);
+                    refreshChrome?.Invoke();
+                    refreshDyno?.Invoke();
+                    return true;
+                }
+                finally
+                {
+                    saveInProgress = false;
+                }
+            };
+
+            Action<TuneProfile, string, bool> acceptLoadedSetup = (equipped, successStatus, persisted) =>
+            {
+                if (equipped == null)
+                    return;
+
+                working = equipped;
+                working.setupEdited = !persisted;
+                hasUnsavedChanges = !persisted;
+                exitPromptVisible = false;
+                pendingDeleteProfileId = null;
+                pendingLoadProfileId = null;
+                factoryResetArmed = false;
+                mod.PreviewProfile(working, target);
+                installedReference = PreviewClone(mod, target, working);
+
+                string message = successStatus;
+                if (mod.HasRuntimeInstanceForSled(target) && working.requiresReload)
+                {
+                    string reloadStatus;
+                    if (!mod.ReloadSled(out reloadStatus))
+                    {
+                        message = string.IsNullOrWhiteSpace(reloadStatus)
+                            ? "Loaded · Reload failed"
+                            : reloadStatus;
+                    }
+                }
+                else if (!mod.HasRuntimeInstanceForSled(target))
+                {
+                    message += " · Next ride";
+                }
+
                 setStatus(message);
                 refreshChrome?.Invoke();
+                refreshDyno?.Invoke();
+            };
+
+            Func<TuneProfile, bool> loadSetupSlot = profile =>
+            {
+                TuneProfile equipped;
+                string message;
+                bool loaded = mod.EquipSetupSlot(profile, target, out equipped, out message);
+                if (equipped != null)
+                    acceptLoadedSetup(equipped, loaded ? "Loaded" : message, loaded);
+                else
+                    setStatus(string.IsNullOrWhiteSpace(message) ? "Load failed" : message);
+                return loaded;
+            };
+
+            Func<TuneProfile, bool> setDefaultSetupSlot = profile =>
+            {
+                TuneProfile equipped;
+                string message;
+                bool saved = mod.SetDefaultSetup(profile, target, out equipped, out message);
+                if (equipped != null)
+                    acceptLoadedSetup(equipped, saved ? "Default set" : message, saved);
+                else
+                    setStatus(string.IsNullOrWhiteSpace(message) ? "Default failed" : message);
+                return saved;
+            };
+
+            Action captureCurrentState = () =>
+            {
+                if (navigation.Count == 0)
+                    return;
+
+                GarageNavigationNode current = navigation[navigation.Count - 1];
+                string focusedName = GarageFocusedElementName(root, detailHost, session);
+                if (!string.IsNullOrWhiteSpace(focusedName))
+                    current.FocusedElementName = focusedName;
+                current.ScrollOffset = rail.scrollOffset;
+                current.DetailScrollOffset = detailContent.scrollOffset;
             };
 
             Action refreshTarget = () =>
             {
-                var refreshed = mod.ResolveTargetSledContext(menuContext);
+                var refreshed = mod.ResolveTargetSledContext(controller);
                 string previousKey = SledIdentity.StableIdentityKey(target);
                 string nextKey = refreshed.identity != null ? refreshed.identity.StableKey : null;
 
                 resolvedTarget = refreshed;
-                if (refreshed.sled == null && target != null)
+                if (refreshed.sled == null)
                 {
+                    closeDyno?.Invoke();
+                    CancelHeadlightCaptureIfActive(mod);
+                    if (hasUnsavedChanges && target != null && working != null)
+                    {
+                        setStatus("The native sled selection is temporarily unavailable. This unsaved draft is still preserved.");
+                        return;
+                    }
+
                     target = null;
                     working = null;
-                    pendingDeleteProfileId = null;
-                    factoryResetArmed = false;
+                    installedReference = null;
+                    hasUnsavedChanges = false;
+                    exitPromptVisible = false;
+                    navigation.Clear();
+                    navigation.Add(new GarageNavigationNode(NavigationRoot, "tuning", "Tuning"));
                     setStatus(refreshed.status);
                     return;
                 }
 
-                if (refreshed.sled != null &&
+                if (working != null && hasUnsavedChanges &&
                     !string.Equals(previousKey, nextKey, StringComparison.OrdinalIgnoreCase))
                 {
+                    closeDyno?.Invoke();
+                    // The hidden native sled list should normally prevent this. If a
+                    // rebuild notification races the garage, keep the draft bound to
+                    // its original sled instead of silently applying it to another one.
+                    setStatus("The selected sled changed while this setup has unsaved changes. Save or discard it before switching.");
+                    return;
+                }
+
+                if (working == null || !string.Equals(previousKey, nextKey, StringComparison.OrdinalIgnoreCase))
+                {
+                    closeDyno?.Invoke();
                     target = refreshed.sled;
                     working = mod.CreateWorkingProfile(target);
+                    installedReference = PreviewClone(mod, target, working);
+                    navigation.Clear();
+                    navigation.Add(new GarageNavigationNode(NavigationRoot, "tuning", "Tuning"));
+                    librarySelectedProfileId = null;
                     pendingDeleteProfileId = null;
+                    pendingLoadProfileId = null;
                     factoryResetArmed = false;
+                    hasUnsavedChanges = false;
+                    exitPromptVisible = false;
                     setStatus(refreshed.status);
+                }
+                else
+                {
+                    target = refreshed.sled;
                 }
             };
 
-            Action<string> renderWithReason = null;
-            render = () => renderWithReason?.Invoke("requested");
-            renderWithReason = reason =>
+            Action<string, string, string> navigate = (kind, id, title) =>
             {
-                string previousRenderedTab = lastRenderedTab;
-                Vector2 previousScroll = content.scrollOffset;
-                if (!string.IsNullOrWhiteSpace(previousRenderedTab))
-                    scrollByTab[previousRenderedTab] = previousScroll;
+                captureCurrentState();
+                navigation.Add(new GarageNavigationNode(kind, id, title));
+                pendingDeleteProfileId = null;
+                pendingLoadProfileId = null;
+                factoryResetArmed = false;
+                clearBindingArmed = false;
+                skipNavigationStateCapture = true;
+                render?.Invoke();
+            };
 
-                lastFocusedElementName = FocusedElementName(root);
+            Action<string, string> selectPart = (partCategory, partId) =>
+            {
+                if (working == null || string.IsNullOrWhiteSpace(partCategory) || string.IsNullOrWhiteSpace(partId))
+                    return;
+
+                string previousPartId = working.GetPartId(partCategory);
+                if (string.Equals(previousPartId, partId, StringComparison.OrdinalIgnoreCase))
+                {
+                    setStatus("Selected");
+                    return;
+                }
+
+                captureCurrentState();
+                working.SetPartId(partCategory, partId);
+                setupChanged();
+                skipNavigationStateCapture = true;
+                render?.Invoke();
+            };
+
+            goBack = () =>
+            {
+                if (session.DynoOverlay != null)
+                {
+                    toggleDyno?.Invoke();
+                    return;
+                }
+
+                pendingDeleteProfileId = null;
+                pendingLoadProfileId = null;
+                factoryResetArmed = false;
+                if (exitPromptVisible)
+                {
+                    exitPromptVisible = false;
+                    closeGarageAfterPrompt = false;
+                    skipNavigationStateCapture = true;
+                    render?.Invoke();
+                    return;
+                }
+
+                if (navigation.Count > 1)
+                {
+                    navigation.RemoveAt(navigation.Count - 1);
+                    skipNavigationStateCapture = true;
+                    render?.Invoke();
+                }
+                else if (hasUnsavedChanges)
+                {
+                    captureCurrentState();
+                    closeGarageAfterPrompt = false;
+                    exitPromptVisible = true;
+                    skipNavigationStateCapture = true;
+                    render?.Invoke();
+                }
+                else
+                {
+                    captureCurrentState();
+                    closeSurface?.Invoke();
+                }
+            };
+
+            requestBack = () =>
+            {
+                // Cancel, NavigationCancel and Escape may all be raised for one
+                // physical press. One frame is one navigation pop.
+                if (lastBackFrame == Time.frameCount)
+                    return;
+
+                lastBackFrame = Time.frameCount;
+                if (mod.IsCapturingHeadlightBinding ||
+                    mod.WasHeadlightBindingCancelHandledThisFrame)
+                {
+                    if (mod.IsCapturingHeadlightBinding)
+                        mod.CancelHeadlightBindingCapture();
+                    mod.ConsumeHeadlightBindingCaptureResult();
+                    setStatus("Binding cancelled");
+                    skipNavigationStateCapture = true;
+                    render?.Invoke();
+                    return;
+                }
+                if (clearBindingArmed)
+                {
+                    clearBindingArmed = false;
+                    setStatus("Clear cancelled");
+                    skipNavigationStateCapture = true;
+                    render?.Invoke();
+                    return;
+                }
+                goBack();
+            };
+
+            render = () =>
+            {
+                if (!session.IsOpen || session.IsDisposed)
+                    return;
+
+                session.ReassertOpenOwnership();
+
+                if (!skipNavigationStateCapture)
+                    captureCurrentState();
+                skipNavigationStateCapture = false;
+
                 refreshTarget();
-
-                ApplyRootStyle(root, mode);
-                ApplyPanelStyle(panel, mode);
-                ApplyTitleStyle(title);
-                ApplyStatRowStyle(stats);
-                ApplyTabRowStyle(tabRow);
-                ApplyActionRowStyle(actionRow, primaryActions, dangerActions);
-                ApplyStatusStyle(status);
-                ApplyContentStyle(content, mode);
-                ApplyDiagnosticsStyle(diagnostics);
-                ApplyTabButtonStates(tabButtons, activeTab);
-
-                content.Clear();
-                stats.Clear();
-                diagnostics.Clear();
+                if (exitPromptVisible || factoryResetArmed || clearBindingArmed ||
+                    !string.IsNullOrWhiteSpace(pendingDeleteProfileId) ||
+                    !string.IsNullOrWhiteSpace(pendingLoadProfileId) ||
+                    mod.IsCapturingHeadlightBinding)
+                {
+                    closeDyno?.Invoke();
+                }
+                rail.Clear();
+                detailContent.Clear();
 
                 if (target == null || working == null)
                 {
-                    if (testRideButton != null)
-                        testRideButton.SetEnabled(false);
+                    breadcrumb.text = "TUNING";
+                    setStatus(resolvedTarget.status);
+                    Button unavailable = GarageTile(
+                        "SELECT A SLED",
+                        "Alpine tunes the sled selected by the native garage.",
+                        false,
+                        null,
+                        "action.unavailable");
+                    unavailable.SetEnabled(false);
+                    rail.Add(unavailable);
+                    session.ShowDetails(false);
+                    session.SetContextActions(
+                        "Back", requestBack,
+                        null, null,
+                        null, null,
+                        actionClassAnchor, readyButton);
+                    RestoreNativeGarageNavigationState(
+                        controller, session, root, detailHost, rail, detailContent,
+                        navigation.Count > 0 ? navigation[navigation.Count - 1] : null,
+                        Array.Empty<Button>());
+                    return;
+                }
 
-                    if (resetButton != null)
-                        resetButton.SetEnabled(false);
+                GarageNavigationNode current = navigation[navigation.Count - 1];
+                if (exitPromptVisible)
+                {
+                    closeDyno?.Invoke();
+                    breadcrumb.text = "TUNING  >  UNSAVED CHANGES";
+                    var promptButtons = new List<Button>();
+                    Action continueTuning = () =>
+                    {
+                        exitPromptVisible = false;
+                        closeGarageAfterPrompt = false;
+                        skipNavigationStateCapture = true;
+                        render?.Invoke();
+                    };
+                    Action saveAndExit = () =>
+                    {
+                        if (!saveSetup())
+                        {
+                            render?.Invoke();
+                            return;
+                        }
 
-                    if (refreshSledButton != null)
-                        refreshSledButton.style.display = DisplayStyle.Flex;
+                        exitPromptVisible = false;
+                        bool closeNativeGarage = closeGarageAfterPrompt;
+                        closeGarageAfterPrompt = false;
+                        closeSurface?.Invoke();
+                        if (closeNativeGarage)
+                            controller.Close();
+                    };
+                    Action exitWithoutSaving = () =>
+                    {
+                        // The surface and its closures survive while the native
+                        // garage remains open. Recreate the draft now so discarded
+                        // choices cannot reappear (or be saved by a later edit) when
+                        // TUNING is opened again.
+                        try
+                        {
+                            working = target != null ? mod.CreateWorkingProfile(target) : null;
+                            installedReference = PreviewClone(mod, target, working);
+                        }
+                        catch (Exception ex)
+                        {
+                            working = null;
+                            MelonLogger.Warning($"Discarded garage draft could not be reloaded immediately: {ex.GetType().Name}");
+                        }
+                        librarySelectedProfileId = null;
+                        pendingDeleteProfileId = null;
+                        pendingLoadProfileId = null;
+                        factoryResetArmed = false;
+                        navigation.Clear();
+                        navigation.Add(new GarageNavigationNode(NavigationRoot, "tuning", "Tuning"));
+                        skipNavigationStateCapture = true;
+                        hasUnsavedChanges = false;
+                        exitPromptVisible = false;
+                        bool closeNativeGarage = closeGarageAfterPrompt;
+                        closeGarageAfterPrompt = false;
+                        closeSurface?.Invoke();
+                        if (closeNativeGarage)
+                            controller.Close();
+                    };
 
-                    title.text = AlpineNativeUiConfig.ModTitle;
-                    content.Add(new Label("Select a sled to edit its setup."));
-                    diagnostics.Add(MutedLabel($"Source: {source}"));
-                    RestoreUiState(root, content, scrollByTab, activeTab, lastFocusedElementName);
-                    LogUiRefresh(reason, target, activeTab);
-                    hasRenderedOnce = true;
-                    lastRenderedTab = activeTab;
+                    Button saveTile = GarageTile(
+                        "SAVE AND EXIT",
+                        "Install this setup, reload the live sled when present, and close tuning.",
+                        false,
+                        saveAndExit,
+                        "action.save");
+                    saveTile.name = "AlpineExit-Save";
+                    rail.Add(saveTile);
+                    promptButtons.Add(saveTile);
+
+                    Button continueTile = GarageTile(
+                        "CONTINUE TUNING",
+                        "Return to the setup without saving or discarding it.",
+                        true,
+                        continueTuning,
+                        "action.continue");
+                    continueTile.name = "AlpineExit-Continue";
+                    rail.Add(continueTile);
+                    promptButtons.Add(continueTile);
+
+                    Button discardTile = GarageTile(
+                        "EXIT WITHOUT SAVING",
+                        "Discard the draft and keep the installed setup.",
+                        false,
+                        exitWithoutSaving,
+                        "action.discard");
+                    discardTile.name = "AlpineExit-Discard";
+                    rail.Add(discardTile);
+                    promptButtons.Add(discardTile);
+
+                    var prompt = Section("Unsaved Changes");
+                    prompt.Add(MutedLabel("Save, keep editing, or discard."));
+                    detailContent.Add(prompt);
+                    session.ShowDetails(true);
+                    session.SetContextActions(
+                        "Continue", continueTuning,
+                        "Save & Exit", saveAndExit,
+                        "Exit Without Saving", exitWithoutSaving,
+                        actionClassAnchor, readyButton);
+                    RestoreNativeGarageNavigationState(
+                        controller, session, root, detailHost, rail, detailContent,
+                        current, promptButtons);
                     return;
                 }
 
                 mod.PreviewProfile(working, target);
-                UpdateSummary(mod, title, stats, diagnostics, source, resolvedTarget, target, working);
+                breadcrumb.text = string.Join("  >  ", navigation.Select(node => node.Title.ToUpperInvariant()).ToArray());
 
-                if (testRideButton != null)
-                {
-                    testRideButton.SetEnabled(true);
-                }
-
-                if (resetButton != null)
-                    resetButton.SetEnabled(true);
-
-                if (refreshSledButton != null)
-                    refreshSledButton.style.display = ShouldShowRefreshSledButton(target, activeTab)
-                        ? DisplayStyle.Flex
-                        : DisplayStyle.None;
-
+                var tileButtons = new List<Button>();
+                // Alpine owns the native information card for every tuning node.
+                // Restoring the native card inside a category lets Sledders redraw
+                // unrelated vehicle information over the tuning context.
+                bool showDetails = true;
                 try
                 {
-                    switch (activeTab)
+                    switch (current.Kind)
                     {
-                        case AlpineNativeUiConfig.EngineTabLabel:
-                            BuildEngineTab(mod, content, target, working, render, setupChanged);
+                        case NavigationCategory:
+                            BuildGarageCategory(
+                                mod, rail, detailContent, target, working, installedReference,
+                                current.Id, navigate, tileButtons);
                             break;
 
-                        case AlpineNativeUiConfig.ClutchTabLabel:
-                            BuildClutchTab(mod, content, target, working, render, setupChanged);
+                        case NavigationPart:
+                            if (string.Equals(current.Id, "engine.donor", StringComparison.OrdinalIgnoreCase))
+                            {
+                                BuildGarageEnginePicker(
+                                    mod, rail, target, working, installedReference, setupChanged, render,
+                                    setStatus, tileButtons, detailContent);
+                            }
+                            else
+                            {
+                                BuildGaragePartPicker(
+                                    mod, rail, target, working, installedReference, current.Id, selectPart, setupChanged,
+                                    render, setStatus, tileButtons, detailContent);
+                            }
                             break;
 
-                        case AlpineNativeUiConfig.SetupTabLabel:
-                        case AlpineNativeUiConfig.FineTuneTabLabel:
-                            BuildSetupTab(mod, content, target, working, render, setStatus, setupChanged);
-                            break;
-
-                        case AlpineNativeUiConfig.LightsTabLabel:
-                            BuildLightsTab(mod, content, target, working, render, setupChanged, setStatus);
-                            break;
-
-                        case AlpineNativeUiConfig.PerformanceTabLabel:
-                            BuildPerformanceTab(mod, content, target, working, render, setStatus);
-                            break;
-
-                        case AlpineNativeUiConfig.LibraryTabLabel:
-                            BuildLibraryTab(mod, content, target, working, setWorking, render, setStatus, setupChanged,
+                        case NavigationPanel:
+                            BuildGarageFocusedPanel(
+                                mod,
+                                detailContent,
+                                target,
+                                working,
+                                current.Id,
+                                setWorking,
+                                render,
+                                setupChanged,
+                                setStatus,
+                                saveAsNewSetup,
+                                () => hasUnsavedChanges,
+                                loadSetupSlot,
+                                setDefaultSetupSlot,
                                 () => librarySelectedProfileId,
                                 id => librarySelectedProfileId = id,
                                 () => pendingDeleteProfileId,
                                 id => pendingDeleteProfileId = id,
+                                () => pendingLoadProfileId,
+                                value => pendingLoadProfileId = value,
                                 () => factoryResetArmed,
-                                value => factoryResetArmed = value);
+                                value => factoryResetArmed = value,
+                                tileButtons,
+                                rail,
+                                navigate,
+                                () => clearBindingArmed,
+                                value => clearBindingArmed = value,
+                                closeDyno);
                             break;
 
-                        case AlpineNativeUiConfig.ShareTabLabel:
-                            BuildShareTab(mod, content, target, working, render, setStatus);
-                            break;
-
-                        case AlpineNativeUiConfig.GuideTabLabel:
-                            BuildGuideTab(mod, content);
-                            break;
-
-                        case AlpineNativeUiConfig.UiSettingsTabLabel:
-                            BuildUiSettingsTab(mod, content, render, setStatus);
-                            break;
-
-                        case AlpineNativeUiConfig.TrackTabLabel:
+                        case NavigationRoot:
                         default:
-                            BuildTrackTab(mod, content, target, working, render, setupChanged);
+                            BuildGarageRoot(rail, navigate, tileButtons);
+                            BuildGarageLandingSummary(mod, detailContent, target, working);
                             break;
                     }
                 }
                 catch (Exception ex)
                 {
-                    MelonLogger.Warning($"Alpine tab '{activeTab}' render skipped: {ex.Message}");
-                    content.Clear();
-                    var card = Card(false);
-                    card.Add(CardTitle($"{activeTab} unavailable"));
-                    card.Add(MutedLabel("This tab hit a Sledders UI binding error. Other tabs remain available."));
-                    content.Add(card);
-                    setStatus("One tab could not render.");
+                    closeDyno?.Invoke();
+                    MelonLogger.Warning($"Garage tuning node '{current.Id}' render skipped: {ex.GetType().Name}");
+                    rail.Clear();
+                    detailContent.Clear();
+                    Button unavailable = GarageTile(
+                        "PANEL UNAVAILABLE",
+                        "This view could not be rendered. Back remains available.",
+                        false,
+                        null,
+                        "action.unavailable");
+                    unavailable.name = "AlpinePanel-Unavailable";
+                    unavailable.SetEnabled(false);
+                    rail.Add(unavailable);
+                    detailContent.Add(MutedLabel("This view is unavailable. Use Back."));
+                    showDetails = true;
+                    setStatus("Unavailable");
                 }
 
-                RestoreUiState(root, content, scrollByTab, activeTab, lastFocusedElementName);
-                if (hasRenderedOnce)
-                    LogUiRefresh(reason, target, activeTab);
-                hasRenderedOnce = true;
-                lastRenderedTab = activeTab;
+                session.ShowDetails(showDetails);
+                refreshDyno?.Invoke();
+                if (clearBindingArmed)
+                {
+                    session.SetContextActions(
+                        "Cancel Clear", requestBack,
+                        null, null,
+                        null, null,
+                        actionClassAnchor,
+                        readyButton);
+                }
+                else
+                {
+                    BuildNativeGarageContextActions(
+                        mod,
+                        session,
+                        target,
+                        working,
+                        current,
+                        navigation.Count,
+                        requestBack,
+                        saveSetup,
+                        setupChanged,
+                        render,
+                        setStatus,
+                        actionClassAnchor,
+                        readyButton,
+                        toggleDyno,
+                        session.DynoOverlay != null);
+                }
+                RestoreNativeGarageNavigationState(
+                    controller, session, root, detailHost, rail, detailContent,
+                    current, tileButtons);
             };
 
             refreshChrome = () =>
             {
                 if (target == null || working == null)
                     return;
-
                 try
                 {
                     mod.PreviewProfile(working, target);
-                    UpdateSummary(mod, title, stats, diagnostics, source, resolvedTarget, target, working);
                 }
                 catch (Exception ex)
                 {
-                    MelonLogger.Warning($"Garage summary update skipped: {ex.Message}");
+                    MelonLogger.Warning($"Garage tuning preview refresh skipped: {ex.GetType().Name}");
                 }
             };
 
-            foreach (string tab in RuntimeTabLabels(mode))
+            root.RegisterCallback<FocusInEvent>(evt =>
             {
-                string captured = tab;
-                Button tabButton = TabButton(captured, () =>
-                {
-                    pendingDeleteProfileId = null;
-                    factoryResetArmed = false;
-                    activeTab = captured;
-                    renderWithReason?.Invoke("tab changed");
-                });
-                tabButtons[captured] = tabButton;
-                tabRow.Add(tabButton);
-            }
-
-            testRideButton = PrimaryButton("Test Ride", () =>
-            {
-                if (target == null || working == null)
+                if (!session.IsOpen)
                     return;
-
-                factoryResetArmed = false;
-                pendingDeleteProfileId = null;
-                setupChanged();
-                if (mod.HasRuntimeInstanceForSled(target))
-                {
-                    mod.ReloadSled();
-                    setStatus("Setup ready for test ride.");
-                }
-                else
-                {
-                    setStatus("Setup ready for your next ride.");
-                }
-                renderWithReason?.Invoke("test ride");
+                VisualElement focused = evt.target as VisualElement;
+                if (focused != null && IsDescendantOf(focused, rail.contentContainer))
+                    CenterNativeGarageTile(controller, rail, focused);
             });
-            primaryActions.Add(testRideButton);
-
-            primaryActions.Add(SmallButton("Save Setup", () =>
+            detailHost.RegisterCallback<FocusInEvent>(evt =>
             {
-                if (target == null || working == null)
+                if (!session.IsOpen)
                     return;
-
-                factoryResetArmed = false;
-                pendingDeleteProfileId = null;
-
-                string message;
-                setStatus(mod.SaveCurrentSetupAsSlot(working, target, out message)
-                    ? message
-                    : (string.IsNullOrWhiteSpace(message) ? AlpineNativeUiConfig.SaveFailedText : message));
-                renderWithReason?.Invoke("setup saved");
-            }));
-
-            primaryActions.Add(SmallButton("Set Default", () =>
-            {
-                if (target == null || working == null)
+                VisualElement focused = evt.target as VisualElement;
+                if (focused == null || !IsDescendantOf(focused, detailContent.contentContainer))
                     return;
-
-                factoryResetArmed = false;
-                pendingDeleteProfileId = null;
-
-                string message;
-                setStatus(mod.SaveCurrentSetupAsDefault(working, target, out message)
-                    ? message
-                    : (string.IsNullOrWhiteSpace(message) ? "Default setup save failed." : message));
-                renderWithReason?.Invoke("default setup saved");
-            }));
-
-            primaryActions.Add(SmallButton("Setup Slots", () =>
-            {
-                pendingDeleteProfileId = null;
-                factoryResetArmed = false;
-                activeTab = AlpineNativeUiConfig.LibraryTabLabel;
-                renderWithReason?.Invoke("setup slots opened");
-            }));
-
-            resetButton = DangerButton("Reset", () =>
-            {
-                if (target == null)
-                    return;
-
-                pendingDeleteProfileId = null;
-
-                if (!factoryResetArmed)
+                detailHost.schedule.Execute(() =>
                 {
-                    factoryResetArmed = true;
-                    setStatus("Press Reset again to return this sled to stock.");
-                    renderWithReason?.Invoke("reset armed");
-                    return;
-                }
-
-                factoryResetArmed = false;
-                if (mod.ResetToFactory(target, false))
-                {
-                    working = mod.CreateWorkingProfile(target);
-                    setStatus(AlpineNativeUiConfig.FactoryDefaultsRestoredText);
-                }
-                else
-                {
-                    setStatus(AlpineNativeUiConfig.ResetFailedText);
-                }
-
-                renderWithReason?.Invoke("reset completed");
-            });
-            dangerActions.Add(resetButton);
-
-            if (AlpineNativeUiConfig.ShowRefreshSledButton)
-            {
-                refreshSledButton = SmallButton(AlpineNativeUiConfig.RefreshSledLabel, () =>
-                {
-                    factoryResetArmed = false;
-                    pendingDeleteProfileId = null;
-                    resolvedTarget = mod.ResolveTargetSledContext(menuContext);
-                    target = resolvedTarget.sled;
-                    working = target != null ? mod.CreateWorkingProfile(target) : null;
-                    setStatus(AlpineNativeUiConfig.RefreshedSledText);
-                    renderWithReason?.Invoke("selected sled refreshed");
+                    if (session.IsOpen && focused.panel == detailHost.panel)
+                        detailContent.ScrollTo(focused);
                 });
-                primaryActions.Add(refreshSledButton);
-            }
-            actionRow.Add(primaryActions);
-            actionRow.Add(dangerActions);
-
-            panel.Add(title);
-            if (mode == AlpineUiSurfaceMode.GarageTab)
-                panel.Add(stats);
-            panel.Add(tabRow);
-            panel.Add(actionRow);
-            panel.Add(status);
-            panel.Add(content);
-
-            if (mode == AlpineUiSurfaceMode.GarageTab)
-                panel.Add(diagnostics);
-
-            root.Add(panel);
-
-            // Tooltip must be an overlay sibling, not part of the panel's flex layout.
-            // If this is added to panel/content as a normal child, it will resize the menu
-            // and move hovered controls, causing tooltip flicker.
-            root.Add(tooltip);
-            AttachTooltipFeedback(root, tooltip);
-            root.schedule.Execute(() =>
-            {
-                if (root.panel != null)
-                    renderWithReason("panel opened");
             });
 
-            if (menuContext is VehicleSelectionUiController garageController)
-            {
-                int garageId = garageController.GetInstanceID();
-                GarageRenderActions[garageId] = render;
-                root.RegisterCallback<DetachFromPanelEvent>(_ =>
-                {
-                    if (GarageRenderActions.TryGetValue(garageId, out var registered) &&
-                        registered == render)
-                    {
-                        GarageRenderActions.Remove(garageId);
-                    }
-                });
-            }
+            RegisterGarageBackHandlers(root, session, requestBack);
+            RegisterGarageBackHandlers(detailHost, session, requestBack);
+            RegisterGarageBackHandlers(session.ControlInfo, session, requestBack);
 
             renderAction = render;
+            requestSurfaceCloseAction = () =>
+            {
+                if (!session.IsOpen)
+                    return;
+                if (CancelHeadlightCaptureIfActive(mod))
+                    setStatus("Binding cancelled");
+                if (!hasUnsavedChanges)
+                {
+                    closeSurface?.Invoke();
+                    return;
+                }
+
+                captureCurrentState();
+                closeGarageAfterPrompt = false;
+                exitPromptVisible = true;
+                skipNavigationStateCapture = true;
+                render?.Invoke();
+            };
+            requestNativeCloseAction = () =>
+            {
+                if (CancelHeadlightCaptureIfActive(mod))
+                    setStatus("Binding cancelled");
+                if (!session.IsOpen || !hasUnsavedChanges)
+                {
+                    // A native Close raised synchronously during Save/reload has
+                    // already consumed the pending continuation. Clearing this
+                    // prevents Save & Exit from issuing a second native Close.
+                    closeGarageAfterPrompt = false;
+                    closeSurface?.Invoke();
+                    return true;
+                }
+
+                captureCurrentState();
+                closeGarageAfterPrompt = true;
+                exitPromptVisible = true;
+                skipNavigationStateCapture = true;
+                render?.Invoke();
+                return false;
+            };
             return root;
         }
 
-        private static IEnumerable<string> RuntimeTabLabels(AlpineUiSurfaceMode mode)
+        private static void ApplyNativeGarageRailStyle(VisualElement root, bool fallback)
         {
-            if (mode == AlpineUiSurfaceMode.PauseInline)
+            root.style.flexDirection = FlexDirection.Column;
+            root.style.flexShrink = 0f;
+            root.style.minWidth = 0f;
+            root.style.backgroundColor = Color.clear;
+
+            if (fallback)
             {
-                yield return AlpineNativeUiConfig.LibraryTabLabel;
-                yield return AlpineNativeUiConfig.ShareTabLabel;
-                yield break;
+                root.style.position = Position.Absolute;
+                root.style.left = 32f;
+                root.style.right = 32f;
+                root.style.bottom = 15f;
+                return;
             }
 
-            yield return AlpineNativeUiConfig.EngineTabLabel;
-            yield return AlpineNativeUiConfig.ClutchTabLabel;
-            yield return AlpineNativeUiConfig.SetupTabLabel;
-            yield return AlpineNativeUiConfig.TrackTabLabel;
-            if (SleddersGameBindings.HeadlightRuntimeBindingAvailable)
-                yield return AlpineNativeUiConfig.LightsTabLabel;
-            yield return AlpineNativeUiConfig.PerformanceTabLabel;
-            yield return AlpineNativeUiConfig.LibraryTabLabel;
-            yield return AlpineNativeUiConfig.ShareTabLabel;
-            yield return AlpineNativeUiConfig.GuideTabLabel;
-
-            if (mode == AlpineUiSurfaceMode.GarageTab &&
-                AlpineNativeUiConfig.EnableRuntimeUiSettingsTab)
-            {
-                yield return AlpineNativeUiConfig.UiSettingsTabLabel;
-            }
+            root.style.marginLeft = 32f;
+            root.style.marginRight = 32f;
+            root.style.marginBottom = 15f;
         }
 
-        private static bool ShouldShowNativeAccessoriesCategory()
+        private static void ApplyFallbackGarageDetailStyle(VisualElement detailHost)
         {
-            return AlpineNativeUiConfig.ShowNativeAccessoriesCategory;
+            detailHost.style.position = Position.Absolute;
+            detailHost.style.left = 32f;
+            detailHost.style.top = 32f;
+            detailHost.style.width = Length.Percent(36f);
+            detailHost.style.height = Length.Percent(60f);
+            detailHost.style.backgroundColor = Color.clear;
         }
 
-        private static bool ShouldShowRefreshSledButton(VehicleScriptableObject target, string activeTab)
+        private static void ApplyNativeGarageChromeStyle(
+            VisualElement root,
+            VisualElement chrome,
+            Label breadcrumb,
+            Label status,
+            SUIManagedList rail,
+            VisualElement detailHost,
+            ScrollView detailContent)
         {
-            if (!AlpineNativeUiConfig.ShowRefreshSledButton)
-                return false;
+            root.style.flexDirection = FlexDirection.Column;
+            root.style.backgroundColor = Color.clear;
 
-            if (target == null)
-                return true;
+            chrome.style.flexDirection = FlexDirection.Row;
+            chrome.style.alignItems = Align.Center;
+            chrome.style.alignSelf = Align.Stretch;
+            chrome.style.width = Length.Percent(100f);
+            chrome.style.maxWidth = Length.Percent(100f);
+            chrome.style.flexShrink = 0f;
+            chrome.style.minWidth = 0f;
+            chrome.style.marginLeft = 0f;
+            chrome.style.marginRight = 0f;
+            chrome.style.marginTop = 0f;
+            chrome.style.marginBottom = 0f;
 
-            return string.Equals(activeTab, AlpineNativeUiConfig.UiSettingsTabLabel, StringComparison.OrdinalIgnoreCase);
+            breadcrumb.style.flexGrow = 1f;
+            breadcrumb.style.flexShrink = 1f;
+            breadcrumb.style.minWidth = 0f;
+            breadcrumb.style.maxWidth = Length.Percent(100f);
+            breadcrumb.style.color = AlpineNativeUiConfig.AccentColor;
+            breadcrumb.style.unityFontStyleAndWeight = FontStyle.Bold;
+
+            // The native rail can be much wider than its intrinsic header
+            // content. A shrinking, percentage-capped status therefore collapsed
+            // to a few right-aligned letters on the landing page. Reserve enough
+            // room for every intentionally compact state while allowing the
+            // breadcrumb to yield the remaining width.
+            status.style.flexGrow = 0f;
+            status.style.flexShrink = 0f;
+            status.style.width = 132f;
+            status.style.minWidth = 132f;
+            status.style.maxWidth = 132f;
+            status.style.marginLeft = AlpineNativeUiConfig.InlineGap;
+            status.style.color = AlpineNativeUiConfig.StatusTextColor;
+            status.style.unityTextAlign = TextAnchor.MiddleRight;
+            status.style.whiteSpace = WhiteSpace.NoWrap;
+            status.style.overflow = Overflow.Hidden;
+
+            rail.style.flexShrink = 0f;
+            rail.style.minWidth = 0f;
+            rail.style.backgroundColor = Color.clear;
+
+            detailHost.style.flexDirection = FlexDirection.Column;
+            detailHost.style.flexGrow = 1f;
+            detailHost.style.flexShrink = 1f;
+            detailHost.style.alignSelf = Align.Stretch;
+            detailHost.style.width = Length.Percent(100f);
+            detailHost.style.maxWidth = Length.Percent(100f);
+            detailHost.style.minWidth = 0f;
+            detailHost.style.minHeight = 0f;
+            detailHost.style.backgroundColor = Color.clear;
+            detailHost.style.overflow = Overflow.Hidden;
+
+            detailContent.style.flexGrow = 1f;
+            detailContent.style.flexShrink = 1f;
+            detailContent.style.alignSelf = Align.Stretch;
+            detailContent.style.width = Length.Percent(100f);
+            detailContent.style.maxWidth = Length.Percent(100f);
+            detailContent.style.minWidth = 0f;
+            detailContent.style.minHeight = 0f;
+            detailContent.style.backgroundColor = Color.clear;
+            detailContent.horizontalScrollerVisibility = ScrollerVisibility.Hidden;
+            detailContent.verticalScrollerVisibility = ScrollerVisibility.Auto;
+            detailContent.contentContainer.style.flexDirection = FlexDirection.Column;
+            detailContent.contentContainer.style.width = Length.Percent(100f);
+            detailContent.contentContainer.style.maxWidth = Length.Percent(100f);
+            detailContent.contentContainer.style.minWidth = 0f;
         }
 
-        private static void UpdateSummary(
+        private static void BuildNativeGarageContextActions(
             AlpineTuningMod mod,
-            Label title,
-            VisualElement statsRow,
-            Foldout diagnostics,
-            string source,
-            ResolvedSledTarget resolvedTarget,
-            VehicleScriptableObject sled,
-            TuneProfile profile)
-        {
-            string sledName = AlpineTuningMod.GetSledDisplayName(sled);
-
-            if (title != null)
-                title.text = $"{AlpineNativeUiConfig.ModTitle}\n{sledName}";
-
-            var stats = profile.resolvedStats;
-            var settings = mod != null ? mod.Settings : new AlpineUserSettings();
-            AlpineDisplayUnits units = settings.units;
-            var defaults = mod != null && sled != null ? mod.Store.GetDefaults(AlpineTuningMod.GetSledKey(sled)) : null;
-
-            if (statsRow != null)
-            {
-                statsRow.Clear();
-                AddStatusChip(statsRow, $"Current Setup: {mod.CurrentSetupDisplayName(profile)}");
-                AddStatusChip(statsRow, $"Status: {(resolvedTarget != null ? resolvedTarget.status : "Ready")}");
-                AddStatChip(statsRow, "Engine Output", UnitConversion.FormatPower(stats.horsePower, units));
-                AddStatChip(statsRow, "Drive Response", $"{stats.powerFactor:F2}");
-                AddStatChip(statsRow, "Paddle", TrackSpecResolver.FormatPaddleHeight(stats.lugHeight));
-                AddStatChip(statsRow, "Track Bite", FormatPercentDelta(stats.friction, defaults != null ? defaults.friction : stats.friction));
-                AddStatChip(statsRow, "Weight", UnitConversion.FormatWeight(stats.weight, units));
-
-                if (settings.advancedDetails)
-                {
-                    AddStatChip(statsRow, "Raw Track Bite", $"{stats.friction:F2}");
-                    AddStatChip(statsRow, "Ski Width", UnitConversion.FormatLengthFromMeters(stats.skiStance, units));
-                }
-
-                if (profile.requiresReload)
-                    AddStatusChip(statsRow, AlpineNativeUiConfig.ReloadRequiredHintText);
-            }
-
-            if (diagnostics != null)
-            {
-                diagnostics.Clear();
-                diagnostics.Add(MutedLabel($"Source: {source}"));
-                if (resolvedTarget != null && resolvedTarget.identity != null)
-                {
-                    diagnostics.Add(MutedLabel($"Selected Sled: {resolvedTarget.identity.displayName}"));
-                    diagnostics.Add(MutedLabel($"Identity: {resolvedTarget.identity.StableKey}"));
-                    diagnostics.Add(MutedLabel($"Runtime: {(resolvedTarget.hasRuntimeInstance ? "matched" : "not spawned")}"));
-                }
-                diagnostics.Add(MutedLabel($"Alpine {AlpineConstants.ModVersion}"));
-                diagnostics.Add(MutedLabel($"Catalog {AlpineConstants.CatalogVersion}"));
-                diagnostics.Add(MutedLabel($"Schema {AlpineConstants.SchemaVersion}"));
-                var report = SleddersGameBindings.GetCompatibilityReport();
-                if (report != null)
-                {
-                    diagnostics.Add(MutedLabel($"Compatibility: {DisplayOrUnknown(report.overallStatus)}"));
-                    diagnostics.Add(MutedLabel($"Assembly Fingerprint: {DisplayOrUnknown(report.assemblyLightHash)}"));
-                }
-            }
-        }
-
-        private static void BuildTrackTab(
-            AlpineTuningMod mod,
-            VisualElement content,
+            GarageNativeSession session,
             VehicleScriptableObject target,
             TuneProfile working,
-            Action render,
+            GarageNavigationNode current,
+            int depth,
+            Action goBack,
+            Func<bool> saveSetup,
             Action setupChanged,
-            Action<string> setStatus = null)
-        {
-            var trackSection = Section("Track");
-            AddPartDropdown(mod, trackSection, working, PartCatalog.Track, render, setupChanged, "Paddle / Track Package");
-
-            if (working.resolvedStats != null)
-                trackSection.Add(MutedLabel($"Resolved paddle height: {TrackSpecResolver.FormatPaddleHeight(working.resolvedStats.lugHeight)}"));
-            trackSection.Add(MutedLabel("Long Track Kit changes setup feel; visual track length depends on Sledders model support."));
-
-            content.Add(trackSection);
-
-            var setupSection = Section("Track Setup");
-            AddPartDropdown(mod, setupSection, working, PartCatalog.TrackLimiter, render, setupChanged, "Limiter Strap Setup");
-            AddPartDropdown(mod, setupSection, working, PartCatalog.RearShock, render, setupChanged, "Rear Shock Setup");
-            AddPartDropdown(mod, setupSection, working, PartCatalog.RearSpring, render, setupChanged, "Rear Spring Setup");
-            content.Add(setupSection);
-
-            var detailsSection = Section("Details");
-            detailsSection.Add(BuildPartDetailsFoldout(mod, working));
-            content.Add(detailsSection);
-        }
-
-        private static void BuildEngineTab(
-            AlpineTuningMod mod,
-            VisualElement content,
-            VehicleScriptableObject target,
-            TuneProfile working,
-            Action render,
-            Action setupChanged)
-        {
-            var profileSection = Section("Current Setup");
-            AddProfileNameField(profileSection, working, setupChanged);
-            AddDonorDropdown(mod, profileSection, working, render, setupChanged);
-            content.Add(profileSection);
-
-            var engineSection = Section("Engine");
-            AddPartDropdown(mod, engineSection, working, PartCatalog.EngineCore, render, setupChanged, "Block / Engine Package");
-            AddPartDropdown(mod, engineSection, working, PartCatalog.EnginePiston, render, setupChanged);
-            AddPartDropdown(mod, engineSection, working, PartCatalog.EngineCrank, render, setupChanged);
-            AddPartDropdown(mod, engineSection, working, PartCatalog.Intake, render, setupChanged, "Intake / Exhaust");
-            AddPartDropdown(mod, engineSection, working, PartCatalog.Turbo, render, setupChanged, "Turbo / Induction");
-            content.Add(engineSection);
-
-            var boostSection = Section("Boost Estimate");
-            AddBoostEstimate(boostSection, working.resolvedStats);
-            content.Add(boostSection);
-        }
-
-        private static void BuildClutchTab(
-            AlpineTuningMod mod,
-            VisualElement content,
-            VehicleScriptableObject target,
-            TuneProfile working,
-            Action render,
-            Action setupChanged)
-        {
-            var clutchSection = Section("Clutch");
-            AddPartDropdown(mod, clutchSection, working, PartCatalog.Clutch, render, setupChanged, "Clutch Calibration");
-            AddPartDropdown(mod, clutchSection, working, PartCatalog.ClutchWeights, render, setupChanged);
-            AddPartDropdown(mod, clutchSection, working, PartCatalog.RatioFeel, render, setupChanged);
-            content.Add(clutchSection);
-
-            var fine = working.fineTune ?? (working.fineTune = new FineTuneSettings());
-            var trimSection = Section("Calibration Trim");
-            AddSlider(
-                trimSection,
-                "Clutch Trim",
-                AlpineNativeUiConfig.ClutchTrimMin,
-                AlpineNativeUiConfig.ClutchTrimMax,
-                fine.clutchTrimPercent,
-                "F1",
-                "%",
-                value => fine.clutchTrimPercent = value,
-                setupChanged,
-                "Adjusts clutch RPM response. Higher values hold more RPM and feel more aggressive.");
-            content.Add(trimSection);
-        }
-
-        private static void BuildSetupTab(
-            AlpineTuningMod mod,
-            VisualElement content,
-            VehicleScriptableObject target,
-            TuneProfile working,
             Action render,
             Action<string> setStatus,
-            Action setupChanged)
+            ControlIndicatorButton classAnchor,
+            ControlIndicatorButton readyButton,
+            Action toggleDyno,
+            bool dynoOpen)
         {
-            content.Add(MutedLabel(AlpineNativeUiConfig.FineTuneHelpText));
-
-            var fine = working.fineTune ?? (working.fineTune = new FineTuneSettings());
-
-            var handlingSection = Section("Chassis / Stance");
-            AddPartDropdown(mod, handlingSection, working, PartCatalog.Suspension, render, setupChanged, "Handling Setup");
-            AddPartDropdown(mod, handlingSection, working, PartCatalog.Chassis, render, setupChanged);
-            AddPartDropdown(mod, handlingSection, working, PartCatalog.Skis, render, setupChanged);
-
-            if (ShouldShowNativeAccessoriesCategory())
-                AddPartDropdown(mod, handlingSection, working, PartCatalog.Accessories, render, setupChanged);
-
-            content.Add(handlingSection);
-
-            var driveSection = Section("Power / Drive");
-            AddSlider(
-                driveSection,
-                "Power Trim",
-                AlpineNativeUiConfig.PowerTrimMin,
-                AlpineNativeUiConfig.PowerTrimMax,
-                fine.powerTrimPercent,
-                "F1",
-                "%",
-                value => fine.powerTrimPercent = value,
-                setupChanged,
-                "Fine adjustment for estimated engine output. Higher values increase acceleration and track speed.");
-
-            AddSlider(
-                driveSection,
-                "Traction Trim",
-                AlpineNativeUiConfig.TractionTrimMin,
-                AlpineNativeUiConfig.TractionTrimMax,
-                fine.tractionTrimPercent,
-                "F1",
-                "%",
-                value => fine.tractionTrimPercent = value,
-                setupChanged,
-                "Fine adjustment for snow traction. Higher values bite harder but can add drag.");
-
-            AddSlider(
-                driveSection,
-                "Weight Trim",
-                AlpineNativeUiConfig.WeightTrimMin,
-                AlpineNativeUiConfig.WeightTrimMax,
-                fine.weightTrimPercent,
-                "F1",
-                "%",
-                value => fine.weightTrimPercent = value,
-                setupChanged,
-                "Fine adjustment for setup weight. Lower weight improves response and climbing.");
-            content.Add(driveSection);
-
-            var balanceSection = Section("Balance / Stance");
-            AddSlider(
-                balanceSection,
-                "Center of Mass Height",
-                AlpineNativeUiConfig.CenterOfMassYMin,
-                AlpineNativeUiConfig.CenterOfMassYMax,
-                fine.centerOfMassYTrim,
-                "F3",
-                " m",
-                value => fine.centerOfMassYTrim = value,
-                setupChanged,
-                "Moves weight higher or lower. Lower feels more stable; higher can feel more playful.",
-                value => UnitConversion.FormatLengthFromMeters(value, mod.Settings.units));
-
-            AddSlider(
-                balanceSection,
-                "Center of Mass Forward",
-                AlpineNativeUiConfig.CenterOfMassZMin,
-                AlpineNativeUiConfig.CenterOfMassZMax,
-                fine.centerOfMassZTrim,
-                "F3",
-                " m",
-                value => fine.centerOfMassZTrim = value,
-                setupChanged,
-                "Moves balance forward or rearward. Forward helps front bite; rearward helps lift.",
-                value => UnitConversion.FormatLengthFromMeters(value, mod.Settings.units));
-
-            AddSlider(
-                balanceSection,
-                "Ski Stance",
-                AlpineNativeUiConfig.SkiStanceMin,
-                AlpineNativeUiConfig.SkiStanceMax,
-                fine.skiStanceTrim,
-                "F3",
-                " m",
-                value => fine.skiStanceTrim = value,
-                setupChanged,
-                "Changes front ski width. Wider improves stability; narrower turns tighter.",
-                value => UnitConversion.FormatLengthFromMeters(value, mod.Settings.units));
-            content.Add(balanceSection);
-
-            Button previewButton = SmallButton("Update Summary", () =>
+            if (mod != null && mod.IsCapturingHeadlightBinding)
             {
-                mod.PreviewProfile(working, target);
-                setStatus(AlpineNativeUiConfig.PreviewUpdatedText);
-                render();
-            });
-
-            AddSplitButtonRow(content,
-                new[] { previewButton },
-                null);
-        }
-
-        private static void BuildLightsTab(
-            AlpineTuningMod mod,
-            VisualElement content,
-            VehicleScriptableObject target,
-            TuneProfile working,
-            Action render,
-            Action setupChanged,
-            Action<string> setStatus)
-        {
-            var lightSection = Section("Headlights");
-            AddPartDropdown(mod, lightSection, working, PartCatalog.HeadlightColor, render, setupChanged);
-            AddPartDropdown(mod, lightSection, working, PartCatalog.HeadlightBrightness, render, setupChanged);
-            AddPartDropdown(mod, lightSection, working, PartCatalog.HeadlightBeam, render, setupChanged);
-            AddPartDropdown(mod, lightSection, working, PartCatalog.HeadlightAim, render, setupChanged);
-
-            if (mod != null && mod.HasActiveHeadlightRuntimeBinding())
-                lightSection.Add(MutedLabel("Runtime headlight binding active for the current sled."));
-            else
-                lightSection.Add(MutedLabel("Runtime headlight binding is unavailable until a sled with native HeadLight components is active."));
-
-            content.Add(lightSection);
-
-            var controlsSection = Section("Controls");
-            var settings = mod.Settings;
-            controlsSection.Add(MutedLabel($"Headlight Mode: {FormatHeadlightMode(working)}"));
-            controlsSection.Add(MutedLabel($"Hotkey: {FormatHeadlightBinding(settings)}"));
-            controlsSection.Add(MutedLabel($"Keyboard Bind: {FormatSingleHeadlightBinding(settings?.headlightKeyboardKey)}"));
-            controlsSection.Add(MutedLabel($"Controller Bind: {FormatSingleHeadlightBinding(settings?.headlightControllerButton)}"));
-            if (mod.IsCapturingHeadlightBinding && !string.IsNullOrWhiteSpace(mod.HeadlightBindingCaptureLabel))
-                controlsSection.Add(MutedLabel(mod.HeadlightBindingCaptureLabel));
-
-            AddButtonRow(controlsSection,
-                SmallButton(settings.headlightToggleEnabled ? "Disable Hotkey" : "Enable Hotkey", () =>
+                Action cancelBinding = () =>
                 {
-                    if (!settings.headlightToggleEnabled && !HasConfiguredHeadlightBinding(settings))
+                    mod.CancelHeadlightBindingCapture();
+                    mod.ConsumeHeadlightBindingCaptureResult();
+                    setStatus?.Invoke("Binding cancelled");
+                    render?.Invoke();
+                };
+                session.SetContextActions(
+                    "Cancel Binding", cancelBinding,
+                    null, null,
+                    null, null,
+                    classAnchor,
+                    readyButton);
+                return;
+            }
+
+            string secondaryLabel = "Save";
+            Action secondary = () =>
+            {
+                saveSetup?.Invoke();
+                render?.Invoke();
+            };
+
+            string tertiaryLabel = null;
+            Action tertiary = null;
+            if (CanResetGarageNode(current))
+            {
+                tertiaryLabel = "Reset";
+                tertiary = () =>
+                {
+                    string message;
+                    if (!ResetGarageNode(mod, current, working, out message))
                     {
-                        setStatus?.Invoke("Set a keyboard or controller bind first.");
-                        render();
+                        setStatus?.Invoke(message);
+                        render?.Invoke();
                         return;
                     }
 
-                    settings.headlightToggleEnabled = !settings.headlightToggleEnabled;
-                    settings.Normalize();
-                    mod.SaveSettings();
-                    render();
-                }),
-                SmallButton("Set Keyboard Bind", () =>
-                {
-                    mod.BeginHeadlightKeyboardBind();
-                    setStatus?.Invoke("Press the keyboard key to use for the headlight hotkey.");
-                    render();
-                }),
-                SmallButton("Set Controller Bind", () =>
-                {
-                    mod.BeginHeadlightControllerBind();
-                    setStatus?.Invoke("Press the controller button to use for the headlight hotkey.");
-                    render();
-                }),
-                SmallButton("Clear Binding", () =>
-                {
-                    mod.ClearHeadlightBinding();
-                    setStatus?.Invoke("Headlight hotkey binding cleared.");
-                    render();
-                }));
+                    setupChanged?.Invoke();
+                    setStatus?.Invoke("Reset staged");
+                    render?.Invoke();
+                };
+            }
 
-            AddButtonRow(controlsSection,
+            session.SetContextActions(
+                "Back",
+                goBack,
+                secondaryLabel,
+                secondary,
+                tertiaryLabel,
+                tertiary,
+                classAnchor,
+                readyButton,
+                dynoOpen ? "Close Dyno" : "Dyno",
+                toggleDyno);
+        }
+
+        private static void RestoreNativeGarageNavigationState(
+            VehicleSelectionUiController controller,
+            GarageNativeSession session,
+            VisualElement root,
+            VisualElement detailHost,
+            SUIManagedList rail,
+            ScrollView detailContent,
+            GarageNavigationNode node,
+            IReadOnlyList<Button> preferredTiles)
+        {
+            if (root == null || rail == null)
+                return;
+
+            string focusedElementName = node != null ? node.FocusedElementName : null;
+            Vector2 railOffset = node != null ? node.ScrollOffset : Vector2.zero;
+            Vector2 detailOffset = node != null ? node.DetailScrollOffset : Vector2.zero;
+            root.schedule.Execute(() =>
+            {
+                if (!session.IsOpen || root.panel == null)
+                    return;
+
+                rail.scrollOffset = railOffset;
+                if (detailContent != null)
+                    detailContent.scrollOffset = detailOffset;
+
+                VisualElement focusTarget = !string.IsNullOrWhiteSpace(focusedElementName)
+                    ? root.Q<VisualElement>(focusedElementName) ??
+                      detailHost?.Q<VisualElement>(focusedElementName) ??
+                      session.FindContextAction(focusedElementName)
+                    : null;
+                if (!CanFocus(focusTarget) && preferredTiles != null)
+                    focusTarget = preferredTiles.FirstOrDefault(CanFocus);
+                if (!CanFocus(focusTarget))
+                    focusTarget = FindFirstFocusable(detailContent?.contentContainer);
+                if (!CanFocus(focusTarget))
+                    focusTarget = session.FirstContextAction();
+
+                if (!CanFocus(focusTarget))
+                    return;
+
+                focusTarget.Focus();
+                if (IsDescendantOf(focusTarget, rail.contentContainer))
+                    CenterNativeGarageTile(controller, rail, focusTarget);
+                else if (detailContent != null &&
+                         IsDescendantOf(focusTarget, detailContent.contentContainer))
+                    detailContent.ScrollTo(focusTarget);
+            });
+        }
+
+        private static void CenterNativeGarageTile(
+            VehicleSelectionUiController controller,
+            ScrollView rail,
+            VisualElement tile)
+        {
+            if (rail == null || tile == null)
+                return;
+
+            try
+            {
+                Type extensions = typeof(VehicleSelectionUiController).Assembly.GetType("AODCFNNMNDL", false);
+                MethodInfo centering = extensions?.GetMethod(
+                    "GLINNFGELJD",
+                    BindingFlags.Public | BindingFlags.Static,
+                    null,
+                    new[] { typeof(ScrollView), typeof(VisualElement) },
+                    null);
+                IEnumerator routine = centering?.Invoke(null, new object[] { rail, tile }) as IEnumerator;
+                if (routine != null && controller != null)
+                {
+                    controller.StartCoroutine(routine);
+                    return;
+                }
+            }
+            catch (Exception ex)
+            {
+                MelonLogger.Warning($"Native garage tile centering fell back to ScrollTo: {ex.GetType().Name}");
+            }
+
+            rail.schedule.Execute(() =>
+            {
+                if (rail.panel != null && tile.panel == rail.panel)
+                    rail.ScrollTo(tile);
+            });
+        }
+
+        private static void RegisterGarageBackHandlers(
+            VisualElement host,
+            GarageNativeSession session,
+            Action requestBack)
+        {
+            if (host == null)
+                return;
+
+            host.RegisterCallback<NavigationCancelEvent>(evt =>
+            {
+                if (!session.IsOpen)
+                    return;
+                requestBack?.Invoke();
+                evt.StopImmediatePropagation();
+            });
+            host.RegisterCallback<KeyDownEvent>(evt =>
+            {
+                if (!session.IsOpen ||
+                    (evt.keyCode != KeyCode.Escape && evt.keyCode != KeyCode.Backspace))
+                {
+                    return;
+                }
+                if (evt.keyCode == KeyCode.Backspace &&
+                    IsInsideTextField(evt.target as VisualElement))
+                {
+                    return;
+                }
+
+                requestBack?.Invoke();
+                evt.StopImmediatePropagation();
+            });
+        }
+
+        private static VisualElement FocusedElement(VisualElement root)
+        {
+            try
+            {
+                return root != null && root.panel != null
+                    ? root.panel.focusController.focusedElement as VisualElement
+                    : null;
+            }
+            catch
+            {
+                return null;
+            }
+        }
+
+        private static string GarageFocusedElementName(
+            VisualElement root,
+            VisualElement detailHost,
+            GarageNativeSession session)
+        {
+            VisualElement focused = FocusedElement(root);
+            if (focused == null || string.IsNullOrWhiteSpace(focused.name))
+                return null;
+            if (IsDescendantOf(focused, root) || IsDescendantOf(focused, detailHost) ||
+                ReferenceEquals(session.FindContextAction(focused.name), focused))
+            {
+                return focused.name;
+            }
+            return null;
+        }
+
+        private static void BuildGarageRoot(
+            SUIManagedList rail,
+            Action<string, string, string> navigate,
+            List<Button> tileButtons)
+        {
+            AddGarageNavigationTile(rail, tileButtons, "Engine", "Engine internals, intake, induction and engine swaps.",
+                NavigationCategory, "engine", "Engine", navigate, "root.engine");
+            AddGarageNavigationTile(rail, tileButtons, "Drivetrain", "Clutch calibration, weights and gearing.",
+                NavigationCategory, "drivetrain", "Drivetrain", navigate, "root.drivetrain");
+            AddGarageNavigationTile(rail, tileButtons, "Suspension", "Shocks, springs, limiter, chassis and balance.",
+                NavigationCategory, "suspension", "Suspension", navigate, "root.suspension");
+            AddGarageNavigationTile(rail, tileButtons, "Track", "Choose the installed track package and snow-bite profile.",
+                NavigationPart, PartCatalog.Track, "Track", navigate, "root.track");
+            AddGarageNavigationTile(rail, tileButtons, "Steering", "Skis, stance and conservative steering geometry.",
+                NavigationCategory, "steering", "Steering", navigate, "root.steering");
+            AddGarageNavigationTile(rail, tileButtons, "Lighting", "Color, output, beam, aim and operating mode.",
+                NavigationCategory, "lighting", "Lighting", navigate, "root.lighting");
+            AddGarageNavigationTile(rail, tileButtons, "Setups", "Current draft, saved setups, and recovery.",
+                NavigationPanel, "setups", "Setups", navigate, "action.setups");
+            AddGarageNavigationTile(rail, tileButtons, "Settings", "Display units and headlight hotkey.",
+                NavigationPanel, "settings", "Settings", navigate, "action.settings", null, false);
+        }
+
+        private static void BuildGarageLandingSummary(
+            AlpineTuningMod mod,
+            VisualElement content,
+            VehicleScriptableObject target,
+            TuneProfile working)
+        {
+            content.Clear();
+            var section = Section("Setup Comparison");
+            var header = GarageComparisonRow("STOCK", string.Empty, "CURRENT", true);
+            section.Add(header);
+
+            GarageComparisonSnapshot comparison = BuildGarageComparisonSnapshot(mod, target, working, null);
+            ResolvedStats stock = comparison?.Factory;
+            ResolvedStats current = comparison?.Current;
+            AlpineDisplayUnits units = mod != null ? mod.Settings.units : AlpineDisplayUnits.Metric;
+
+            string missing = "—";
+            string powerUnit = units == AlpineDisplayUnits.Imperial ? "HP" : "KW";
+            string stockPower = stock != null
+                ? (units == AlpineDisplayUnits.Imperial
+                    ? stock.horsePower.ToString("F0")
+                    : UnitConversion.HorsepowerToKilowatts(stock.horsePower).ToString("F0"))
+                : missing;
+            string currentPower = current != null
+                ? (units == AlpineDisplayUnits.Imperial
+                    ? current.horsePower.ToString("F0")
+                    : UnitConversion.HorsepowerToKilowatts(current.horsePower).ToString("F0"))
+                : missing;
+            section.Add(GarageComparisonRow(stockPower, powerUnit, currentPower));
+
+            string paddleUnit = units == AlpineDisplayUnits.Imperial ? "LUGS IN" : "LUGS MM";
+            string stockPaddle = stock != null
+                ? (units == AlpineDisplayUnits.Imperial
+                    ? UnitConversion.MillimetersToInches(stock.lugHeight).ToString("F2")
+                    : stock.lugHeight.ToString("F0"))
+                : missing;
+            string currentPaddle = current != null
+                ? (units == AlpineDisplayUnits.Imperial
+                    ? UnitConversion.MillimetersToInches(current.lugHeight).ToString("F2")
+                    : current.lugHeight.ToString("F0"))
+                : missing;
+            section.Add(GarageComparisonRow(stockPaddle, paddleUnit, currentPaddle));
+
+            string weightUnit = units == AlpineDisplayUnits.Imperial ? "LB" : "KG";
+            string stockWeight = stock != null
+                ? (units == AlpineDisplayUnits.Imperial
+                    ? UnitConversion.KilogramsToPounds(stock.weight).ToString("F0")
+                    : stock.weight.ToString("F0"))
+                : missing;
+            string currentWeight = current != null
+                ? (units == AlpineDisplayUnits.Imperial
+                    ? UnitConversion.KilogramsToPounds(current.weight).ToString("F0")
+                    : current.weight.ToString("F0"))
+                : missing;
+            section.Add(GarageComparisonRow(stockWeight, weightUnit, currentWeight));
+
+            string stanceUnit = units == AlpineDisplayUnits.Imperial ? "STANCE IN" : "STANCE MM";
+            string stockStance = stock != null
+                ? (units == AlpineDisplayUnits.Imperial
+                    ? UnitConversion.MillimetersToInches(stock.skiStance).ToString("F1")
+                    : stock.skiStance.ToString("F0"))
+                : missing;
+            string currentStance = current != null
+                ? (units == AlpineDisplayUnits.Imperial
+                    ? UnitConversion.MillimetersToInches(current.skiStance).ToString("F1")
+                    : current.skiStance.ToString("F0"))
+                : missing;
+            section.Add(GarageComparisonRow(stockStance, stanceUnit, currentStance));
+
+            content.Add(section);
+        }
+
+        private static VisualElement GarageComparisonRow(
+            string stock,
+            string label,
+            string current,
+            bool header = false)
+        {
+            var row = new VisualElement();
+            row.style.flexDirection = FlexDirection.Row;
+            row.style.alignItems = Align.Center;
+            row.style.alignSelf = Align.Stretch;
+            row.style.width = Length.Percent(100f);
+            row.style.maxWidth = Length.Percent(100f);
+            row.style.minWidth = 0f;
+            row.style.minHeight = header ? 22f : 26f;
+
+            Label left = GarageComparisonCell(stock, TextAnchor.MiddleLeft, header);
+            Label center = GarageComparisonCell(label, TextAnchor.MiddleCenter, header);
+            Label right = GarageComparisonCell(current, TextAnchor.MiddleRight, header);
+            left.style.width = Length.Percent(33f);
+            center.style.width = Length.Percent(34f);
+            right.style.width = Length.Percent(33f);
+            row.Add(left);
+            row.Add(center);
+            row.Add(right);
+            return row;
+        }
+
+        private static Label GarageComparisonCell(string text, TextAnchor alignment, bool header)
+        {
+            var value = new Label(text ?? string.Empty);
+            value.style.flexShrink = 1f;
+            value.style.minWidth = 0f;
+            value.style.unityTextAlign = alignment;
+            value.style.whiteSpace = WhiteSpace.NoWrap;
+            value.style.overflow = Overflow.Hidden;
+            value.style.color = header
+                ? AlpineNativeUiConfig.MutedTextColor
+                : AlpineNativeUiConfig.RowTextColor;
+            if (header)
+                value.style.unityFontStyleAndWeight = FontStyle.Bold;
+            SetTooltip(value, text);
+            return value;
+        }
+
+        private static void ApplyGarageDynoButtonStyle(Button button)
+        {
+            if (button == null)
+                return;
+            button.style.height = 22f;
+            button.style.minWidth = 58f;
+            button.style.marginLeft = AlpineNativeUiConfig.InlineGap;
+            button.style.marginTop = 0f;
+            button.style.marginBottom = 0f;
+            button.style.paddingLeft = 6f;
+            button.style.paddingRight = 6f;
+            button.style.flexShrink = 0f;
+            button.style.backgroundColor = AlpineNativeUiConfig.ButtonBackgroundColor;
+            button.style.color = AlpineNativeUiConfig.RowTextColor;
+            button.style.unityFontStyleAndWeight = FontStyle.Bold;
+            button.style.fontSize = 11f;
+            button.style.whiteSpace = WhiteSpace.NoWrap;
+            button.style.overflow = Overflow.Hidden;
+        }
+
+        private static VisualElement GarageDynoSection(
+            string title,
+            string badgeText,
+            string disclosure,
+            bool estimated)
+        {
+            var section = new VisualElement();
+            section.style.flexDirection = FlexDirection.Column;
+            section.style.alignSelf = Align.Stretch;
+            section.style.width = Length.Percent(100f);
+            section.style.maxWidth = Length.Percent(100f);
+            section.style.minWidth = 0f;
+            section.style.marginTop = 5f;
+
+            var header = new VisualElement();
+            header.style.flexDirection = FlexDirection.Row;
+            header.style.alignItems = Align.Center;
+            header.style.width = Length.Percent(100f);
+            header.style.minWidth = 0f;
+
+            var heading = new Label(title ?? string.Empty);
+            heading.style.flexGrow = 1f;
+            heading.style.flexShrink = 1f;
+            heading.style.minWidth = 0f;
+            heading.style.color = AlpineNativeUiConfig.TitleTextColor;
+            heading.style.unityFontStyleAndWeight = FontStyle.Bold;
+            heading.style.fontSize = 11f;
+            heading.style.whiteSpace = WhiteSpace.NoWrap;
+            heading.style.overflow = Overflow.Hidden;
+
+            var badge = new Label(badgeText ?? string.Empty);
+            badge.style.flexShrink = 0f;
+            badge.style.marginLeft = AlpineNativeUiConfig.InlineGap;
+            badge.style.paddingLeft = 4f;
+            badge.style.paddingRight = 4f;
+            badge.style.paddingTop = 1f;
+            badge.style.paddingBottom = 1f;
+            badge.style.backgroundColor = estimated
+                ? new Color(0.96f, 0.47f, 0.12f, 0.96f)
+                : AlpineNativeUiConfig.AccentColor;
+            badge.style.color = AlpineNativeUiConfig.ActiveButtonTextColor;
+            badge.style.unityFontStyleAndWeight = FontStyle.Bold;
+            badge.style.fontSize = 9f;
+            badge.style.whiteSpace = WhiteSpace.NoWrap;
+
+            SetTooltip(heading, disclosure);
+            SetTooltip(badge, disclosure);
+            header.Add(heading);
+            header.Add(badge);
+            section.Add(header);
+            return section;
+        }
+
+        private static VisualElement CreateGarageDynoOverlay(
+            VisualElement host,
+            Action close,
+            out ScrollView content)
+        {
+            var panel = new VisualElement { name = "AlpineGarageDynoOverlay" };
+            panel.style.position = Position.Absolute;
+            panel.style.top = Length.Percent(4f);
+            panel.style.right = Length.Percent(3f);
+            panel.style.width = Length.Percent(33f);
+            panel.style.height = Length.Percent(33f);
+            panel.style.minWidth = 320f;
+            panel.style.minHeight = 210f;
+            panel.style.flexDirection = FlexDirection.Column;
+            panel.style.overflow = Overflow.Hidden;
+            panel.style.paddingLeft = 10f;
+            panel.style.paddingRight = 10f;
+            panel.style.paddingTop = 6f;
+            // Reserve the lower corner for the resize target. It must never sit
+            // underneath scrolling metrics.
+            panel.style.paddingBottom = 22f;
+            panel.style.backgroundColor = new Color(0.045f, 0.055f, 0.065f, 0.97f);
+            panel.style.borderLeftColor = AlpineNativeUiConfig.AccentColor;
+            panel.style.borderRightColor = AlpineNativeUiConfig.AccentColor;
+            panel.style.borderTopColor = AlpineNativeUiConfig.AccentColor;
+            panel.style.borderBottomColor = AlpineNativeUiConfig.AccentColor;
+            panel.style.borderLeftWidth = 1f;
+            panel.style.borderRightWidth = 1f;
+            panel.style.borderTopWidth = 1f;
+            panel.style.borderBottomWidth = 1f;
+
+            var header = new VisualElement { name = "AlpineDynoDragHandle" };
+            header.style.flexDirection = FlexDirection.Row;
+            header.style.alignItems = Align.Center;
+            header.style.flexShrink = 0f;
+            header.style.height = 24f;
+            var title = new Label("DYNO");
+            title.style.flexGrow = 1f;
+            title.style.flexShrink = 1f;
+            title.style.minWidth = 0f;
+            title.style.color = AlpineNativeUiConfig.AccentColor;
+            title.style.unityFontStyleAndWeight = FontStyle.Bold;
+            title.style.fontSize = 12f;
+            title.style.whiteSpace = WhiteSpace.NoWrap;
+            title.style.overflow = Overflow.Hidden;
+            SetTooltip(title, "Exact Sledders drive-force model plus a separately labelled estimated engine curve.");
+            var reset = new Button { text = "FIT" };
+            var closeButton = new Button { text = "X" };
+            ApplyGarageDynoButtonStyle(reset);
+            ApplyGarageDynoButtonStyle(closeButton);
+            reset.style.minWidth = 48f;
+            closeButton.style.minWidth = 24f;
+            header.Add(title);
+            header.Add(reset);
+            header.Add(closeButton);
+            panel.Add(header);
+
+            content = new ScrollView(ScrollViewMode.Vertical)
+            {
+                name = "AlpineDynoContent",
+                horizontalScrollerVisibility = ScrollerVisibility.Hidden,
+                verticalScrollerVisibility = ScrollerVisibility.Auto
+            };
+            content.style.flexGrow = 1f;
+            content.style.flexShrink = 1f;
+            content.style.width = Length.Percent(100f);
+            content.style.minWidth = 0f;
+            content.style.minHeight = 0f;
+            content.style.paddingRight = 3f;
+            content.contentContainer.style.flexDirection = FlexDirection.Column;
+            content.contentContainer.style.width = Length.Percent(100f);
+            content.contentContainer.style.minWidth = 0f;
+            panel.Add(content);
+
+            var resize = new Label("\u2198") { name = "AlpineDynoResizeHandle" };
+            resize.style.position = Position.Absolute;
+            resize.style.right = 1f;
+            resize.style.bottom = 0f;
+            resize.style.width = 22f;
+            resize.style.height = 22f;
+            resize.style.unityTextAlign = TextAnchor.MiddleCenter;
+            resize.style.color = AlpineNativeUiConfig.AccentColor;
+            resize.pickingMode = PickingMode.Position;
+            panel.Add(resize);
+
+            closeButton.clicked += () => close?.Invoke();
+            reset.clicked += () => ResetGarageDynoBounds(host, panel);
+            RegisterGarageDynoDrag(host, panel, header);
+            RegisterGarageDynoResize(host, panel, resize);
+            host?.Add(panel);
+            panel.BringToFront();
+            host?.RegisterCallback<GeometryChangedEvent>(_ => ClampGarageDynoToViewport(host, panel));
+            panel.schedule.Execute(() => ClampGarageDynoToViewport(host, panel));
+            return panel;
+        }
+
+        private static void ResetGarageDynoBounds(VisualElement host, VisualElement panel)
+        {
+            if (panel == null)
+                return;
+            panel.style.left = StyleKeyword.Auto;
+            panel.style.top = Length.Percent(4f);
+            panel.style.right = Length.Percent(3f);
+            panel.style.width = Length.Percent(33f);
+            panel.style.height = Length.Percent(33f);
+            panel.schedule.Execute(() => ClampGarageDynoToViewport(host, panel));
+        }
+
+        private static void ClampGarageDynoToViewport(VisualElement host, VisualElement panel)
+        {
+            if (host == null || panel == null || panel.panel == null)
+                return;
+
+            float hostWidth = host.resolvedStyle.width;
+            float hostHeight = host.resolvedStyle.height;
+            if (hostWidth <= 1f || hostHeight <= 1f)
+                return;
+
+            float safeWidth = Mathf.Max(240f, hostWidth);
+            float safeHeight = Mathf.Max(180f, hostHeight);
+            float width = Mathf.Clamp(panel.resolvedStyle.width, Mathf.Min(320f, safeWidth), safeWidth);
+            float height = Mathf.Clamp(panel.resolvedStyle.height, Mathf.Min(210f, safeHeight), safeHeight);
+            float left = panel.worldBound.xMin - host.worldBound.xMin;
+            float top = panel.worldBound.yMin - host.worldBound.yMin;
+
+            panel.style.left = Mathf.Clamp(left, 0f, Mathf.Max(0f, hostWidth - width));
+            panel.style.top = Mathf.Clamp(top, 0f, Mathf.Max(0f, hostHeight - height));
+            panel.style.right = StyleKeyword.Auto;
+            panel.style.width = width;
+            panel.style.height = height;
+        }
+
+        private static void RegisterGarageDynoDrag(
+            VisualElement host,
+            VisualElement panel,
+            VisualElement handle)
+        {
+            bool dragging = false;
+            int pointerId = -1;
+            Vector2 pointerStart = Vector2.zero;
+            Vector2 panelStart = Vector2.zero;
+            handle.RegisterCallback<PointerDownEvent>(evt =>
+            {
+                if (evt.button != 0 || host == null || panel == null ||
+                    IsInsideButton(evt.target as VisualElement))
+                    return;
+                dragging = true;
+                pointerId = evt.pointerId;
+                pointerStart = new Vector2(evt.position.x, evt.position.y);
+                panelStart = new Vector2(
+                    panel.worldBound.xMin - host.worldBound.xMin,
+                    panel.worldBound.yMin - host.worldBound.yMin);
+                panel.style.left = panelStart.x;
+                panel.style.top = panelStart.y;
+                panel.style.right = StyleKeyword.Auto;
+                handle.CapturePointer(pointerId);
+                evt.StopImmediatePropagation();
+            });
+            handle.RegisterCallback<PointerMoveEvent>(evt =>
+            {
+                if (!dragging || evt.pointerId != pointerId)
+                    return;
+                Vector2 pointer = new Vector2(evt.position.x, evt.position.y);
+                Vector2 next = panelStart + pointer - pointerStart;
+                float maxX = Mathf.Max(0f, host.resolvedStyle.width - panel.resolvedStyle.width);
+                float maxY = Mathf.Max(0f, host.resolvedStyle.height - panel.resolvedStyle.height);
+                panel.style.left = Mathf.Clamp(next.x, 0f, maxX);
+                panel.style.top = Mathf.Clamp(next.y, 0f, maxY);
+                evt.StopImmediatePropagation();
+            });
+            handle.RegisterCallback<PointerUpEvent>(evt =>
+            {
+                if (!dragging || evt.pointerId != pointerId)
+                    return;
+                dragging = false;
+                if (handle.HasPointerCapture(pointerId))
+                    handle.ReleasePointer(pointerId);
+                evt.StopImmediatePropagation();
+            });
+        }
+
+        private static void RegisterGarageDynoResize(
+            VisualElement host,
+            VisualElement panel,
+            VisualElement handle)
+        {
+            bool resizing = false;
+            int pointerId = -1;
+            Vector2 pointerStart = Vector2.zero;
+            Vector2 sizeStart = Vector2.zero;
+            handle.RegisterCallback<PointerDownEvent>(evt =>
+            {
+                if (evt.button != 0 || host == null || panel == null)
+                    return;
+                resizing = true;
+                pointerId = evt.pointerId;
+                pointerStart = new Vector2(evt.position.x, evt.position.y);
+                sizeStart = new Vector2(panel.resolvedStyle.width, panel.resolvedStyle.height);
+                handle.CapturePointer(pointerId);
+                evt.StopImmediatePropagation();
+            });
+            handle.RegisterCallback<PointerMoveEvent>(evt =>
+            {
+                if (!resizing || evt.pointerId != pointerId)
+                    return;
+                Vector2 pointer = new Vector2(evt.position.x, evt.position.y);
+                Vector2 size = sizeStart + pointer - pointerStart;
+                float panelLeft = panel.worldBound.xMin - host.worldBound.xMin;
+                float panelTop = panel.worldBound.yMin - host.worldBound.yMin;
+                float maxWidth = Mathf.Max(320f, host.resolvedStyle.width - panelLeft);
+                float maxHeight = Mathf.Max(210f, host.resolvedStyle.height - panelTop);
+                panel.style.width = Mathf.Clamp(size.x, 320f, maxWidth);
+                panel.style.height = Mathf.Clamp(size.y, 210f, maxHeight);
+                evt.StopImmediatePropagation();
+            });
+            handle.RegisterCallback<PointerUpEvent>(evt =>
+            {
+                if (!resizing || evt.pointerId != pointerId)
+                    return;
+                resizing = false;
+                if (handle.HasPointerCapture(pointerId))
+                    handle.ReleasePointer(pointerId);
+                panel.schedule.Execute(() => ClampGarageDynoToViewport(host, panel));
+                evt.StopImmediatePropagation();
+            });
+        }
+
+        private static void PopulateGarageDyno(
+            AlpineTuningMod mod,
+            VehicleScriptableObject target,
+            TuneProfile working,
+            ScrollView content)
+        {
+            if (content == null)
+                return;
+            content.Clear();
+
+            AlpineDisplayUnits units = mod != null ? mod.Settings.units : AlpineDisplayUnits.Metric;
+            GarageComparisonSnapshot snapshot = BuildGarageComparisonSnapshot(mod, target, working, null);
+            if (snapshot?.Factory == null || snapshot.Current == null)
+            {
+                content.Add(MutedLabel("Comparison unavailable for this sled."));
+                return;
+            }
+
+            const string nativeDisclosure =
+                "Exact Sledders constant-power track model at full drive input. These plots are delivered track output, not a crankshaft torque curve.";
+            var gameModel = GarageDynoSection(
+                "GAME MODEL",
+                "EXACT MODEL",
+                nativeDisclosure,
+                false);
+
+            NativePhysicsDefaults nativeDrive = snapshot.Defaults?.nativePhysics;
+            float efficiency = nativeDrive?.powerEfficiency ?? 0f;
+            float minimumSpeed = nativeDrive?.drivetrainMinSpeed ?? 0f;
+            float taperStart = nativeDrive?.drivetrainMaxSpeed1 ?? 0f;
+            float taperEnd = nativeDrive?.drivetrainMaxSpeed2 ?? 0f;
+            bool hasNativeDrive = nativeDrive != null &&
+                nativeDrive.hasPowerEfficiency && nativeDrive.hasDrivetrainMinSpeed &&
+                nativeDrive.hasDrivetrainMaxSpeed1 && nativeDrive.hasDrivetrainMaxSpeed2 &&
+                IsFinitePositive(efficiency) && IsFinitePositive(minimumSpeed) &&
+                IsFinitePositive(taperStart) && IsFinitePositive(taperEnd) &&
+                taperEnd > taperStart;
+
+            if (hasNativeDrive)
+            {
+                float currentEfficiency = efficiency * PositiveEffectMultiplier(
+                    snapshot.CurrentEffect, "nativePowerEfficiencyMultiplier");
+                float speedMultiplier = PositiveEffectMultiplier(
+                    snapshot.CurrentEffect, "nativeDrivetrainSpeedMultiplier");
+                float currentMinimum = minimumSpeed * speedMultiplier;
+                float currentTaperStart = taperStart * speedMultiplier;
+                float currentTaperEnd = taperEnd * speedMultiplier;
+                float graphEnd = Mathf.Max(taperEnd, currentTaperEnd);
+
+                var factoryPower = new GaragePlotSeries
+                {
+                    Name = "Factory",
+                    Color = new Color(0.64f, 0.69f, 0.74f, 0.90f)
+                };
+                var currentPower = new GaragePlotSeries
+                {
+                    Name = "Current",
+                    Color = AlpineNativeUiConfig.AccentColor
+                };
+                var factoryForce = new GaragePlotSeries
+                {
+                    Name = "Factory",
+                    Color = new Color(0.64f, 0.69f, 0.74f, 0.90f)
+                };
+                var currentForce = new GaragePlotSeries
+                {
+                    Name = "Current",
+                    Color = AlpineNativeUiConfig.AccentColor
+                };
+
+                for (int i = 0; i <= 48; i++)
+                {
+                    float speed = graphEnd * i / 48f;
+                    float factoryWatts = AlpineTuneMath.NativeDeliveredTrackPower(
+                        snapshot.Factory.horsePower, efficiency, 1f, speed, taperStart, taperEnd);
+                    float currentWatts = AlpineTuneMath.NativeDeliveredTrackPower(
+                        snapshot.Current.horsePower, currentEfficiency, 1f, speed, currentTaperStart, currentTaperEnd);
+                    float displaySpeed = units == AlpineDisplayUnits.Imperial
+                        ? speed * 2.2369363f
+                        : speed * 3.6f;
+                    float factoryDisplayPower = units == AlpineDisplayUnits.Imperial
+                        ? factoryWatts / 745.6999f
+                        : factoryWatts / 1000f;
+                    float currentDisplayPower = units == AlpineDisplayUnits.Imperial
+                        ? currentWatts / 745.6999f
+                        : currentWatts / 1000f;
+                    float factoryNewtons = AlpineTuneMath.NativeTrackForce(factoryWatts, speed, minimumSpeed);
+                    float currentNewtons = AlpineTuneMath.NativeTrackForce(currentWatts, speed, currentMinimum);
+                    float factoryDisplayForce = units == AlpineDisplayUnits.Imperial
+                        ? factoryNewtons * 0.22480894f
+                        : factoryNewtons;
+                    float currentDisplayForce = units == AlpineDisplayUnits.Imperial
+                        ? currentNewtons * 0.22480894f
+                        : currentNewtons;
+                    factoryPower.Points.Add(new Vector2(displaySpeed, factoryDisplayPower));
+                    currentPower.Points.Add(new Vector2(displaySpeed, currentDisplayPower));
+                    factoryForce.Points.Add(new Vector2(displaySpeed, factoryDisplayForce));
+                    currentForce.Points.Add(new Vector2(displaySpeed, currentDisplayForce));
+                }
+
+                string speedUnit = units == AlpineDisplayUnits.Imperial ? "MPH" : "KM/H";
+                gameModel.Add(GarageLineGraph(
+                    "DELIVERED TRACK POWER",
+                    speedUnit,
+                    units == AlpineDisplayUnits.Imperial ? "HP" : "KW",
+                    factoryPower,
+                    currentPower));
+                gameModel.Add(GarageLineGraph(
+                    "DRIVE FORCE",
+                    speedUnit,
+                    units == AlpineDisplayUnits.Imperial ? "LBF" : "N",
+                    factoryForce,
+                    currentForce));
+
+            }
+            else
+            {
+                gameModel.Add(MutedLabel(
+                    "Native drive defaults have not been captured for this sled. No substitute curve is shown."));
+            }
+            content.Add(gameModel);
+
+            const string estimatedDisclosure =
+                "Sledders exposes no crank-torque curve. The family-shaped power curve and torque derived from it are estimates, never native telemetry.";
+            var estimated = GarageDynoSection(
+                "ESTIMATED ENGINE",
+                "ESTIMATED · NO NATIVE TORQUE CURVE",
+                estimatedDisclosure,
+                true);
+
+            GaragePlotSeries factoryHp;
+            GaragePlotSeries factoryTorque;
+            GaragePlotSeries currentHp;
+            GaragePlotSeries currentTorque;
+            string factoryReason;
+            string currentReason;
+            bool hasFactoryEstimate = TryBuildEstimatedEngineSeries(
+                mod, target, snapshot.FactoryProfile, snapshot.FactoryEffect, units,
+                "Factory", new Color(0.64f, 0.69f, 0.74f, 0.90f),
+                out factoryHp, out factoryTorque, out factoryReason);
+            bool hasCurrentEstimate = TryBuildEstimatedEngineSeries(
+                mod, target, snapshot.CurrentProfile, snapshot.CurrentEffect, units,
+                "Current", AlpineNativeUiConfig.AccentColor,
+                out currentHp, out currentTorque, out currentReason);
+            if (hasFactoryEstimate || hasCurrentEstimate)
+            {
+                estimated.Add(GarageLineGraph(
+                    "POWER / RPM",
+                    "RPM",
+                    units == AlpineDisplayUnits.Imperial ? "HP" : "KW",
+                    hasFactoryEstimate ? factoryHp : null,
+                    hasCurrentEstimate ? currentHp : null));
+                estimated.Add(GarageLineGraph(
+                    "DERIVED TORQUE / RPM",
+                    "RPM",
+                    units == AlpineDisplayUnits.Imperial ? "LB-FT" : "NM",
+                    hasFactoryEstimate ? factoryTorque : null,
+                    hasCurrentEstimate ? currentTorque : null));
+                if (!hasFactoryEstimate)
+                    estimated.Add(MutedLabel(factoryReason ?? "Factory estimate unavailable."));
+                if (!hasCurrentEstimate)
+                    estimated.Add(MutedLabel(currentReason ?? "Current estimate unavailable."));
+            }
+            else
+            {
+                string reason = !hasCurrentEstimate ? currentReason : factoryReason;
+                estimated.Add(MutedLabel(string.IsNullOrWhiteSpace(reason)
+                    ? "Estimated curve unavailable."
+                    : reason));
+            }
+            content.Add(estimated);
+
+            var summary = Section("FACTORY / CURRENT");
+            AddGarageComparisonMetrics(
+                summary,
+                GarageMetricsForSection(snapshot, "dyno", units),
+                false);
+            content.Add(summary);
+        }
+
+        private static VisualElement GarageLineGraph(
+            string title,
+            string xUnit,
+            string yUnit,
+            params GaragePlotSeries[] series)
+        {
+            var group = new VisualElement();
+            group.style.flexDirection = FlexDirection.Column;
+            group.style.flexShrink = 0f;
+            group.style.width = Length.Percent(100f);
+            group.style.minWidth = 0f;
+            group.style.marginTop = 5f;
+
+            Func<Vector2, bool> isFinite = point =>
+                !float.IsNaN(point.x) && !float.IsInfinity(point.x) &&
+                !float.IsNaN(point.y) && !float.IsInfinity(point.y);
+            GaragePlotSeries[] available = (series ?? new GaragePlotSeries[0])
+                .Where(item => item != null && item.Points.Any(isFinite))
+                .ToArray();
+            List<Vector2> plottedPoints = available
+                .SelectMany(item => item.Points.Where(isFinite))
+                .ToList();
+            if (plottedPoints.Count == 0)
+            {
+                group.Add(MutedLabel((title ?? "Graph") + " unavailable."));
+                return group;
+            }
+
+            float minX = plottedPoints.Min(point => point.x);
+            float maxX = plottedPoints.Max(point => point.x);
+            float rawMinY = Mathf.Min(0f, plottedPoints.Min(point => point.y));
+            float rawMaxY = Mathf.Max(0f, plottedPoints.Max(point => point.y));
+            float minY = rawMinY < 0f ? -NiceGarageGraphMaximum(Mathf.Abs(rawMinY)) : 0f;
+            float maxY = NiceGarageGraphMaximum(rawMaxY);
+
+            Label heading = MutedLabel(title);
+            heading.style.unityFontStyleAndWeight = FontStyle.Bold;
+            heading.style.whiteSpace = WhiteSpace.NoWrap;
+            heading.style.overflow = Overflow.Hidden;
+            SetTooltip(
+                heading,
+                title + " plotted from " + FormatGarageGraphValue(minX) + " to " +
+                FormatGarageGraphValue(maxX) + " " + xUnit + ", in " + yUnit + ".");
+            group.Add(heading);
+
+            var legend = new VisualElement();
+            legend.style.flexDirection = FlexDirection.Row;
+            legend.style.flexWrap = Wrap.NoWrap;
+            legend.style.width = Length.Percent(100f);
+            legend.style.minWidth = 0f;
+            legend.style.overflow = Overflow.Hidden;
+            foreach (GaragePlotSeries item in available)
+            {
+                float peak = item.Points.Where(isFinite).Max(point => point.y);
+                string legendText =
+                    (item.Name ?? string.Empty) + "  " +
+                    FormatGarageGraphValue(peak) + " " + yUnit;
+                Label entry = new Label(legendText);
+                entry.style.color = item.Color;
+                entry.style.marginRight = 10f;
+                entry.style.fontSize = 9f;
+                entry.style.unityFontStyleAndWeight = FontStyle.Bold;
+                entry.style.whiteSpace = WhiteSpace.NoWrap;
+                entry.style.flexShrink = 1f;
+                entry.style.minWidth = 0f;
+                entry.style.overflow = Overflow.Hidden;
+                SetTooltip(entry, legendText + " peak");
+                legend.Add(entry);
+            }
+            group.Add(legend);
+
+            var graph = new VisualElement();
+            graph.style.position = Position.Relative;
+            graph.style.height = 154f;
+            graph.style.flexShrink = 0f;
+            graph.style.width = Length.Percent(100f);
+            graph.style.minWidth = 0f;
+            graph.style.overflow = Overflow.Hidden;
+            graph.style.backgroundColor = new Color(0.025f, 0.032f, 0.04f, 0.96f);
+            graph.generateVisualContent += context =>
+            {
+                if (maxX <= minX + 0.0001f || maxY <= minY + 0.0001f)
+                    return;
+
+                Rect bounds = graph.contentRect;
+                const float left = 42f;
+                const float right = 7f;
+                const float top = 8f;
+                const float bottom = 24f;
+                float width = Mathf.Max(1f, bounds.width - left - right);
+                float height = Mathf.Max(1f, bounds.height - top - bottom);
+                var painter = context.painter2D;
+                painter.lineWidth = 1f;
+                painter.strokeColor = new Color(0.24f, 0.29f, 0.34f, 0.70f);
+                for (int i = 0; i <= 4; i++)
+                {
+                    float x = left + width * i / 4f;
+                    float y = top + height * i / 4f;
+                    painter.BeginPath();
+                    painter.MoveTo(new Vector2(x, top));
+                    painter.LineTo(new Vector2(x, top + height));
+                    painter.Stroke();
+                    painter.BeginPath();
+                    painter.MoveTo(new Vector2(left, y));
+                    painter.LineTo(new Vector2(left + width, y));
+                    painter.Stroke();
+                }
+
+                foreach (GaragePlotSeries item in available)
+                {
+                    painter.lineWidth = string.Equals(item.Name, "Current", StringComparison.OrdinalIgnoreCase)
+                        ? 2.75f
+                        : 2f;
+                    painter.strokeColor = item.Color;
+                    painter.BeginPath();
+                    bool started = false;
+                    foreach (Vector2 value in item.Points)
+                    {
+                        if (!isFinite(value))
+                            continue;
+                        float x = left + Mathf.InverseLerp(minX, maxX, value.x) * width;
+                        float y = top + (1f - Mathf.InverseLerp(minY, maxY, value.y)) * height;
+                        if (!started)
+                        {
+                            painter.MoveTo(new Vector2(x, y));
+                            started = true;
+                        }
+                        else
+                            painter.LineTo(new Vector2(x, y));
+                    }
+                    if (started)
+                        painter.Stroke();
+                }
+            };
+
+            const float plotTop = 8f;
+            const float plotHeight = 122f;
+            for (int tick = 0; tick <= 4; tick++)
+            {
+                float fraction = tick / 4f;
+                float value = Mathf.Lerp(minY, maxY, fraction);
+                string tickText = FormatGarageGraphValue(value) +
+                                  (tick == 4 ? " " + yUnit : string.Empty);
+                Label yTick = GarageGraphScaleLabel(tickText, TextAnchor.MiddleRight);
+                yTick.style.left = 0f;
+                yTick.style.top = plotTop + plotHeight * (1f - fraction) - 6f;
+                yTick.style.width = 39f;
+                yTick.style.height = 13f;
+                graph.Add(yTick);
+            }
+
+            for (int tick = 0; tick <= 4; tick++)
+            {
+                int tickIndex = tick;
+                float fraction = tickIndex / 4f;
+                float value = Mathf.Lerp(minX, maxX, fraction);
+                string tickText = FormatGarageGraphValue(value) +
+                                  (tickIndex == 4 ? " " + xUnit : string.Empty);
+                TextAnchor alignment = tickIndex == 0
+                    ? TextAnchor.LowerLeft
+                    : tickIndex == 4 ? TextAnchor.LowerRight : TextAnchor.LowerCenter;
+                Label xTick = GarageGraphScaleLabel(tickText, alignment);
+                xTick.style.bottom = 0f;
+                xTick.style.width = 64f;
+                xTick.style.height = 18f;
+                Action placeTick = () =>
+                {
+                    float plotWidth = Mathf.Max(1f, graph.resolvedStyle.width - 49f);
+                    float center = 42f + plotWidth * fraction;
+                    float offset = tickIndex == 0 ? 0f : tickIndex == 4 ? 64f : 32f;
+                    xTick.style.left = center - offset;
+                };
+                graph.RegisterCallback<GeometryChangedEvent>(_ => placeTick());
+                graph.Add(xTick);
+            }
+            group.Add(graph);
+            return group;
+        }
+
+        private static Label GarageGraphScaleLabel(string text, TextAnchor alignment)
+        {
+            var label = new Label(text ?? string.Empty);
+            label.style.position = Position.Absolute;
+            label.style.paddingLeft = 2f;
+            label.style.paddingRight = 2f;
+            label.style.backgroundColor = new Color(0.025f, 0.032f, 0.04f, 0.84f);
+            label.style.color = AlpineNativeUiConfig.MutedTextColor;
+            label.style.fontSize = 9f;
+            label.style.unityFontStyleAndWeight = FontStyle.Bold;
+            label.style.unityTextAlign = alignment;
+            label.style.whiteSpace = WhiteSpace.NoWrap;
+            label.pickingMode = PickingMode.Ignore;
+            return label;
+        }
+
+        private static float NiceGarageGraphMaximum(float value)
+        {
+            if (float.IsNaN(value) || float.IsInfinity(value) || value <= 0f)
+                return 1f;
+
+            // Choose a conventional 1/2/5 tick step for roughly four vertical
+            // divisions, then round only to the next step. Rounding the entire
+            // maximum to 1/2/5 can turn 277 into 500 and visually flatten useful
+            // differences between factory and current curves.
+            float roughStep = value / 4f;
+            float magnitude = Mathf.Pow(10f, Mathf.Floor(Mathf.Log10(roughStep)));
+            float normalized = roughStep / magnitude;
+            float step = normalized <= 1f
+                ? 1f
+                : normalized <= 2f
+                    ? 2f
+                    : normalized <= 5f
+                        ? 5f
+                        : 10f;
+            step *= magnitude;
+            return Mathf.Max(step, Mathf.Ceil(value / step) * step);
+        }
+
+        private static string FormatGarageGraphValue(float value)
+        {
+            float absolute = Mathf.Abs(value);
+            if (absolute >= 100f)
+                return value.ToString("F0");
+            if (absolute >= 10f)
+                return value.ToString("F1");
+            return value.ToString("F2");
+        }
+
+        private static bool TryBuildEstimatedEngineSeries(
+            AlpineTuningMod mod,
+            VehicleScriptableObject target,
+            TuneProfile profile,
+            PartEffect effect,
+            AlpineDisplayUnits units,
+            string name,
+            Color color,
+            out GaragePlotSeries power,
+            out GaragePlotSeries torque,
+            out string unavailableReason)
+        {
+            power = null;
+            torque = null;
+            unavailableReason = null;
+            ResolvedStats stats = profile?.resolvedStats;
+            if (stats == null || stats.horsePower <= 0f)
+            {
+                unavailableReason = "Estimated curve unavailable: configured output is missing.";
+                return false;
+            }
+
+            SledDefaults engineDefaults = EngineDefaultsForProfile(mod, target, profile);
+            string engineName = !string.IsNullOrWhiteSpace(engineDefaults?.engineText)
+                ? engineDefaults.engineText
+                : stats.engineText;
+            bool turbo = stats.isTurboOn;
+            Vector2[] anchors;
+            AlpineTuneMath.EstimatedEngineArchetype archetype;
+            if (!AlpineTuneMath.TryGetEstimatedEngineCurve(engineName, turbo, out archetype, out anchors) ||
+                archetype == AlpineTuneMath.EstimatedEngineArchetype.Unknown)
+            {
+                unavailableReason = "Estimated curve unavailable: engine family is unknown.";
+                return false;
+            }
+
+            float redline = AlpineTuneMath.ResolveEstimatedRedline(stats);
+            ControllerDefaults recipientController = StockDefaultsFor(mod, target)?.controller;
+            float clutchStart = AlpineTuneMath.ResolveEstimatedCurveStartRpm(
+                redline, recipientController, effect, profile?.fineTune);
+
+            power = new GaragePlotSeries { Name = name, Color = color };
+            torque = new GaragePlotSeries { Name = name, Color = color };
+            float peakFraction = anchors
+                .OrderByDescending(anchor => anchor.y)
+                .ThenBy(anchor => anchor.x)
+                .First().x;
+            // Preserve the captured clutch start whenever it is below the
+            // archetype peak. If an unusual clutch calibration engages after
+            // that peak, include the peak itself so the chart still conveys the
+            // configured output rather than silently scaling it down.
+            float startFraction = Mathf.Min(clutchStart / redline, peakFraction);
+            List<float> sampleFractions = Enumerable.Range(0, 49)
+                .Select(i => Mathf.Lerp(startFraction, 1f, i / 48f))
+                .Concat(anchors.Select(anchor => anchor.x))
+                .Where(fraction => fraction >= startFraction && fraction <= 1f)
+                .GroupBy(fraction => Mathf.RoundToInt(fraction * 100000f))
+                .Select(group => group.First())
+                .OrderBy(fraction => fraction)
+                .ToList();
+            foreach (float normalizedRpm in sampleFractions)
+            {
+                float rpm = normalizedRpm * redline;
+                float horsepower = stats.horsePower *
+                                   AlpineTuneMath.InterpolateEstimatedEngineCurve(anchors, normalizedRpm);
+                float displayPower = units == AlpineDisplayUnits.Imperial
+                    ? horsepower
+                    : UnitConversion.HorsepowerToKilowatts(horsepower);
+                float displayTorque = units == AlpineDisplayUnits.Imperial
+                    ? horsepower * 5252.113f / Mathf.Max(1f, rpm)
+                    : UnitConversion.HorsepowerToKilowatts(horsepower) * 9549.2966f / Mathf.Max(1f, rpm);
+                power.Points.Add(new Vector2(rpm, displayPower));
+                torque.Points.Add(new Vector2(rpm, displayTorque));
+            }
+            return true;
+        }
+
+        private static GarageComparisonSnapshot BuildGarageComparisonSnapshot(
+            AlpineTuningMod mod,
+            VehicleScriptableObject target,
+            TuneProfile current,
+            TuneProfile candidate)
+        {
+            if (mod == null || target == null || current == null)
+                return null;
+
+            TuneProfile factory = mod.Catalog.CreateDefaultProfile(
+                target,
+                AlpineConstants.DefaultProfileAuthor);
+            TuneProfile currentPreview = TuneStore.Clone(current);
+            TuneProfile candidatePreview = TuneStore.Clone(candidate);
+            try
+            {
+                mod.PreviewProfilesWithSharedEnvironment(
+                    target,
+                    factory,
+                    currentPreview,
+                    candidatePreview);
+            }
+            catch (Exception ex)
+            {
+                MelonLogger.Warning($"Garage comparison could not be resolved: {ex.GetType().Name}");
+            }
+
+            return new GarageComparisonSnapshot
+            {
+                Defaults = StockDefaultsFor(mod, target),
+                FactoryProfile = factory,
+                CurrentProfile = currentPreview,
+                CandidateProfile = candidatePreview,
+                FactoryEffect = GarageMergedEffect(mod, factory),
+                CurrentEffect = GarageMergedEffect(mod, currentPreview),
+                CandidateEffect = candidatePreview != null ? GarageMergedEffect(mod, candidatePreview) : null
+            };
+        }
+
+        private static PartEffect GarageMergedEffect(AlpineTuningMod mod, TuneProfile profile)
+        {
+            var merged = new PartEffect();
+            if (mod?.Catalog == null || profile == null)
+                return merged;
+
+            foreach (string category in PartCatalog.OrderedCategories)
+            {
+                TunePart part = mod.Catalog.Find(profile.GetPartId(category));
+                if (part?.effect != null)
+                    AlpineTuneMath.MergeEffect(merged, part.effect);
+            }
+            return merged;
+        }
+
+        private static SledDefaults EngineDefaultsForProfile(
+            AlpineTuningMod mod,
+            VehicleScriptableObject target,
+            TuneProfile profile)
+        {
+            if (profile != null &&
+                (!string.IsNullOrWhiteSpace(profile.donorSledKey) ||
+                 !string.IsNullOrWhiteSpace(profile.donorVehicleId)))
+            {
+                VehicleScriptableObject donor = mod?.FindSledByIdentity(
+                    profile.donorSledKey,
+                    profile.donorVehicleId);
+                SledDefaults donorDefaults = StockDefaultsFor(mod, donor);
+                if (donorDefaults != null)
+                    return donorDefaults;
+                return null;
+            }
+            return StockDefaultsFor(mod, target);
+        }
+
+        private static List<GarageMetricDescriptor> GarageMetricsForSection(
+            GarageComparisonSnapshot snapshot,
+            string section,
+            AlpineDisplayUnits units)
+        {
+            var metrics = new List<GarageMetricDescriptor>();
+            if (snapshot?.Factory == null || snapshot.Current == null)
+                return metrics;
+
+            ResolvedStats factory = snapshot.Factory;
+            ResolvedStats current = snapshot.Current;
+            ResolvedStats candidate = snapshot.Candidate;
+            bool hasCandidate = candidate != null;
+            string normalizedSection = (section ?? string.Empty).ToLowerInvariant();
+            NativePhysicsDefaults native = snapshot.Defaults?.nativePhysics;
+            ControllerDefaults controller = snapshot.Defaults?.controller;
+
+            Action<string, string, float, float, float, bool, GarageMetricDirection, Func<float, string>, float?, float?> add =
+                (label, tooltip, factoryValue, currentValue, candidateValue, available, direction, formatter, minimum, maximum) =>
+                {
+                    metrics.Add(new GarageMetricDescriptor
+                    {
+                        Label = label,
+                        Tooltip = tooltip,
+                        Factory = factoryValue,
+                        Current = currentValue,
+                        Candidate = candidateValue,
+                        HasCandidate = hasCandidate,
+                        Available = available,
+                        Direction = direction,
+                        Format = formatter,
+                        SafetyMinimum = minimum,
+                        SafetyMaximum = maximum
+                    });
+                };
+
+            Func<float, string> percent = value => value.ToString("F0") + "%";
+            Func<float, string> rpm = value => value.ToString("F0") + " rpm";
+            Func<float, string> power = value => UnitConversion.FormatPower(value, units);
+            Func<float, string> weight = value => UnitConversion.FormatWeight(value, units);
+            Func<float, string> lug = value => units == AlpineDisplayUnits.Imperial
+                ? UnitConversion.MillimetersToInches(value).ToString("F2") + " in"
+                : value.ToString("F0") + " mm";
+            Func<float, string> stance = value => units == AlpineDisplayUnits.Imperial
+                ? UnitConversion.MillimetersToInches(value).ToString("F1") + " in"
+                : value.ToString("F0") + " mm";
+            Func<float, string> metres = value => UnitConversion.FormatLengthFromMeters(value, units);
+
+            if (normalizedSection == "engine" || normalizedSection == "dyno")
+            {
+                add("Configured output", "Resolved configured engine output.",
+                    factory.horsePower, current.horsePower, candidate?.horsePower ?? 0f,
+                    true, GarageMetricDirection.HigherIsBetter, power, 0f, null);
+                add("Setup weight", "Complete configured sled weight.",
+                    factory.weight, current.weight, candidate?.weight ?? 0f,
+                    true, GarageMetricDirection.LowerIsBetter, weight, 0f, null);
+            }
+
+            if (normalizedSection == "drivetrain" || normalizedSection == "dyno")
+            {
+                AddAvailableEffectPercentMetric(metrics, "Drive efficiency", "Native powerEfficiency multiplier.",
+                    snapshot, native?.hasPowerEfficiency == true,
+                    GarageMetricDirection.HigherIsBetter, "nativePowerEfficiencyMultiplier");
+                AddClutchMetrics(metrics, snapshot, rpm);
+                AddRpmResponseMetrics(metrics, snapshot);
+                AddAvailableEffectPercentMetric(metrics, "Speed taper", "Native drivetrain speed-envelope multiplier.",
+                    snapshot, native?.hasDrivetrainMaxSpeed1 == true && native.hasDrivetrainMaxSpeed2,
+                    GarageMetricDirection.Preference, "nativeDrivetrainSpeedMultiplier");
+                AddAvailableEffectPercentMetric(metrics, "Track inertia", "Native simulated track-mass multiplier.",
+                    snapshot, native?.hasTrackMass == true,
+                    GarageMetricDirection.LowerIsBetter, "nativeTrackMassMultiplier");
+                AddAvailableEffectPercentMetric(metrics, "Brake calibration", "Native breakForce multiplier relative to factory.",
+                    snapshot, native?.hasBrakeForce == true,
+                    GarageMetricDirection.Preference, "nativeBrakeForceMultiplier", "brakeForceMultiplier");
+            }
+
+            if (normalizedSection == "track" || normalizedSection == "dyno")
+            {
+                add("Lug height", "Resolved physical lug height.",
+                    factory.lugHeight, current.lugHeight, candidate?.lugHeight ?? 0f,
+                    true, GarageMetricDirection.Preference, lug, 0f, 100f);
+                add("Snow bite", "Resolved snow-friction coefficient.",
+                    factory.friction, current.friction, candidate?.friction ?? 0f,
+                    true, GarageMetricDirection.HigherIsBetter,
+                    value => value.ToString("F2"), 0f, 3f);
+                AddAvailableEffectPercentMetric(metrics, "Hard-surface grip", "Per-track hard-surface contact grip.",
+                    snapshot, native?.hasTrackGrip == true,
+                    GarageMetricDirection.HigherIsBetter, "nativeTrackGripMultiplier", "trackGripMultiplier");
+                if (normalizedSection != "dyno")
+                {
+                    AddAvailableEffectPercentMetric(metrics, "Track inertia", "Native simulated track-mass multiplier.",
+                        snapshot, native?.hasTrackMass == true,
+                        GarageMetricDirection.LowerIsBetter, "nativeTrackMassMultiplier");
+                }
+            }
+
+            if (normalizedSection == "steering")
+            {
+                add("Ski stance", "Native skiStance is stored and displayed in millimetres.",
+                    factory.skiStance, current.skiStance, candidate?.skiStance ?? 0f,
+                    true, GarageMetricDirection.Preference, stance,
+                    Mathf.Max(0f, factory.skiStance - 180f),
+                    Mathf.Min(4000f, factory.skiStance + 180f));
+                add("Physical ski offset", "Native skisXDistanceOffset remains metres internally.",
+                    factory.skisXDistanceOffset, current.skisXDistanceOffset,
+                    candidate?.skisXDistanceOffset ?? 0f,
+                    true, GarageMetricDirection.Preference, metres,
+                    Mathf.Max(-1f, factory.skisXDistanceOffset - 0.12f),
+                    Mathf.Min(1f, factory.skisXDistanceOffset + 0.12f));
+                AddAvailableEffectPercentMetric(metrics, "Ski grip", "Per-ski hard-surface contact grip.",
+                    snapshot, native?.hasSkiGrip == true,
+                    GarageMetricDirection.HigherIsBetter, "nativeSkiGripMultiplier", "skiGripMultiplier");
+                AddAvailableEffectPercentMetric(metrics, "Steering angle", "Native maximum ski-angle multiplier.",
+                    snapshot, native?.hasSkisMaxAngle == true,
+                    GarageMetricDirection.Preference, "nativeSkisMaxAngleMultiplier", "skisMaxAngleMultiplier");
+                if (native?.hasToeAngle == true && Mathf.Abs(native.toeAngle) < 0.0001f)
+                {
+                    metrics.Add(new GarageMetricDescriptor
+                    {
+                        Label = "Toe",
+                        Tooltip = "Factory toe is zero, so multiplier presets correctly leave the resolved toe at zero.",
+                        Factory = 0f,
+                        Current = 0f,
+                        Candidate = 0f,
+                        HasCandidate = snapshot.Candidate != null,
+                        Direction = GarageMetricDirection.Preference,
+                        Format = value => "0 (factory zero)",
+                        SafetyMinimum = -1f,
+                        SafetyMaximum = 1f
+                    });
+                }
+                else if (native?.hasToeAngle == true)
+                {
+                    AddAvailableEffectPercentMetric(metrics, "Toe", "Native toe-angle multiplier.",
+                        snapshot, true, GarageMetricDirection.Preference,
+                        "nativeToeAngleMultiplier", "toeAngleMultiplier");
+                }
+                AddAvailableEffectPercentMetric(metrics, "Camber response", "Native ski camber-response multiplier.",
+                    snapshot, native?.hasLeftCamberFactor == true || native?.hasRightCamberFactor == true,
+                    GarageMetricDirection.Preference, "nativeCamberFactorMultiplier", "camberFactorMultiplier");
+            }
+
+            if (normalizedSection == "suspension")
+            {
+                AddAvailableEffectPercentMetric(metrics, "Front spring", "Native front spring factor.",
+                    snapshot, native?.hasFrontSpring == true, GarageMetricDirection.Preference, "nativeFrontSpringMultiplier");
+                AddAvailableEffectPercentMetric(metrics, "Front damper", "Native front damper factor.",
+                    snapshot, native?.hasFrontDamper == true, GarageMetricDirection.Preference, "nativeFrontDamperMultiplier");
+                AddAvailableEffectPercentMetric(metrics, "Front compression", "Native front compression damping.",
+                    snapshot, native?.hasFrontCompressionDamping == true, GarageMetricDirection.Preference, "nativeFrontCompressionDampingMultiplier");
+                AddAvailableEffectPercentMetric(metrics, "Front rebound", "Native front rebound damping.",
+                    snapshot, native?.hasFrontReboundDamping == true, GarageMetricDirection.Preference, "nativeFrontReboundDampingMultiplier");
+                AddAvailableEffectPercentMetric(metrics, "Rear spring", "Native rear spring factor.",
+                    snapshot, native?.hasRearSpring == true, GarageMetricDirection.Preference, "nativeRearSpringMultiplier");
+                AddAvailableEffectPercentMetric(metrics, "Rear damper", "Native rear damper factor.",
+                    snapshot, native?.hasRearDamper == true, GarageMetricDirection.Preference, "nativeRearDamperMultiplier");
+                AddAvailableEffectPercentMetric(metrics, "Rear compression", "Native rear compression damping.",
+                    snapshot, native?.hasRearCompressionDamping == true, GarageMetricDirection.Preference, "nativeRearCompressionDampingMultiplier");
+                AddAvailableEffectPercentMetric(metrics, "Rear rebound", "Native rear rebound damping.",
+                    snapshot, native?.hasRearReboundDamping == true, GarageMetricDirection.Preference, "nativeRearReboundDampingMultiplier");
+                AddAvailableEffectPercentMetric(metrics, "Anti-roll", "Native anti-roll-bar factor.",
+                    snapshot, native?.hasAntiRollBar == true, GarageMetricDirection.Preference, "nativeAntiRollBarMultiplier");
+                AddAvailableEffectPercentMetric(metrics, "Front rigidity", "Native front track rigidity.",
+                    snapshot, native?.hasTrackRigidityFront == true, GarageMetricDirection.Preference, "nativeTrackRigidityFrontMultiplier");
+                AddAvailableEffectPercentMetric(metrics, "Rear rigidity", "Native rear track rigidity.",
+                    snapshot, native?.hasTrackRigidityRear == true, GarageMetricDirection.Preference, "nativeTrackRigidityRearMultiplier");
+                add("COM height", "Resolved centre-of-mass vertical offset.",
+                    factory.centerOfMassOffset?.y ?? 0f,
+                    current.centerOfMassOffset?.y ?? 0f,
+                    candidate?.centerOfMassOffset?.y ?? 0f,
+                    true, GarageMetricDirection.Preference, metres, null, null);
+                add("COM fore/aft", "Resolved centre-of-mass longitudinal offset.",
+                    factory.centerOfMassOffset?.z ?? 0f,
+                    current.centerOfMassOffset?.z ?? 0f,
+                    candidate?.centerOfMassOffset?.z ?? 0f,
+                    true, GarageMetricDirection.Preference, metres, null, null);
+            }
+
+            if (normalizedSection == "lighting")
+            {
+                AddEffectPercentMetric(metrics, "Intensity", "Headlight intensity relative to factory.",
+                    snapshot, "headlightIntensityMultiplier", GarageMetricDirection.Preference);
+                AddEffectPercentMetric(metrics, "Range", "Headlight range relative to factory.",
+                    snapshot, "headlightRangeMultiplier", GarageMetricDirection.Preference);
+                AddEffectPercentMetric(metrics, "Beam angle", "Headlight spot angle relative to factory.",
+                    snapshot, "headlightSpotAngleMultiplier", GarageMetricDirection.Preference);
+                add("Vertical aim", "Headlight pitch offset.",
+                    snapshot.FactoryEffect?.headlightPitchOffsetDegrees ?? 0f,
+                    snapshot.CurrentEffect?.headlightPitchOffsetDegrees ?? 0f,
+                    snapshot.CandidateEffect?.headlightPitchOffsetDegrees ?? 0f,
+                    true, GarageMetricDirection.Preference,
+                    value => value.ToString("+0.0;-0.0;0.0") + " deg", -15f, 15f);
+            }
+
+            return metrics;
+        }
+
+        private static void AddEffectPercentMetric(
+            List<GarageMetricDescriptor> metrics,
+            string label,
+            string tooltip,
+            GarageComparisonSnapshot snapshot,
+            string member,
+            GarageMetricDirection direction)
+        {
+            AddEffectPercentMetric(metrics, label, tooltip, snapshot, direction, member);
+        }
+
+        private static void AddAvailableEffectPercentMetric(
+            List<GarageMetricDescriptor> metrics,
+            string label,
+            string tooltip,
+            GarageComparisonSnapshot snapshot,
+            bool available,
+            GarageMetricDirection direction,
+            params string[] members)
+        {
+            if (!available)
+                return;
+            AddEffectPercentMetric(metrics, label, tooltip, snapshot, direction, members);
+        }
+
+        private static void AddEffectPercentMetric(
+            List<GarageMetricDescriptor> metrics,
+            string label,
+            string tooltip,
+            GarageComparisonSnapshot snapshot,
+            GarageMetricDirection direction,
+            params string[] members)
+        {
+            if (metrics == null || snapshot == null || members == null || members.Length == 0)
+                return;
+            metrics.Add(new GarageMetricDescriptor
+            {
+                Label = label,
+                Tooltip = tooltip,
+                Factory = 100f,
+                Current = PositiveEffectMultiplier(snapshot.CurrentEffect, members) * 100f,
+                Candidate = PositiveEffectMultiplier(snapshot.CandidateEffect, members) * 100f,
+                HasCandidate = snapshot.Candidate != null,
+                Available = true,
+                SafetyMinimum = 60f,
+                SafetyMaximum = 140f,
+                Direction = direction,
+                Format = value => value.ToString("F0") + "%"
+            });
+        }
+
+        private static void AddClutchMetrics(
+            List<GarageMetricDescriptor> metrics,
+            GarageComparisonSnapshot snapshot,
+            Func<float, string> formatter)
+        {
+            ControllerDefaults defaults = snapshot?.Defaults?.controller;
+            if (metrics == null || defaults == null)
+                return;
+
+            AlpineTuneMath.ResolvedClutchRange factory = AlpineTuneMath.ResolveClutchRange(
+                defaults, snapshot.FactoryEffect, snapshot.FactoryProfile?.fineTune);
+            AlpineTuneMath.ResolvedClutchRange current = AlpineTuneMath.ResolveClutchRange(
+                defaults, snapshot.CurrentEffect, snapshot.CurrentProfile?.fineTune);
+            AlpineTuneMath.ResolvedClutchRange candidate = AlpineTuneMath.ResolveClutchRange(
+                defaults, snapshot.CandidateEffect, snapshot.CandidateProfile?.fineTune);
+
+            if (factory.HasMinimum)
+            {
+                metrics.Add(new GarageMetricDescriptor
+                {
+                    Label = "Clutch engagement",
+                    Tooltip = "Resolved native clutchRpmMin after the same offsets, trim, and safety clamp used at runtime.",
+                    Factory = factory.Minimum,
+                    Current = current.Minimum,
+                    Candidate = candidate.Minimum,
+                    HasCandidate = snapshot.Candidate != null,
+                    Direction = GarageMetricDirection.Preference,
+                    Format = formatter,
+                    SafetyMinimum = Mathf.Max(0f, defaults.clutchRpmMin * 0.75f),
+                    SafetyMaximum = Mathf.Min(14000f, defaults.clutchRpmMin * 1.35f)
+                });
+            }
+            if (factory.HasMaximum)
+            {
+                metrics.Add(new GarageMetricDescriptor
+                {
+                    Label = "Clutch lock",
+                    Tooltip = "Resolved native clutchRpmMax after the same offsets, trim, ordering, and safety clamp used at runtime.",
+                    Factory = factory.Maximum,
+                    Current = current.Maximum,
+                    Candidate = candidate.Maximum,
+                    HasCandidate = snapshot.Candidate != null,
+                    Direction = GarageMetricDirection.Preference,
+                    Format = formatter,
+                    SafetyMinimum = Mathf.Max(0f, defaults.clutchRpmMax * 0.75f),
+                    SafetyMaximum = Mathf.Min(14000f, defaults.clutchRpmMax * 1.35f)
+                });
+            }
+        }
+
+        private static void AddRpmResponseMetrics(
+            List<GarageMetricDescriptor> metrics,
+            GarageComparisonSnapshot snapshot)
+        {
+            ControllerDefaults defaults = snapshot?.Defaults?.controller;
+            if (metrics == null || defaults == null)
+                return;
+
+            if (defaults.hasRpmSensitivity)
+            {
+                Func<PartEffect, float> percent = effect =>
+                    AlpineTuneMath.SafeRatio(
+                        AlpineTuneMath.ResolveRpmSensitivity(defaults.rpmSensitivity, effect),
+                        defaults.rpmSensitivity) * 100f;
+                metrics.Add(new GarageMetricDescriptor
+                {
+                    Label = "RPM rise",
+                    Tooltip = "Resolved native RPM-up sensitivity after the same turbo-response composition and safety clamp used at runtime.",
+                    Factory = percent(snapshot.FactoryEffect),
+                    Current = percent(snapshot.CurrentEffect),
+                    Candidate = percent(snapshot.CandidateEffect),
+                    HasCandidate = snapshot.Candidate != null,
+                    Direction = GarageMetricDirection.Preference,
+                    Format = value => value.ToString("F0") + "%",
+                    SafetyMinimum = 50f,
+                    SafetyMaximum = 170f
+                });
+            }
+
+            if (defaults.hasRpmSensitivityDown)
+            {
+                Func<PartEffect, float> percent = effect =>
+                    AlpineTuneMath.SafeRatio(
+                        AlpineTuneMath.ResolveRpmSensitivityDown(defaults.rpmSensitivityDown, effect),
+                        defaults.rpmSensitivityDown) * 100f;
+                metrics.Add(new GarageMetricDescriptor
+                {
+                    Label = "Backshift",
+                    Tooltip = "Resolved native RPM-down sensitivity after the same safety clamp used at runtime.",
+                    Factory = percent(snapshot.FactoryEffect),
+                    Current = percent(snapshot.CurrentEffect),
+                    Candidate = percent(snapshot.CandidateEffect),
+                    HasCandidate = snapshot.Candidate != null,
+                    Direction = GarageMetricDirection.Preference,
+                    Format = value => value.ToString("F0") + "%",
+                    SafetyMinimum = 50f,
+                    SafetyMaximum = 170f
+                });
+            }
+        }
+
+        private static void AddGarageComparisonMetrics(
+            VisualElement content,
+            IEnumerable<GarageMetricDescriptor> descriptors,
+            bool candidateContext)
+        {
+            if (content == null)
+                return;
+            foreach (GarageMetricDescriptor descriptor in descriptors ?? Enumerable.Empty<GarageMetricDescriptor>())
+            {
+                if (descriptor == null || !descriptor.Available)
+                    continue;
+                content.Add(GarageComparisonMetric(descriptor, candidateContext));
+            }
+        }
+
+        private static void AddGarageCategoricalReference(
+            VisualElement content,
+            string label,
+            string factoryValue,
+            string currentValue,
+            string candidateValue,
+            bool candidateContext)
+        {
+            if (content == null)
+                return;
+
+            string factory = string.IsNullOrWhiteSpace(factoryValue) ? "UNAVAILABLE" : factoryValue;
+            string current = string.IsNullOrWhiteSpace(currentValue) ? "UNAVAILABLE" : currentValue;
+            string candidate = string.IsNullOrWhiteSpace(candidateValue) ? current : candidateValue;
+            string displayed = candidateContext ? candidate : current;
+
+            var group = new VisualElement();
+            group.style.flexDirection = FlexDirection.Column;
+            group.style.flexShrink = 0f;
+            group.style.width = Length.Percent(100f);
+            group.style.minWidth = 0f;
+            group.style.marginBottom = 7f;
+
+            Label title = MutedLabel(label ?? string.Empty);
+            title.style.whiteSpace = WhiteSpace.NoWrap;
+            title.style.overflow = Overflow.Hidden;
+            title.style.unityFontStyleAndWeight = FontStyle.Bold;
+            SetTooltip(title, label);
+            group.Add(title);
+
+            Label factoryLine = MutedLabel("FACTORY  " + factory);
+            factoryLine.style.fontSize = 10f;
+            factoryLine.style.whiteSpace = WhiteSpace.Normal;
+            SetTooltip(factoryLine, "Factory: " + factory);
+            group.Add(factoryLine);
+
+            string prefix = candidateContext ? "PROJECTED  " : "CURRENT  ";
+            Label displayedLine = MutedLabel(prefix + displayed);
+            displayedLine.style.fontSize = 10f;
+            displayedLine.style.whiteSpace = WhiteSpace.Normal;
+            SetTooltip(displayedLine, prefix.Trim() + ": " + displayed);
+            group.Add(displayedLine);
+
+            if (candidateContext)
+            {
+                bool same = string.Equals(current, candidate, StringComparison.OrdinalIgnoreCase);
+                Label versusCurrent = MutedLabel(same
+                    ? "VS CURRENT  SAME"
+                    : "VS CURRENT  " + current + " → " + candidate);
+                versusCurrent.style.fontSize = 9f;
+                versusCurrent.style.whiteSpace = WhiteSpace.Normal;
+                SetTooltip(versusCurrent, same
+                    ? "No categorical change versus the current draft."
+                    : "Current: " + current + "; projected: " + candidate + ".");
+                group.Add(versusCurrent);
+            }
+
+            content.Add(group);
+        }
+
+        private static void AddGarageEngineReferences(
+            AlpineTuningMod mod,
+            VisualElement content,
+            VehicleScriptableObject target,
+            GarageComparisonSnapshot snapshot,
+            bool candidateContext)
+        {
+            if (snapshot == null)
+                return;
+
+            SledDefaults factory = EngineDefaultsForProfile(mod, target, snapshot.FactoryProfile);
+            SledDefaults current = EngineDefaultsForProfile(mod, target, snapshot.CurrentProfile);
+            SledDefaults candidate = EngineDefaultsForProfile(mod, target, snapshot.CandidateProfile);
+
+            AddGarageCategoricalReference(
+                content,
+                "Engine family",
+                factory != null ? EngineDisplayName(factory) : null,
+                current != null ? EngineDisplayName(current) : null,
+                candidate != null ? EngineDisplayName(candidate) : null,
+                candidateContext);
+            AddGarageCategoricalReference(
+                content,
+                "Induction family",
+                snapshot.Factory != null
+                    ? (snapshot.Factory.isTurboOn ? "TURBO" : "NATURALLY ASPIRATED")
+                    : null,
+                snapshot.Current != null
+                    ? (snapshot.Current.isTurboOn ? "TURBO" : "NATURALLY ASPIRATED")
+                    : null,
+                snapshot.Candidate != null
+                    ? (snapshot.Candidate.isTurboOn ? "TURBO" : "NATURALLY ASPIRATED")
+                    : null,
+                candidateContext);
+        }
+
+        private static void AddGarageLightingReferences(
+            VisualElement content,
+            GarageComparisonSnapshot snapshot,
+            bool candidateContext)
+        {
+            if (snapshot == null)
+                return;
+
+            AddGarageCategoricalReference(
+                content,
+                "Operating mode",
+                FormatHeadlightMode(snapshot.FactoryProfile).ToUpperInvariant(),
+                FormatHeadlightMode(snapshot.CurrentProfile).ToUpperInvariant(),
+                FormatHeadlightMode(snapshot.CandidateProfile).ToUpperInvariant(),
+                candidateContext);
+            AddGarageCategoricalReference(
+                content,
+                "RGB colour",
+                FormatGarageHeadlightColor(snapshot.FactoryEffect),
+                FormatGarageHeadlightColor(snapshot.CurrentEffect),
+                FormatGarageHeadlightColor(snapshot.CandidateEffect),
+                candidateContext);
+        }
+
+        private static string FormatGarageHeadlightColor(PartEffect effect)
+        {
+            if (effect == null || !effect.hasHeadlightColor)
+                return "NATIVE";
+            Color color = effect.headlightColor;
+            return "RGB " + Mathf.RoundToInt(Mathf.Clamp01(color.r) * 255f) + ", " +
+                   Mathf.RoundToInt(Mathf.Clamp01(color.g) * 255f) + ", " +
+                   Mathf.RoundToInt(Mathf.Clamp01(color.b) * 255f);
+        }
+
+        private static VisualElement GarageComparisonMetric(
+            GarageMetricDescriptor metric,
+            bool candidateContext)
+        {
+            var group = new VisualElement();
+            group.style.flexDirection = FlexDirection.Column;
+            group.style.flexShrink = 0f;
+            group.style.width = Length.Percent(100f);
+            group.style.minWidth = 0f;
+            group.style.marginBottom = 7f;
+
+            Label title = MutedLabel(metric.Label);
+            title.style.whiteSpace = WhiteSpace.NoWrap;
+            title.style.overflow = Overflow.Hidden;
+            title.style.unityFontStyleAndWeight = FontStyle.Bold;
+            SetTooltip(title, string.IsNullOrWhiteSpace(metric.Tooltip) ? metric.Label : metric.Tooltip);
+            group.Add(title);
+
+            float displayed = candidateContext && metric.HasCandidate
+                ? metric.Candidate
+                : metric.Current;
+            Func<float, string> format = metric.Format ?? (value => value.ToString("F2"));
+
+            var references = new VisualElement();
+            references.style.flexDirection = FlexDirection.Row;
+            references.style.width = Length.Percent(100f);
+            references.style.minWidth = 0f;
+            references.style.overflow = Overflow.Hidden;
+            string factoryText = "FACTORY  " + format(metric.Factory);
+            Label factory = MutedLabel(factoryText);
+            factory.style.flexGrow = 1f;
+            factory.style.flexShrink = 1f;
+            factory.style.width = Length.Percent(50f);
+            factory.style.minWidth = 0f;
+            factory.style.whiteSpace = WhiteSpace.NoWrap;
+            factory.style.overflow = Overflow.Hidden;
+            factory.style.fontSize = 10f;
+            string selectedText =
+                (candidateContext && metric.HasCandidate ? "PROJECTED  " : "CURRENT  ") +
+                format(displayed) + "  " + FormatGarageMetricDelta(displayed, metric.Factory, format);
+            Label selected = MutedLabel(selectedText);
+            selected.style.flexGrow = 1f;
+            selected.style.flexShrink = 1f;
+            selected.style.width = Length.Percent(50f);
+            selected.style.minWidth = 0f;
+            selected.style.whiteSpace = WhiteSpace.NoWrap;
+            selected.style.overflow = Overflow.Hidden;
+            selected.style.unityTextAlign = TextAnchor.MiddleRight;
+            selected.style.fontSize = 10f;
+            SetTooltip(factory, factoryText);
+            SetTooltip(selected, selectedText);
+            references.Add(factory);
+            references.Add(selected);
+            group.Add(references);
+
+            float minimum = metric.SafetyMinimum ?? Mathf.Min(metric.Factory, Mathf.Min(metric.Current, metric.HasCandidate ? metric.Candidate : metric.Current));
+            float maximum = metric.SafetyMaximum ?? Mathf.Max(metric.Factory, Mathf.Max(metric.Current, metric.HasCandidate ? metric.Candidate : metric.Current));
+            if (!metric.SafetyMinimum.HasValue || !metric.SafetyMaximum.HasValue)
+            {
+                float pad = Mathf.Max(0.001f, (maximum - minimum) * 0.12f);
+                if (maximum <= minimum + 0.0001f)
+                    pad = Mathf.Max(1f, Mathf.Abs(maximum) * 0.10f);
+                if (!metric.SafetyMinimum.HasValue)
+                    minimum -= pad;
+                if (!metric.SafetyMaximum.HasValue)
+                    maximum += pad;
+            }
+            if (maximum <= minimum + 0.0001f)
+                maximum = minimum + 1f;
+
+            float factoryPosition = Mathf.InverseLerp(minimum, maximum, metric.Factory);
+            float displayedPosition = Mathf.InverseLerp(minimum, maximum, displayed);
+            var track = new VisualElement();
+            track.style.position = Position.Relative;
+            track.style.height = 9f;
+            track.style.flexShrink = 0f;
+            track.style.width = Length.Percent(100f);
+            track.style.backgroundColor = new Color(0.10f, 0.12f, 0.14f, 0.98f);
+            track.style.overflow = Overflow.Hidden;
+
+            var factoryExtent = new VisualElement();
+            factoryExtent.style.position = Position.Absolute;
+            factoryExtent.style.left = 0f;
+            factoryExtent.style.top = 0f;
+            factoryExtent.style.bottom = 0f;
+            factoryExtent.style.width = Length.Percent(factoryPosition * 100f);
+            factoryExtent.style.backgroundColor = new Color(0.46f, 0.50f, 0.54f, 0.72f);
+            track.Add(factoryExtent);
+
+            float changeLeft = Mathf.Min(factoryPosition, displayedPosition);
+            float changeWidth = Mathf.Abs(displayedPosition - factoryPosition);
+            if (changeWidth > 0.0001f)
+            {
+                var change = new VisualElement();
+                change.style.position = Position.Absolute;
+                change.style.left = Length.Percent(changeLeft * 100f);
+                change.style.top = 1f;
+                change.style.bottom = 1f;
+                change.style.width = Length.Percent(Mathf.Max(0.8f, changeWidth * 100f));
+                change.style.backgroundColor = GarageMetricChangeColor(metric, displayed);
+                track.Add(change);
+            }
+
+            var marker = new VisualElement();
+            marker.style.position = Position.Absolute;
+            marker.style.left = Length.Percent(factoryPosition * 100f);
+            marker.style.top = 0f;
+            marker.style.bottom = 0f;
+            marker.style.width = 2f;
+            marker.style.backgroundColor = new Color(0.82f, 0.86f, 0.90f, 1f);
+            track.Add(marker);
+            group.Add(track);
+
+            if (candidateContext && metric.HasCandidate)
+            {
+                Label versusCurrent = MutedLabel(
+                    "VS CURRENT  " + FormatGarageMetricDelta(metric.Candidate, metric.Current, format));
+                versusCurrent.style.fontSize = 9f;
+                versusCurrent.style.unityTextAlign = TextAnchor.MiddleRight;
+                versusCurrent.style.whiteSpace = WhiteSpace.NoWrap;
+                versusCurrent.style.overflow = Overflow.Hidden;
+                SetTooltip(versusCurrent, versusCurrent.text);
+                group.Add(versusCurrent);
+            }
+            return group;
+        }
+
+        private static string FormatGarageMetricDelta(
+            float value,
+            float baseline,
+            Func<float, string> format)
+        {
+            float delta = value - baseline;
+            if (Mathf.Abs(delta) < 0.0001f)
+                return "+0";
+            string formatted = format != null ? format(Mathf.Abs(delta)) : Mathf.Abs(delta).ToString("F2");
+            return (delta > 0f ? "+" : "-") + formatted;
+        }
+
+        private static Color GarageMetricChangeColor(GarageMetricDescriptor metric, float displayed)
+        {
+            if (metric.Direction == GarageMetricDirection.Preference)
+                return new Color(0.18f, 0.62f, 0.94f, 0.95f);
+            float delta = displayed - metric.Factory;
+            bool beneficial = metric.Direction == GarageMetricDirection.HigherIsBetter
+                ? delta >= 0f
+                : delta <= 0f;
+            return beneficial
+                ? AlpineNativeUiConfig.AccentColor
+                : new Color(0.96f, 0.47f, 0.12f, 0.96f);
+        }
+
+        private static float PositiveEffectMultiplier(PartEffect effect, params string[] names)
+        {
+            if (effect == null || names == null)
+                return 1f;
+            float value;
+            return TryReadFloatMember(effect, out value, names) && value > 0f &&
+                   !float.IsNaN(value) && !float.IsInfinity(value)
+                ? value
+                : 1f;
+        }
+
+        private static bool IsFinitePositive(float value)
+        {
+            return value > 0f && !float.IsNaN(value) && !float.IsInfinity(value);
+        }
+
+        private static bool TryReadFloatMember(object source, out float value, params string[] names)
+        {
+            value = 0f;
+            if (source == null || names == null)
+                return false;
+            const BindingFlags flags = BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.IgnoreCase;
+            Type type = source.GetType();
+            foreach (string name in names)
+            {
+                if (string.IsNullOrWhiteSpace(name))
+                    continue;
+                object raw = null;
+                try
+                {
+                    FieldInfo field = type.GetField(name, flags);
+                    raw = field != null ? field.GetValue(source) : null;
+                    if (field == null)
+                    {
+                        PropertyInfo property = type.GetProperty(name, flags);
+                        raw = property != null && property.CanRead ? property.GetValue(source, null) : null;
+                    }
+                }
+                catch
+                {
+                    raw = null;
+                }
+                if (raw == null)
+                    continue;
+                try
+                {
+                    value = Convert.ToSingle(raw, System.Globalization.CultureInfo.InvariantCulture);
+                    return true;
+                }
+                catch
+                {
+                    // Continue to another alias.
+                }
+            }
+            return false;
+        }
+
+        private static void BuildGarageCategory(
+            AlpineTuningMod mod,
+            SUIManagedList rail,
+            VisualElement detailContent,
+            VehicleScriptableObject target,
+            TuneProfile working,
+            TuneProfile installedReference,
+            string category,
+            Action<string, string, string> navigate,
+            List<Button> tileButtons)
+        {
+            VisualElement grid = rail;
+            BuildGarageCategorySummary(mod, detailContent, target, working, category);
+            string[] partCategories = PartCategoriesForGarageSection(category).ToArray();
+            if (partCategories.Length == 0)
+            {
+                Button unavailable = GarageTile(
+                    "UNAVAILABLE",
+                    "This category is unavailable in the current game build.",
+                    false,
+                    null,
+                    "action.unavailable");
+                unavailable.SetEnabled(false);
+                grid.Add(unavailable);
+                return;
+            }
+
+            foreach (string partCategory in partCategories)
+            {
+                AddGaragePartTile(
+                    mod, grid, tileButtons, target, working, installedReference,
+                    detailContent, partCategory, navigate);
+            }
+
+            if (string.Equals(category, "engine", StringComparison.OrdinalIgnoreCase))
+            {
+                AddGarageNavigationTile(
+                    grid, tileButtons, "Engine Swap", DonorDisplayName(mod, working),
+                    NavigationPart, "engine.donor", "Engine Swap", navigate, "type.engine-swap");
+            }
+        }
+
+        private static string DonorDisplayName(AlpineTuningMod mod, TuneProfile working)
+        {
+            if (working == null ||
+                (string.IsNullOrWhiteSpace(working.donorSledKey) &&
+                 string.IsNullOrWhiteSpace(working.donorVehicleId)))
+                return "Selected sled's stock engine";
+
+            VehicleScriptableObject donor = mod.FindSledByIdentity(
+                working.donorSledKey,
+                working.donorVehicleId);
+            SledDefaults donorDefaults = donor != null
+                ? StockDefaultsFor(mod, donor)
+                : null;
+            return donorDefaults != null
+                ? EngineDisplayName(donorDefaults)
+                : "Unavailable saved engine";
+        }
+
+        private static void AddGaragePartTile(
+            AlpineTuningMod mod,
+            VisualElement grid,
+            List<Button> tileButtons,
+            VehicleScriptableObject target,
+            TuneProfile working,
+            TuneProfile installedReference,
+            VisualElement detailContent,
+            string partCategory,
+            Action<string, string, string> navigate)
+        {
+            string label = mod.Catalog.LabelForCategory(partCategory);
+            TunePart selected = mod.Catalog.Find(working.GetPartId(partCategory));
+            string subtitle = selected != null ? selected.name : "Choose a part";
+            Button tile = AddGarageNavigationTile(
+                grid,
+                tileButtons,
+                label,
+                subtitle,
+                NavigationPart,
+                partCategory,
+                label,
+                navigate,
+                GaragePartTypeIconKey(partCategory));
+            Action showDetails = () => ShowGarageSelectedPart(
+                mod, detailContent, target, working, installedReference, partCategory);
+            tile.RegisterCallback<FocusInEvent>(_ => showDetails());
+            tile.RegisterCallback<PointerEnterEvent>(_ => showDetails());
+        }
+
+        private static void BuildGarageCategorySummary(
+            AlpineTuningMod mod,
+            VisualElement content,
+            VehicleScriptableObject target,
+            TuneProfile working,
+            string category)
+        {
+            if (content == null)
+                return;
+            content.Clear();
+            string title = string.IsNullOrWhiteSpace(category)
+                ? "CURRENT BUILD"
+                : category.ToUpperInvariant() + " / BUILD VS FACTORY";
+            var section = Section(title);
+            GarageComparisonSnapshot snapshot = BuildGarageComparisonSnapshot(mod, target, working, null);
+            AddGarageComparisonMetrics(
+                section,
+                GarageMetricsForSection(snapshot, category, mod.Settings.units),
+                false);
+            if (string.Equals(category, "engine", StringComparison.OrdinalIgnoreCase))
+                AddGarageEngineReferences(mod, section, target, snapshot, false);
+            if (string.Equals(category, "lighting", StringComparison.OrdinalIgnoreCase))
+                AddGarageLightingReferences(section, snapshot, false);
+
+            var parts = new VisualElement();
+            parts.style.flexDirection = FlexDirection.Column;
+            parts.style.marginTop = AlpineNativeUiConfig.RowGap;
+            foreach (string partCategory in PartCategoriesForGarageSection(category))
+            {
+                string label = mod.Catalog.LabelForCategory(partCategory);
+                TunePart selected = mod.Catalog.Find(working?.GetPartId(partCategory));
+                parts.Add(MutedLabel(label + ": " + (selected != null ? selected.name : "Stock")));
+            }
+            if (string.Equals(category, "engine", StringComparison.OrdinalIgnoreCase))
+                parts.Add(MutedLabel("Engine Swap: " + DonorDisplayName(mod, working)));
+            section.Add(parts);
+            content.Add(section);
+        }
+
+        private static void ShowGarageSelectedPart(
+            AlpineTuningMod mod,
+            VisualElement content,
+            VehicleScriptableObject target,
+            TuneProfile working,
+            TuneProfile installedReference,
+            string partCategory)
+        {
+            if (content == null)
+                return;
+            content.Clear();
+            TunePart selected = mod.Catalog.Find(working?.GetPartId(partCategory));
+            var section = Section(mod.Catalog.LabelForCategory(partCategory));
+            if (selected == null)
+            {
+                section.Add(CardTitle("Stock"));
+                content.Add(section);
+                return;
+            }
+
+            section.Add(CardTitle(selected.name));
+            if (!string.IsNullOrWhiteSpace(selected.description))
+                section.Add(MutedLabel(selected.description));
+            GarageComparisonSnapshot snapshot = BuildGarageComparisonSnapshot(mod, target, working, null);
+            section.Add(MutedLabel("SELECTED BUILD"));
+            string garageSection = GarageSectionForPartCategory(partCategory);
+            AddGarageComparisonMetrics(
+                section,
+                GarageMetricsForSection(snapshot, garageSection, mod.Settings.units),
+                false);
+            if (string.Equals(garageSection, "engine", StringComparison.OrdinalIgnoreCase))
+                AddGarageEngineReferences(mod, section, target, snapshot, false);
+            if (string.Equals(garageSection, "lighting", StringComparison.OrdinalIgnoreCase))
+                AddGarageLightingReferences(section, snapshot, false);
+            if (selected.requiresReload)
+                section.Add(Badge("REBUILD"));
+            content.Add(section);
+        }
+
+        private static Button AddGarageNavigationTile(
+            VisualElement grid,
+            List<Button> tileButtons,
+            string title,
+            string subtitle,
+            string kind,
+            string id,
+            string navigationTitle,
+            Action<string, string, string> navigate,
+            string iconKey = null,
+            string fallbackIconKey = null,
+            bool showBrandMark = true)
+        {
+            Button tile = GarageTile(
+                title,
+                subtitle,
+                false,
+                () => navigate(kind, id, navigationTitle),
+                iconKey,
+                fallbackIconKey,
+                showBrandMark);
+            tile.name = "AlpineTile-" + SafeElementName(kind + "-" + id);
+            grid.Add(tile);
+            tileButtons.Add(tile);
+            return tile;
+        }
+
+        private static Button GarageTile(
+            string title,
+            string subtitle,
+            bool selected,
+            Action clicked,
+            string iconKey = null,
+            string fallbackIconKey = null,
+            bool showBrandMark = true)
+        {
+            var tile = new SUIButtonWithLabel { focusable = true };
+            tile.SetText(title ?? string.Empty);
+            Texture2D artwork = GarageIconTexture(iconKey, fallbackIconKey);
+            if (artwork != null)
+                tile.SetImage(artwork);
+            if (showBrandMark &&
+                string.Equals(iconKey, "action.setups", StringComparison.OrdinalIgnoreCase))
+            {
+                Texture2D brandMark = GarageIconResources.LoadBrandMark();
+                if (brandMark != null)
+                    tile.SetLogoImage(brandMark);
+            }
+
+            Label titleLabel = tile.Q<Label>();
+            if (titleLabel != null)
+            {
+                // Keep the native label hierarchy and typography. The card itself
+                // already supplies the faded backing treatment; a second opaque
+                // strip competes with the artwork and overlaps adjacent cards.
+                titleLabel.style.color = Color.white;
+                titleLabel.style.backgroundColor = Color.clear;
+                titleLabel.style.unityFontStyleAndWeight = FontStyle.Bold;
+                titleLabel.style.overflow = Overflow.Hidden;
+            }
+
+            // Sledders' vehicle cards reserve an inset for photos with their own
+            // framing. Alpine artwork already includes safe transparent margins,
+            // so use the complete image field and scale to fit instead of drawing
+            // it as a small image beneath the title treatment.
+            Image background = tile.Q<Image>(className: "bg-image");
+            if (background != null)
+            {
+                background.scaleMode = ScaleMode.ScaleToFit;
+                background.style.top = 0f;
+                background.style.left = 0f;
+                background.style.right = 0f;
+                background.style.bottom = 0f;
+                background.style.width = Length.Percent(100f);
+                background.style.height = Length.Percent(100f);
+            }
+            Image ringBase = tile.Q<Image>(className: "checkmark-base");
+            if (ringBase != null)
+            {
+                // Native SUIButtonWithLabel stores the artwork on its parent
+                // bg-image. The base-image/checkmark-base child is only the
+                // circular selection plate, so it can be hidden independently.
+                ringBase.style.display = DisplayStyle.None;
+            }
+
+            // Keep the separate native top-right checkmark. Select/Deselect
+            // controls its visibility without restoring the circular artwork
+            // backplate removed above.
+
+            Color idleBorder = new Color(0.72f, 0.82f, 0.9f, 0.72f);
+            Color activeBorder = AlpineNativeUiConfig.AccentColor;
+            bool hasKeyboardFocus = false;
+            bool hasPointerHover = false;
+            Action updateFocusBorder = () =>
+            {
+                bool emphasized = selected || hasKeyboardFocus || hasPointerHover;
+                Color color = emphasized ? activeBorder : idleBorder;
+                float width = emphasized ? 2f : 1f;
+                tile.style.borderLeftColor = color;
+                tile.style.borderRightColor = color;
+                tile.style.borderTopColor = color;
+                tile.style.borderBottomColor = color;
+                tile.style.borderLeftWidth = width;
+                tile.style.borderRightWidth = width;
+                tile.style.borderTopWidth = width;
+                tile.style.borderBottomWidth = width;
+            };
+            updateFocusBorder();
+            tile.RegisterCallback<FocusInEvent>(_ =>
+            {
+                hasKeyboardFocus = true;
+                updateFocusBorder();
+            });
+            tile.RegisterCallback<FocusOutEvent>(_ =>
+            {
+                hasKeyboardFocus = false;
+                updateFocusBorder();
+            });
+            tile.RegisterCallback<PointerEnterEvent>(_ =>
+            {
+                hasPointerHover = true;
+                updateFocusBorder();
+            });
+            tile.RegisterCallback<PointerLeaveEvent>(_ =>
+            {
+                hasPointerHover = false;
+                updateFocusBorder();
+            });
+            if (selected)
+                tile.Select();
+            else
+                tile.Deselect();
+            if (clicked != null)
+                tile.clicked += clicked;
+            SetTooltip(tile, subtitle);
+            return tile;
+        }
+
+        private static Texture2D GarageIconTexture(string iconKey, string fallbackIconKey = null)
+        {
+            Texture2D artwork = GarageIconResources.LoadGarageIcon(iconKey);
+            if (artwork == null &&
+                !string.IsNullOrWhiteSpace(fallbackIconKey) &&
+                !string.Equals(iconKey, fallbackIconKey, StringComparison.OrdinalIgnoreCase))
+            {
+                artwork = GarageIconResources.LoadGarageIcon(fallbackIconKey);
+            }
+
+            return artwork;
+        }
+
+        private static string GaragePartTypeIconKey(string partCategory)
+        {
+            switch (partCategory)
+            {
+                case PartCatalog.EngineCore: return "type.engine-core";
+                case PartCatalog.EnginePiston: return "type.pistons";
+                case PartCatalog.EngineCrank: return "type.crankshaft";
+                case PartCatalog.Intake: return "type.intake-exhaust";
+                case PartCatalog.Turbo: return "type.turbo";
+                case PartCatalog.Clutch: return "type.clutch-calibration";
+                case PartCatalog.ClutchWeights: return "type.clutch-weights";
+                case PartCatalog.RatioFeel: return "type.gearing";
+                case "brakeCalibration": return "type.brake-calibration";
+                case PartCatalog.Suspension: return "type.suspension";
+                case PartCatalog.Chassis: return "type.chassis";
+                case PartCatalog.TrackLimiter: return "type.limiter-strap";
+                case PartCatalog.RearShock: return "type.rear-shock";
+                case PartCatalog.RearSpring: return "type.rear-spring";
+                case PartCatalog.Accessories: return "part.accessory.utility";
+                case PartCatalog.Track: return "type.track";
+                case PartCatalog.Skis: return "type.skis";
+                case "steeringGeometry": return "type.steering-geometry";
+                case PartCatalog.HeadlightColor: return "type.headlight-color";
+                case PartCatalog.HeadlightBrightness: return "type.headlight-output";
+                case PartCatalog.HeadlightBeam: return "type.headlight-beam";
+                case PartCatalog.HeadlightAim: return "type.headlight-aim";
+                default: return null;
+            }
+        }
+
+        private static VisualElement FindFirstFocusable(VisualElement parent)
+        {
+            if (parent == null)
+                return null;
+
+            for (int i = 0; i < parent.childCount; i++)
+            {
+                VisualElement child = parent[i];
+                if (child == null || child.resolvedStyle.display == DisplayStyle.None)
+                    continue;
+
+                if (CanFocus(child))
+                    return child;
+
+                VisualElement nested = FindFirstFocusable(child);
+                if (nested != null)
+                    return nested;
+            }
+
+            return null;
+        }
+
+        private static bool CanFocus(VisualElement element)
+        {
+            return element != null &&
+                   element.focusable &&
+                   element.canGrabFocus &&
+                   element.enabledInHierarchy;
+        }
+
+        private static bool IsDescendantOf(VisualElement element, VisualElement ancestor)
+        {
+            for (VisualElement current = element; current != null; current = current.parent)
+            {
+                if (current == ancestor)
+                    return true;
+            }
+
+            return false;
+        }
+
+        private static bool IsInsideTextField(VisualElement element)
+        {
+            for (VisualElement current = element; current != null; current = current.parent)
+            {
+                if (current is TextField)
+                    return true;
+            }
+
+            return false;
+        }
+
+        private static bool IsInsideButton(VisualElement element)
+        {
+            for (VisualElement current = element; current != null; current = current.parent)
+            {
+                if (current is Button)
+                    return true;
+            }
+            return false;
+        }
+
+        private static void BuildGaragePartPicker(
+            AlpineTuningMod mod,
+            SUIManagedList rail,
+            VehicleScriptableObject target,
+            TuneProfile working,
+            TuneProfile installedReference,
+            string partCategory,
+            Action<string, string> selectPart,
+            Action setupChanged,
+            Action render,
+            Action<string> setStatus,
+            List<Button> tileButtons,
+            VisualElement detailContent)
+        {
+            string label = mod.Catalog.LabelForCategory(partCategory);
+            string selectedId = working.GetPartId(partCategory);
+            List<TunePart> parts = mod.Catalog.PartsForCategory(partCategory).ToList();
+            TunePart selectedPart = mod.Catalog.Find(selectedId) ?? parts.FirstOrDefault();
+            int detailRevision = 0;
+
+            Action<TunePart> showPartDetails = part =>
+            {
+                detailRevision++;
+                detailContent.Clear();
+                if (part == null)
+                {
+                    detailContent.Add(MutedLabel("No compatible parts are available for this sled."));
+                    return;
+                }
+
+                bool installedInDraft = string.Equals(
+                    part.id,
+                    working.GetPartId(partCategory),
+                    StringComparison.OrdinalIgnoreCase);
+                var detail = Section(installedInDraft ? "Selected Part" : "Part Preview");
+                detail.Add(CardTitle(part.name));
+                detail.Add(MutedLabel(part.description));
+                detail.Add(MutedLabel(installedInDraft ? "CURRENT BUILD" : "PROJECTED BUILD"));
+
+                TuneProfile preview = TuneStore.Clone(working);
+                preview.SetPartId(partCategory, part.id);
+                GarageComparisonSnapshot snapshot = BuildGarageComparisonSnapshot(
+                    mod,
+                    target,
+                    working,
+                    installedInDraft ? null : preview);
+                string garageSection = GarageSectionForPartCategory(partCategory);
+                AddGarageComparisonMetrics(
+                    detail,
+                    GarageMetricsForSection(snapshot, garageSection, mod.Settings.units),
+                    !installedInDraft);
+                if (string.Equals(garageSection, "engine", StringComparison.OrdinalIgnoreCase))
+                    AddGarageEngineReferences(mod, detail, target, snapshot, !installedInDraft);
+                if (string.Equals(garageSection, "lighting", StringComparison.OrdinalIgnoreCase))
+                    AddGarageLightingReferences(detail, snapshot, !installedInDraft);
+                if (part.requiresReload)
+                    detail.Add(Badge("REBUILD"));
+                detailContent.Add(detail);
+                BuildGaragePartAdjustments(
+                    mod, detailContent, target, working, partCategory,
+                    setupChanged, render, setStatus);
+            };
+
+            foreach (TunePart part in parts)
+            {
+                TunePart captured = part;
+                bool selected = string.Equals(captured.id, selectedId, StringComparison.OrdinalIgnoreCase);
+                string subtitle = captured.description ?? string.Empty;
+                if (captured.requiresReload)
+                    subtitle += "  Native spawn component.";
+
+                Button tile = GarageTile(captured.name, subtitle, selected, () =>
+                {
+                    selectPart?.Invoke(partCategory, captured.id);
+                }, "part." + captured.id);
+                tile.name = "AlpinePart-" + SafeElementName(captured.id);
+                tile.RegisterCallback<FocusInEvent>(_ => showPartDetails(captured));
+                tile.RegisterCallback<PointerEnterEvent>(_ => showPartDetails(captured));
+                tile.RegisterCallback<PointerLeaveEvent>(_ =>
+                {
+                    int leavingRevision = detailRevision;
+                    tile.schedule.Execute(() =>
+                    {
+                        if (leavingRevision != detailRevision || ReferenceEquals(FocusedElement(rail), tile))
+                            return;
+                        showPartDetails(selectedPart);
+                    });
+                });
+                rail.Add(tile);
+                if (selected)
+                    tileButtons.Insert(0, tile);
+                else
+                    tileButtons.Add(tile);
+            }
+
+            if (parts.Count == 0)
+            {
+                Button unavailable = GarageTile(
+                    "NO COMPATIBLE PARTS",
+                    "No compatible choices are available for this sled.",
+                    false,
+                    null,
+                    "action.unavailable");
+                unavailable.name = "AlpinePart-NoCompatibleParts";
+                unavailable.SetEnabled(false);
+                rail.Add(unavailable);
+            }
+
+            showPartDetails(selectedPart ?? parts.FirstOrDefault());
+        }
+
+        private static void BuildGaragePartAdjustments(
+            AlpineTuningMod mod,
+            VisualElement content,
+            VehicleScriptableObject target,
+            TuneProfile working,
+            string partCategory,
+            Action setupChanged,
+            Action render,
+            Action<string> setStatus)
+        {
+            FineTuneSettings fine = working.fineTune ?? (working.fineTune = new FineTuneSettings());
+            if (partCategory == PartCatalog.EngineCore ||
+                partCategory == PartCatalog.EnginePiston ||
+                partCategory == PartCatalog.EngineCrank ||
+                partCategory == PartCatalog.Intake ||
+                partCategory == PartCatalog.Turbo)
+            {
+                var section = Section("Fine Adjustment");
+                AddSlider(section, "Power Trim",
+                    AlpineNativeUiConfig.PowerTrimMin, AlpineNativeUiConfig.PowerTrimMax,
+                    fine.powerTrimPercent, "F1", "%",
+                    value => fine.powerTrimPercent = value, setupChanged,
+                    "Fine output adjustment applied only when the setup is saved.");
+                AddSlider(section, "Weight Trim",
+                    AlpineNativeUiConfig.WeightTrimMin, AlpineNativeUiConfig.WeightTrimMax,
+                    fine.weightTrimPercent, "F1", "%",
+                    value => fine.weightTrimPercent = value, setupChanged,
+                    "Fine setup-weight adjustment.");
+                content.Add(section);
+                return;
+            }
+
+            if (partCategory == PartCatalog.Clutch ||
+                partCategory == PartCatalog.ClutchWeights ||
+                partCategory == PartCatalog.RatioFeel)
+            {
+                var section = Section("Fine Adjustment");
+                AddSlider(section, "Clutch Response",
+                    AlpineNativeUiConfig.ClutchTrimMin, AlpineNativeUiConfig.ClutchTrimMax,
+                    fine.clutchTrimPercent, "F1", "%",
+                    value => fine.clutchTrimPercent = value, setupChanged,
+                    "Adjusts engagement and RPM response around the selected drivetrain hardware.");
+                content.Add(section);
+                return;
+            }
+
+            if (partCategory == PartCatalog.Track)
+            {
+                var section = Section("Fine Adjustment");
+                AddSlider(section, "Traction Trim",
+                    AlpineNativeUiConfig.TractionTrimMin, AlpineNativeUiConfig.TractionTrimMax,
+                    fine.tractionTrimPercent, "F1", "%",
+                    value => fine.tractionTrimPercent = value, setupChanged,
+                    "Fine snow-bite adjustment around the selected track.");
+                content.Add(section);
+                return;
+            }
+
+            if (partCategory == PartCatalog.Skis)
+            {
+                var section = Section("Fine Adjustment");
+                AddSlider(section, "Ski Stance",
+                    AlpineNativeUiConfig.SkiStanceMin, AlpineNativeUiConfig.SkiStanceMax,
+                    fine.skiStanceTrim, "F3", " m",
+                    value => fine.skiStanceTrim = value, setupChanged,
+                    "Wider favors stability; narrower favors quicker turn-in.");
+                content.Add(section);
+                return;
+            }
+
+            if (partCategory == PartCatalog.Suspension ||
+                partCategory == PartCatalog.Chassis ||
+                partCategory == PartCatalog.TrackLimiter ||
+                partCategory == PartCatalog.RearShock ||
+                partCategory == PartCatalog.RearSpring)
+            {
+                var section = Section("Balance Adjustment");
+                AddSlider(section, "Center of Mass Height",
+                    AlpineNativeUiConfig.CenterOfMassYMin, AlpineNativeUiConfig.CenterOfMassYMax,
+                    fine.centerOfMassYTrim, "F3", " m",
+                    value => fine.centerOfMassYTrim = value, setupChanged,
+                    "Moves setup balance vertically.");
+                AddSlider(section, "Fore / Aft Balance",
+                    AlpineNativeUiConfig.CenterOfMassZMin, AlpineNativeUiConfig.CenterOfMassZMax,
+                    fine.centerOfMassZTrim, "F3", " m",
+                    value => fine.centerOfMassZTrim = value, setupChanged,
+                    "Moves setup balance forward or rearward.");
+                content.Add(section);
+                return;
+            }
+
+            if (partCategory == PartCatalog.HeadlightColor ||
+                partCategory == PartCatalog.HeadlightBrightness ||
+                partCategory == PartCatalog.HeadlightBeam ||
+                partCategory == PartCatalog.HeadlightAim)
+            {
+                BuildGarageLightingControls(
+                    mod, content, target, working, setupChanged, render, setStatus);
+            }
+        }
+
+        private static void BuildGarageEnginePicker(
+            AlpineTuningMod mod,
+            SUIManagedList rail,
+            VehicleScriptableObject target,
+            TuneProfile working,
+            TuneProfile installedReference,
+            Action setupChanged,
+            Action render,
+            Action<string> setStatus,
+            List<Button> tileButtons,
+            VisualElement detailContent)
+        {
+            List<GarageEngineCandidate> candidates = mod.SelectableSleds
+                .Where(vehicle => vehicle != null)
+                .Select(vehicle => new GarageEngineCandidate(
+                    vehicle,
+                    StockDefaultsFor(mod, vehicle)))
+                .Where(candidate => candidate.StockDefaults != null &&
+                                    !string.IsNullOrWhiteSpace(candidate.Signature))
+                .ToList();
+            SledDefaults targetDefaults = StockDefaultsFor(mod, target);
+            string stockSignature = EngineSignature(targetDefaults, target);
+            bool hasSavedDonor = !string.IsNullOrWhiteSpace(working.donorSledKey) ||
+                                 !string.IsNullOrWhiteSpace(working.donorVehicleId);
+            VehicleScriptableObject selectedDonor = !hasSavedDonor
+                ? null
+                : mod.FindSledByIdentity(working.donorSledKey, working.donorVehicleId);
+            SledDefaults selectedDonorDefaults = selectedDonor != null
+                ? StockDefaultsFor(mod, selectedDonor)
+                : null;
+            bool selectedDonorUnavailable = hasSavedDonor &&
+                                            (selectedDonor == null || selectedDonorDefaults == null);
+            string selectedSignature = EngineSignature(selectedDonorDefaults, selectedDonor);
+            int detailRevision = 0;
+            Action restoreCurrentDetails = null;
+            Action<Button> registerPointerRestore = tile =>
+            {
+                tile.RegisterCallback<PointerLeaveEvent>(_ =>
+                {
+                    int leavingRevision = detailRevision;
+                    tile.schedule.Execute(() =>
+                    {
+                        if (leavingRevision != detailRevision || ReferenceEquals(FocusedElement(rail), tile))
+                            return;
+                        restoreCurrentDetails?.Invoke();
+                    });
+                });
+            };
+
+            Action<GarageEngineCandidate, int, bool> showEngineDetails =
+                (candidate, modelCount, stock) =>
+                {
+                    detailRevision++;
+                    SledDefaults engineDefaults = candidate?.StockDefaults;
+                    VehicleScriptableObject engineVehicle = candidate?.Vehicle;
+                    string name = EngineDisplayName(engineDefaults);
+                    detailContent.Clear();
+                    var detail = Section(stock ? "Stock Engine" : "Engine Swap");
+                    detail.Add(CardTitle(name));
+                    detail.Add(MutedLabel(stock
+                        ? "The engine originally paired with the selected sled."
+                        : "One native engine definition shared by " + modelCount +
+                          (modelCount == 1 ? " compatible model." : " compatible models.")));
+
+                    if (engineDefaults != null)
+                    {
+                        detail.Add(MutedLabel($"POWER {engineDefaults.horsePower:F0} HP"));
+                        detail.Add(MutedLabel(engineDefaults.isTurboOn ? "TURBO" : "NATURALLY ASPIRATED"));
+                    }
+
+                    TuneProfile preview = TuneStore.Clone(working);
+                    preview.donorSledKey = stock || engineVehicle == null
+                        ? null
+                        : AlpineTuningMod.GetSledKey(engineVehicle);
+                    preview.donorVehicleId = stock || engineVehicle == null
+                        ? null
+                        : AlpineTuningMod.GetVehicleId(engineVehicle);
+
+                    bool selectedInDraft = SameGarageDonor(preview, working);
+                    detail.Add(MutedLabel(selectedInDraft
+                        ? "CURRENT BUILD"
+                        : "PROJECTED BUILD"));
+                    GarageComparisonSnapshot snapshot = BuildGarageComparisonSnapshot(
+                        mod,
+                        target,
+                        working,
+                        selectedInDraft ? null : preview);
+                    AddGarageComparisonMetrics(
+                        detail,
+                        GarageMetricsForSection(snapshot, "engine", mod.Settings.units),
+                        !selectedInDraft);
+                    AddGarageEngineReferences(mod, detail, target, snapshot, !selectedInDraft);
+                    if (!selectedInDraft)
+                        detail.Add(Badge("REBUILD"));
+                    detailContent.Add(detail);
+                };
+
+            bool stockSelected = !hasSavedDonor ||
+                                 (selectedDonor != null &&
+                                  !string.IsNullOrWhiteSpace(stockSignature) &&
+                                  !string.IsNullOrWhiteSpace(selectedSignature) &&
+                                  string.Equals(selectedSignature, stockSignature, StringComparison.Ordinal));
+            bool suppressNextStockFocusDetail = selectedDonorUnavailable;
+            Button stockTile = GarageTile(
+                EngineDisplayName(targetDefaults),
+                "Selected sled's native engine",
+                stockSelected,
+                () =>
+                {
+                    if (stockSelected)
+                    {
+                        setStatus?.Invoke("This engine is already selected.");
+                        return;
+                    }
+                    working.donorSledKey = null;
+                    working.donorVehicleId = null;
+                    setupChanged?.Invoke();
+                    render?.Invoke();
+                },
+                EngineNativeIconKey(targetDefaults),
+                "engine.stock-native");
+            stockTile.name = "AlpineEngine-Stock";
+            stockTile.RegisterCallback<FocusInEvent>(_ =>
+            {
+                // When an unavailable saved donor is selected, controller focus
+                // still needs a valid landing point. Preserve the unavailable
+                // explanation through that first automatic focus restoration;
+                // later visits preview Stock normally.
+                if (suppressNextStockFocusDetail)
+                {
+                    suppressNextStockFocusDetail = false;
+                    return;
+                }
+                showEngineDetails(new GarageEngineCandidate(target, targetDefaults), 1, true);
+            });
+            stockTile.RegisterCallback<PointerEnterEvent>(_ =>
+                showEngineDetails(new GarageEngineCandidate(target, targetDefaults), 1, true));
+            registerPointerRestore(stockTile);
+            rail.Add(stockTile);
+            if (stockSelected)
+                tileButtons.Insert(0, stockTile);
+            else
+                tileButtons.Add(stockTile);
+
+            Action showUnavailableEngineDetails = () =>
+            {
+                detailRevision++;
+                detailContent.Clear();
+                var detail = Section("Unavailable Engine");
+                detail.Add(CardTitle("Unavailable Engine"));
+                detail.Add(MutedLabel(
+                    "The engine saved in this draft is not present in the currently loaded native vehicle definitions. " +
+                    "The saved donor identity has been preserved; choose Stock or another engine to replace it."));
+                detailContent.Add(detail);
+            };
+            if (selectedDonorUnavailable)
+            {
+                Button unavailableTile = GarageTile(
+                    "UNAVAILABLE ENGINE",
+                    "The saved native engine is not currently loaded. Choose a replacement to change the draft.",
+                    true,
+                    null,
+                    "engine.unavailable");
+                unavailableTile.name = "AlpineEngine-Unavailable";
+                unavailableTile.SetEnabled(false);
+                rail.Add(unavailableTile);
+                tileButtons.Insert(0, unavailableTile);
+                showUnavailableEngineDetails();
+            }
+
+            var engineGroups = candidates
+                .GroupBy(candidate => candidate.Signature, StringComparer.Ordinal)
+                .Where(group => !string.IsNullOrWhiteSpace(group.Key) &&
+                                !string.Equals(group.Key, stockSignature, StringComparison.Ordinal))
+                .Select(group => new
+                {
+                    Signature = group.Key,
+                    Representative = group
+                        .OrderBy(candidate => AlpineTuningMod.GetVehicleId(candidate.Vehicle), StringComparer.OrdinalIgnoreCase)
+                        .First(),
+                    Count = group.Count()
+                })
+                .OrderBy(group => EngineDisplayName(group.Representative.StockDefaults), StringComparer.OrdinalIgnoreCase)
+                .ToList();
+
+            foreach (var engineGroup in engineGroups)
+            {
+                GarageEngineCandidate engine = engineGroup.Representative;
+                string signature = engineGroup.Signature;
+                string engineName = EngineDisplayName(engine.StockDefaults);
+                int modelCount = engineGroup.Count;
+                bool selected = selectedDonor != null &&
+                                string.Equals(selectedSignature, signature, StringComparison.Ordinal);
+                Button tile = GarageTile(
+                    engineName,
+                    $"{engine.StockDefaults.horsePower:F0} hp  |  " +
+                    (engine.StockDefaults.isTurboOn ? "Turbo" : "Naturally aspirated") +
+                    $"  |  {modelCount} model" + (modelCount == 1 ? string.Empty : "s"),
+                    selected,
+                    () =>
+                    {
+                        if (selected)
+                        {
+                            setStatus?.Invoke("This engine is already selected.");
+                            return;
+                        }
+
+                        working.donorSledKey = AlpineTuningMod.GetSledKey(engine.Vehicle);
+                        working.donorVehicleId = AlpineTuningMod.GetVehicleId(engine.Vehicle);
+                        setupChanged?.Invoke();
+                        render?.Invoke();
+                    },
+                    EngineNativeIconKey(engine.StockDefaults),
+                    engine.StockDefaults.isTurboOn ? "engine.generic-turbo" : "engine.generic-na");
+                tile.name = "AlpineEngine-" + SafeElementName(signature);
+                tile.RegisterCallback<FocusInEvent>(_ =>
+                    showEngineDetails(engine, modelCount, false));
+                tile.RegisterCallback<PointerEnterEvent>(_ =>
+                    showEngineDetails(engine, modelCount, false));
+                registerPointerRestore(tile);
+                rail.Add(tile);
+                if (selected)
+                    tileButtons.Insert(0, tile);
+                else
+                    tileButtons.Add(tile);
+            }
+
+            if (selectedDonorUnavailable)
+            {
+                restoreCurrentDetails = showUnavailableEngineDetails;
+            }
+            else if (selectedDonor != null)
+            {
+                var selectedGroup = engineGroups.FirstOrDefault(group =>
+                    string.Equals(group.Signature, selectedSignature, StringComparison.Ordinal));
+                restoreCurrentDetails = selectedGroup != null
+                    ? (Action)(() => showEngineDetails(selectedGroup.Representative, selectedGroup.Count, false))
+                    : () => showEngineDetails(new GarageEngineCandidate(target, targetDefaults), 1, true);
+            }
+            else
+            {
+                restoreCurrentDetails = () =>
+                    showEngineDetails(new GarageEngineCandidate(target, targetDefaults), 1, true);
+            }
+
+            if (engineGroups.Count == 0)
+            {
+                restoreCurrentDetails?.Invoke();
+                detailContent.Add(MutedLabel("No additional native engine definitions are loaded."));
+            }
+            else
+                restoreCurrentDetails?.Invoke();
+        }
+
+        private static SledDefaults StockDefaultsFor(
+            AlpineTuningMod mod,
+            VehicleScriptableObject vehicle)
+        {
+            if (mod?.Store == null || vehicle == null)
+                return null;
+
+            return mod.Store.GetDefaults(
+                AlpineTuningMod.GetSledKey(vehicle),
+                AlpineTuningMod.GetVehicleId(vehicle));
+        }
+
+        private static bool SameGarageDonor(TuneProfile left, TuneProfile right)
+        {
+            if (left == null || right == null)
+                return left == null && right == null;
+            return string.Equals(left.donorSledKey, right.donorSledKey, StringComparison.OrdinalIgnoreCase) &&
+                   string.Equals(left.donorVehicleId, right.donorVehicleId, StringComparison.OrdinalIgnoreCase);
+        }
+
+        private static string EngineDisplayName(SledDefaults defaults)
+        {
+            if (defaults == null)
+                return "Stock Engine";
+            if (!string.IsNullOrWhiteSpace(defaults.engineText))
+                return defaults.engineText.Trim();
+            return $"{defaults.horsePower:F0} HP " + (defaults.isTurboOn ? "Turbo" : "Engine");
+        }
+
+        private static string EngineNativeIconKey(SledDefaults defaults)
+        {
+            if (defaults == null ||
+                float.IsNaN(defaults.horsePower) || float.IsInfinity(defaults.horsePower) ||
+                float.IsNaN(defaults.powerFactor) || float.IsInfinity(defaults.powerFactor) ||
+                !HasStoredEngineAudioToken(defaults))
+            {
+                return null;
+            }
+
+            double roundedHorsePower = Math.Round(
+                defaults.horsePower,
+                MidpointRounding.AwayFromZero);
+            if (roundedHorsePower < int.MinValue || roundedHorsePower > int.MaxValue)
+            {
+                return null;
+            }
+            // powerFactor is not presented or tuned as physics. It remains part
+            // of this resource-only discriminator because multiple shipped
+            // native definitions share name/HP/audio but have distinct artwork.
+            double roundedPowerFactor = Math.Round(
+                defaults.powerFactor * 1000d,
+                MidpointRounding.AwayFromZero);
+            if (roundedPowerFactor < int.MinValue || roundedPowerFactor > int.MaxValue)
+                return null;
+
+            return string.Format(
+                System.Globalization.CultureInfo.InvariantCulture,
+                "engine.native-{0}-{1}-{2}-{3}-{4}",
+                AsciiIconSlug(defaults.engineText),
+                (int)roundedHorsePower,
+                (int)roundedPowerFactor,
+                defaults.isTurboOn ? "t" : "n",
+                defaults.engineAudioEnumRawValue);
+        }
+
+        private static string AsciiIconSlug(string value)
+        {
+            var slug = new System.Text.StringBuilder();
+            bool pendingSeparator = false;
+            foreach (char raw in value ?? string.Empty)
+            {
+                char current = raw >= 'A' && raw <= 'Z'
+                    ? (char)(raw + ('a' - 'A'))
+                    : raw;
+                bool asciiLetter = current >= 'a' && current <= 'z';
+                bool asciiDigit = current >= '0' && current <= '9';
+                if (!asciiLetter && !asciiDigit)
+                {
+                    pendingSeparator |= slug.Length > 0;
+                    continue;
+                }
+
+                if (pendingSeparator)
+                    slug.Append('-');
+                slug.Append(current);
+                pendingSeparator = false;
+            }
+
+            return slug.Length > 0 ? slug.ToString() : "unnamed";
+        }
+
+        private static bool HasStoredEngineAudioToken(SledDefaults defaults)
+        {
+            return defaults != null &&
+                   !string.IsNullOrWhiteSpace(defaults.engineAudioEnumType) &&
+                   (!string.IsNullOrWhiteSpace(defaults.engineAudioEnumName) ||
+                    defaults.engineAudioEnumRawValue != 0);
+        }
+
+        private static string ExactFloatBits(float value)
+        {
+            int bits = BitConverter.ToInt32(BitConverter.GetBytes(value), 0);
+            return unchecked((uint)bits).ToString(
+                "X8",
+                System.Globalization.CultureInfo.InvariantCulture);
+        }
+
+        private static string EngineSignature(
+            SledDefaults defaults,
+            VehicleScriptableObject identitySource)
+        {
+            if (defaults == null)
+                return null;
+
+            string nativeName = (defaults.engineText ?? string.Empty).Trim();
+            string audioSignature;
+            if (HasStoredEngineAudioToken(defaults))
+            {
+                audioSignature = string.Format(
+                    System.Globalization.CultureInfo.InvariantCulture,
+                    "{0}:{1}:{2}",
+                    (defaults.engineAudioEnumType ?? string.Empty).Trim().ToUpperInvariant(),
+                    (defaults.engineAudioEnumName ?? string.Empty).Trim().ToUpperInvariant(),
+                    defaults.engineAudioEnumRawValue);
+            }
+            else
+            {
+                // Without a verified audio token we cannot prove that two native
+                // definitions are the same engine. Keep them separate instead of
+                // silently collapsing a distinct engine/audio package.
+                audioSignature = "UNKNOWN:" +
+                                 (defaults.vehicleId ??
+                                  defaults.sledKey ??
+                                  AlpineTuningMod.GetVehicleId(identitySource) ??
+                                  AlpineTuningMod.GetSledKey(identitySource) ??
+                                  identitySource?.name ?? string.Empty).ToUpperInvariant();
+            }
+            return string.Format(
+                System.Globalization.CultureInfo.InvariantCulture,
+                "{0}|HP:{1}|{2}|{3}",
+                string.IsNullOrWhiteSpace(nativeName) ? "UNNAMED" : nativeName.ToUpperInvariant(),
+                ExactFloatBits(defaults.horsePower),
+                defaults.isTurboOn ? "T" : "N",
+                audioSignature);
+        }
+
+        private static void BuildGarageFocusedPanel(
+            AlpineTuningMod mod,
+            VisualElement content,
+            VehicleScriptableObject target,
+            TuneProfile working,
+            string panelId,
+            Action<TuneProfile> setWorking,
+            Action render,
+            Action setupChanged,
+            Action<string> setStatus,
+            Func<bool> saveAsNewSetup,
+            Func<bool> hasUnsavedDraft,
+            Func<TuneProfile, bool> loadSetupSlot,
+            Func<TuneProfile, bool> setDefaultSetupSlot,
+            Func<string> getSelectedProfileId,
+            Action<string> setSelectedProfileId,
+            Func<string> getPendingDeleteProfileId,
+            Action<string> setPendingDeleteProfileId,
+            Func<string> getPendingLoadProfileId,
+            Action<string> setPendingLoadProfileId,
+            Func<bool> getFactoryResetArmed,
+            Action<bool> setFactoryResetArmed,
+            List<Button> tileButtons,
+            SUIManagedList tileContent,
+            Action<string, string, string> navigate,
+            Func<bool> getClearBindingArmed,
+            Action<bool> setClearBindingArmed,
+            Action closeDyno)
+        {
+            if (string.Equals(panelId, "setups", StringComparison.OrdinalIgnoreCase))
+            {
+                BuildGaragePresets(
+                    mod, content, target, working, setWorking, render, setStatus, setupChanged,
+                    saveAsNewSetup,
+                    hasUnsavedDraft, loadSetupSlot, setDefaultSetupSlot,
+                    getSelectedProfileId, setSelectedProfileId,
+                    getPendingDeleteProfileId, setPendingDeleteProfileId,
+                    getPendingLoadProfileId, setPendingLoadProfileId,
+                    getFactoryResetArmed, setFactoryResetArmed,
+                    tileButtons, tileContent);
+                return;
+            }
+
+            if (string.Equals(panelId, "settings", StringComparison.OrdinalIgnoreCase))
+            {
+                BuildGarageSettingsRoot(content, tileContent, tileButtons, navigate);
+                return;
+            }
+
+            if (string.Equals(panelId, "settings.display", StringComparison.OrdinalIgnoreCase))
+            {
+                BuildGarageDisplaySettings(mod, content, tileContent, tileButtons, render, setStatus);
+                return;
+            }
+
+            if (string.Equals(panelId, "settings.hotkey", StringComparison.OrdinalIgnoreCase))
+            {
+                BuildGarageHotkeySettings(
+                    mod,
+                    content,
+                    tileContent,
+                    tileButtons,
+                    render,
+                    setStatus,
+                    getClearBindingArmed,
+                    setClearBindingArmed,
+                    closeDyno);
+                return;
+            }
+
+            Button unavailable = GarageTile(
+                "PANEL UNAVAILABLE",
+                "This view could not be opened. Back remains available.",
+                false,
+                null,
+                "action.unavailable");
+            unavailable.SetEnabled(false);
+            tileContent?.Add(unavailable);
+            content.Add(MutedLabel("This view is unavailable. Use Back."));
+        }
+
+        private static void BuildGarageSettingsRoot(
+            VisualElement content,
+            SUIManagedList rail,
+            List<Button> tileButtons,
+            Action<string, string, string> navigate)
+        {
+            var detail = Section("Settings");
+            detail.Add(MutedLabel("Choose a settings group."));
+            content.Add(detail);
+            AddGarageNavigationTile(
+                rail, tileButtons, "Display", "Metric or Imperial values.",
+                NavigationPanel, "settings.display", "Display", navigate,
+                "settings.display", "action.settings", false);
+            AddGarageNavigationTile(
+                rail, tileButtons, "Headlight Hotkey", "Enable, bind or clear headlight controls.",
+                NavigationPanel, "settings.hotkey", "Headlight Hotkey", navigate,
+                "settings.hotkey", "action.settings", false);
+        }
+
+        private static void BuildGarageDisplaySettings(
+            AlpineTuningMod mod,
+            VisualElement content,
+            SUIManagedList rail,
+            List<Button> tileButtons,
+            Action render,
+            Action<string> setStatus)
+        {
+            AlpineUserSettings settings = mod.Settings;
+            var detail = Section("Display");
+            detail.Add(MutedLabel(
+                settings.units == AlpineDisplayUnits.Metric
+                    ? "CURRENT  METRIC"
+                    : "CURRENT  IMPERIAL"));
+            detail.Add(MutedLabel("Comparison cards and Dyno update immediately."));
+            content.Add(detail);
+
+            Action<AlpineDisplayUnits, string> selectUnits = (units, label) =>
+            {
+                if (settings.units == units)
+                {
+                    setStatus?.Invoke(label);
+                    return;
+                }
+                AlpineDisplayUnits previous = settings.units;
+                settings.units = units;
+                if (!mod.SaveSettings())
+                {
+                    settings.units = previous;
+                    setStatus?.Invoke("Save failed");
+                }
+                else
+                {
+                    setStatus?.Invoke(label);
+                }
+                render?.Invoke();
+            };
+
+            Button metric = GarageTile(
+                "METRIC",
+                "Kilowatts, kilograms, millimetres and kilometres per hour.",
+                settings.units == AlpineDisplayUnits.Metric,
+                () => selectUnits(AlpineDisplayUnits.Metric, "Metric"),
+                "settings.metric",
+                "settings.display",
+                false);
+            metric.name = "AlpineSettings-Metric";
+            rail.Add(metric);
+            tileButtons.Add(metric);
+
+            Button imperial = GarageTile(
+                "IMPERIAL",
+                "Horsepower, pounds, inches and miles per hour.",
+                settings.units == AlpineDisplayUnits.Imperial,
+                () => selectUnits(AlpineDisplayUnits.Imperial, "Imperial"),
+                "settings.imperial",
+                "settings.display",
+                false);
+            imperial.name = "AlpineSettings-Imperial";
+            rail.Add(imperial);
+            tileButtons.Add(imperial);
+        }
+
+        private static void BuildGarageHotkeySettings(
+            AlpineTuningMod mod,
+            VisualElement content,
+            SUIManagedList rail,
+            List<Button> tileButtons,
+            Action render,
+            Action<string> setStatus,
+            Func<bool> getClearBindingArmed,
+            Action<bool> setClearBindingArmed,
+            Action closeDyno)
+        {
+            AlpineUserSettings settings = mod.Settings;
+            bool capturing = mod.IsCapturingHeadlightBinding;
+            bool clearArmed = getClearBindingArmed != null && getClearBindingArmed();
+            var detail = Section("Headlight Hotkey");
+            detail.Add(MutedLabel("STATUS  " + (settings.headlightToggleEnabled ? "ENABLED" : "DISABLED")));
+            detail.Add(MutedLabel("KEYBOARD  " + FormatSingleHeadlightBinding(settings.headlightKeyboardKey)));
+            detail.Add(MutedLabel("CONTROLLER  " + FormatSingleHeadlightBinding(settings.headlightControllerButton, true)));
+            Label captureBadge = null;
+            if (capturing)
+            {
+                captureBadge = Badge("WAITING");
+                SetTooltip(captureBadge, "Press an input. Native Cancel, Escape or controller Cancel aborts capture.");
+                detail.Add(captureBadge);
+            }
+            else if (clearArmed)
+            {
+                detail.Add(Badge("CONFIRM CLEAR"));
+                detail.Add(MutedLabel("Confirm to remove both saved bindings."));
+            }
+            content.Add(detail);
+
+            Action<bool> setEnabled = requestedEnabled =>
+            {
+                if (capturing || clearArmed)
+                    return;
+                if (requestedEnabled && !HasConfiguredHeadlightBinding(settings))
+                {
+                    setStatus?.Invoke("Bind first");
+                    return;
+                }
+                bool previous = settings.headlightToggleEnabled;
+                settings.headlightToggleEnabled = requestedEnabled;
+                settings.Normalize();
+                if (!mod.SaveSettings())
+                {
+                    settings.headlightToggleEnabled = previous;
+                    setStatus?.Invoke("Save failed");
+                }
+                else
+                {
+                    setStatus?.Invoke(requestedEnabled ? "Enabled" : "Disabled");
+                }
+                render?.Invoke();
+            };
+
+            Button enabledTile = GarageTile(
+                "ENABLED", "Allow the configured headlight hotkey.",
+                settings.headlightToggleEnabled,
+                () => setEnabled(true), "settings.enabled", "settings.hotkey", false);
+            enabledTile.name = "AlpineSettings-HotkeyEnabled";
+            Button disabledTile = GarageTile(
+                "DISABLED", "Keep bindings but ignore the hotkey.",
+                !settings.headlightToggleEnabled,
+                () => setEnabled(false), "settings.disabled", "settings.hotkey", false);
+            disabledTile.name = "AlpineSettings-HotkeyDisabled";
+
+            Button keyboard = GarageTile(
+                mod.IsCapturingHeadlightKeyboardBinding ? "KEYBOARD - WAITING" : "KEYBOARD",
+                FormatSingleHeadlightBinding(settings.headlightKeyboardKey),
+                mod.IsCapturingHeadlightKeyboardBinding,
+                () =>
+                {
+                    if (mod.IsCapturingHeadlightBinding || clearArmed)
+                        return;
+                    closeDyno?.Invoke();
+                    mod.BeginHeadlightKeyboardBind();
+                    setStatus?.Invoke("Waiting");
+                    render?.Invoke();
+                },
+                "settings.keyboard", "settings.hotkey", false);
+            keyboard.name = "AlpineSettings-HotkeyKeyboard";
+
+            Button controller = GarageTile(
+                mod.IsCapturingHeadlightControllerBinding ? "CONTROLLER - WAITING" : "CONTROLLER",
+                FormatSingleHeadlightBinding(settings.headlightControllerButton, true),
+                mod.IsCapturingHeadlightControllerBinding,
+                () =>
+                {
+                    if (mod.IsCapturingHeadlightBinding || clearArmed)
+                        return;
+                    closeDyno?.Invoke();
+                    mod.BeginHeadlightControllerBind();
+                    setStatus?.Invoke("Waiting");
+                    render?.Invoke();
+                },
+                "settings.controller", "settings.hotkey", false);
+            controller.name = "AlpineSettings-HotkeyController";
+
+            Button clear;
+            Button cancelClear = null;
+            if (clearArmed)
+            {
+                clear = GarageTile(
+                    "CONFIRM CLEAR",
+                    "Remove both headlight bindings.",
+                    true,
+                    () =>
+                    {
+                        setClearBindingArmed?.Invoke(false);
+                        mod.CancelHeadlightBindingCapture();
+                        setStatus?.Invoke(mod.ClearHeadlightBinding() ? "Bindings cleared" : "Save failed");
+                        render?.Invoke();
+                    },
+                    "settings.confirm-clear", "settings.clear", false);
+                cancelClear = GarageTile(
+                    "CANCEL",
+                    "Keep both bindings.",
+                    false,
+                    () =>
+                    {
+                        setClearBindingArmed?.Invoke(false);
+                        setStatus?.Invoke("Clear cancelled");
+                        render?.Invoke();
+                    },
+                    "action.continue", "settings.hotkey", false);
+                cancelClear.name = "AlpineSettings-CancelClear";
+            }
+            else
+            {
+                clear = GarageTile(
+                    "CLEAR BINDINGS",
+                    "Requires confirmation before removing both bindings.",
+                    false,
+                    () =>
+                    {
+                        if (mod.IsCapturingHeadlightBinding)
+                            return;
+                        closeDyno?.Invoke();
+                        setClearBindingArmed?.Invoke(true);
+                        setStatus?.Invoke("Confirm clear");
+                        render?.Invoke();
+                    },
+                    "settings.clear", "settings.hotkey", false);
+            }
+            clear.name = "AlpineSettings-HotkeyClear";
+
+            var choices = new List<Button> { enabledTile, disabledTile, keyboard, controller, clear };
+            if (cancelClear != null)
+                choices.Add(cancelClear);
+            foreach (Button tile in choices)
+            {
+                bool activeCaptureTile = ReferenceEquals(tile, keyboard) && mod.IsCapturingHeadlightKeyboardBinding ||
+                                         ReferenceEquals(tile, controller) && mod.IsCapturingHeadlightControllerBinding;
+                tile.SetEnabled(!capturing || activeCaptureTile);
+                if (clearArmed)
+                {
+                    tile.SetEnabled(ReferenceEquals(tile, clear) || ReferenceEquals(tile, cancelClear));
+                }
+                rail.Add(tile);
+                tileButtons.Add(tile);
+            }
+
+            if (capturing && captureBadge != null)
+            {
+                IVisualElementScheduledItem captureWatch = null;
+                captureWatch = captureBadge.schedule.Execute(() =>
+                {
+                    if (captureBadge.panel == null)
+                    {
+                        captureWatch.Pause();
+                        return;
+                    }
+                    if (mod.IsCapturingHeadlightBinding)
+                        return;
+                    captureWatch.Pause();
+                    HeadlightBindingCaptureResult result = mod.ConsumeHeadlightBindingCaptureResult();
+                    switch (result)
+                    {
+                        case HeadlightBindingCaptureResult.Saved:
+                            setStatus?.Invoke("Binding saved");
+                            break;
+                        case HeadlightBindingCaptureResult.TimedOut:
+                            setStatus?.Invoke("Timed out");
+                            break;
+                        case HeadlightBindingCaptureResult.SaveFailed:
+                            setStatus?.Invoke("Save failed");
+                            break;
+                        case HeadlightBindingCaptureResult.Cancelled:
+                            setStatus?.Invoke("Binding cancelled");
+                            break;
+                    }
+                    render?.Invoke();
+                }).Every(250);
+            }
+        }
+
+        private static void BuildGarageLightingControls(
+            AlpineTuningMod mod,
+            VisualElement content,
+            VehicleScriptableObject target,
+            TuneProfile working,
+            Action setupChanged,
+            Action render,
+            Action<string> setStatus)
+        {
+            var section = Section("Headlight Mode");
+            section.Add(MutedLabel("MODE " + FormatHeadlightMode(working).ToUpperInvariant()));
+            section.Add(MutedLabel(mod.HasActiveHeadlightRuntimeBinding()
+                ? "RUNTIME ACTIVE"
+                : "RUNTIME NEXT RIDE"));
+            section.Add(MutedLabel("HOTKEY IN SETTINGS"));
+
+            AddButtonRow(section,
                 SmallButton("Force On", () =>
                 {
-                    string message;
-                    bool updated = mod.SetSetupHeadlightEnabled(working, target, true, out message);
-                    setStatus?.Invoke(updated ? "Headlights forced on." : message);
+                    working.headlightEnabled = true;
+                    setupChanged?.Invoke();
+                    setStatus?.Invoke("On staged");
                     render();
                 }),
                 SmallButton("Force Off", () =>
                 {
-                    string message;
-                    bool updated = mod.SetSetupHeadlightEnabled(working, target, false, out message);
-                    setStatus?.Invoke(updated ? "Headlights forced off." : message);
+                    working.headlightEnabled = false;
+                    setupChanged?.Invoke();
+                    setStatus?.Invoke("Off staged");
                     render();
                 }),
                 SmallButton("Follow Game Time", () =>
                 {
-                    string message;
-                    bool updated = mod.ClearSetupHeadlightOverride(working, target, out message);
-                    setStatus?.Invoke(updated ? message : (string.IsNullOrWhiteSpace(message) ? "Headlight mode update failed." : message));
+                    working.headlightEnabled = null;
+                    setupChanged?.Invoke();
+                    setStatus?.Invoke("Auto staged");
                     render();
                 }));
-
-            content.Add(controlsSection);
+            content.Add(section);
         }
 
-        private static void BuildLibraryTab(
+        private static bool CanResetGarageNode(GarageNavigationNode node)
+        {
+            if (node == null)
+                return false;
+            return node.Kind == NavigationRoot ||
+                   node.Kind == NavigationPart ||
+                   node.Kind == NavigationCategory;
+        }
+
+        private static bool ResetGarageNode(
+            AlpineTuningMod mod,
+            GarageNavigationNode node,
+            TuneProfile working,
+            out string message)
+        {
+            message = "Nothing to reset.";
+            if (mod == null || node == null || working == null)
+                return false;
+
+            if (node.Kind == NavigationRoot)
+            {
+                bool changed = false;
+                foreach (string category in PartCatalog.OrderedCategories)
+                {
+                    string stockPartId = mod.Catalog.DefaultPartId(category);
+                    if (!string.Equals(
+                            working.GetPartId(category),
+                            stockPartId,
+                            StringComparison.OrdinalIgnoreCase))
+                    {
+                        working.SetPartId(category, stockPartId);
+                        changed = true;
+                    }
+                }
+
+                if (!string.IsNullOrWhiteSpace(working.donorSledKey) ||
+                    !string.IsNullOrWhiteSpace(working.donorVehicleId))
+                {
+                    working.donorSledKey = null;
+                    working.donorVehicleId = null;
+                    changed = true;
+                }
+
+                FineTuneSettings fine = working.fineTune;
+                if (fine != null &&
+                    (fine.powerTrimPercent != 0f || fine.tractionTrimPercent != 0f ||
+                     fine.weightTrimPercent != 0f || fine.clutchTrimPercent != 0f ||
+                     fine.centerOfMassYTrim != 0f || fine.centerOfMassZTrim != 0f ||
+                     fine.skiStanceTrim != 0f))
+                {
+                    changed = true;
+                }
+                working.fineTune = new FineTuneSettings();
+
+                if (working.headlightEnabled.HasValue)
+                {
+                    working.headlightEnabled = null;
+                    changed = true;
+                }
+
+                message = changed
+                    ? "Complete build returned to factory settings."
+                    : "Complete build is already at factory settings.";
+                return changed;
+            }
+
+            if (node.Kind == NavigationPart)
+            {
+                bool changed = false;
+                if (string.Equals(node.Id, "engine.donor", StringComparison.OrdinalIgnoreCase))
+                {
+                    if (!string.IsNullOrWhiteSpace(working.donorSledKey) ||
+                        !string.IsNullOrWhiteSpace(working.donorVehicleId))
+                    {
+                        working.donorSledKey = null;
+                        working.donorVehicleId = null;
+                        changed = true;
+                    }
+
+                    changed |= ClearEngineFineTune(working);
+                    message = changed
+                        ? "Stock engine selected; power and weight trims cleared."
+                        : "The stock engine and its adjustments are already selected.";
+                    return changed;
+                }
+
+                string defaultPartId = mod.Catalog.DefaultPartId(node.Id);
+                if (!string.Equals(
+                        working.GetPartId(node.Id),
+                        defaultPartId,
+                        StringComparison.OrdinalIgnoreCase))
+                {
+                    working.SetPartId(node.Id, defaultPartId);
+                    changed = true;
+                }
+
+                string adjustmentDescription;
+                changed |= ClearFineTuneForPart(working, node.Id, out adjustmentDescription);
+                string categoryLabel = mod.Catalog.LabelForCategory(node.Id);
+                message = changed
+                    ? categoryLabel + " returned to stock" + adjustmentDescription + "."
+                    : categoryLabel + " and its adjustments are already stock.";
+                return changed;
+            }
+
+            if (node.Kind == NavigationCategory)
+            {
+                bool changed = false;
+                foreach (string category in PartCategoriesForGarageSection(node.Id))
+                {
+                    string defaultPartId = mod.Catalog.DefaultPartId(category);
+                    if (string.Equals(
+                            working.GetPartId(category),
+                            defaultPartId,
+                            StringComparison.OrdinalIgnoreCase))
+                    {
+                        continue;
+                    }
+
+                    working.SetPartId(category, defaultPartId);
+                    changed = true;
+                }
+
+                switch (node.Id)
+                {
+                    case "engine":
+                        if (!string.IsNullOrWhiteSpace(working.donorSledKey) ||
+                            !string.IsNullOrWhiteSpace(working.donorVehicleId))
+                        {
+                            working.donorSledKey = null;
+                            working.donorVehicleId = null;
+                            changed = true;
+                        }
+                        changed |= ClearEngineFineTune(working);
+                        message = changed
+                            ? "Engine parts, engine swap, power trim, and weight trim returned to stock."
+                            : "Engine parts, engine swap, and adjustments are already stock.";
+                        break;
+                    case "drivetrain":
+                        changed |= ClearDrivetrainFineTune(working);
+                        message = changed
+                            ? "Drivetrain parts and clutch response trim returned to stock."
+                            : "Drivetrain parts and adjustment are already stock.";
+                        break;
+                    case "suspension":
+                        changed |= ClearSuspensionFineTune(working);
+                        message = changed
+                            ? "Suspension parts and balance trims returned to stock."
+                            : "Suspension parts and balance adjustments are already stock.";
+                        break;
+                    case "lighting":
+                        if (working.headlightEnabled.HasValue)
+                        {
+                            working.headlightEnabled = null;
+                            changed = true;
+                        }
+                        message = changed
+                            ? "Lighting parts and operating mode returned to stock."
+                            : "Lighting parts and operating mode are already stock.";
+                        break;
+                    default:
+                        message = changed
+                            ? node.Title + " returned to stock."
+                            : node.Title + " is already stock.";
+                        break;
+                }
+
+                return changed;
+            }
+            return false;
+        }
+
+        private static bool ClearFineTuneForPart(
+            TuneProfile working,
+            string partCategory,
+            out string adjustmentDescription)
+        {
+            adjustmentDescription = string.Empty;
+            if (string.Equals(partCategory, PartCatalog.EngineCore, StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(partCategory, PartCatalog.EnginePiston, StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(partCategory, PartCatalog.EngineCrank, StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(partCategory, PartCatalog.Intake, StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(partCategory, PartCatalog.Turbo, StringComparison.OrdinalIgnoreCase))
+            {
+                adjustmentDescription = "; power and weight trims cleared";
+                return ClearEngineFineTune(working);
+            }
+
+            if (string.Equals(partCategory, PartCatalog.Clutch, StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(partCategory, PartCatalog.ClutchWeights, StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(partCategory, PartCatalog.RatioFeel, StringComparison.OrdinalIgnoreCase))
+            {
+                adjustmentDescription = "; clutch response trim cleared";
+                return ClearDrivetrainFineTune(working);
+            }
+
+            if (string.Equals(partCategory, PartCatalog.Track, StringComparison.OrdinalIgnoreCase))
+            {
+                adjustmentDescription = "; traction trim cleared";
+                FineTuneSettings fine = working.fineTune;
+                if (fine == null || fine.tractionTrimPercent == 0f)
+                    return false;
+                fine.tractionTrimPercent = 0f;
+                return true;
+            }
+
+            if (string.Equals(partCategory, PartCatalog.Skis, StringComparison.OrdinalIgnoreCase))
+            {
+                adjustmentDescription = "; ski stance trim cleared";
+                FineTuneSettings fine = working.fineTune;
+                if (fine == null || fine.skiStanceTrim == 0f)
+                    return false;
+                fine.skiStanceTrim = 0f;
+                return true;
+            }
+
+            if (string.Equals(partCategory, "steeringGeometry", StringComparison.OrdinalIgnoreCase))
+                return false;
+
+            if (string.Equals(partCategory, PartCatalog.Suspension, StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(partCategory, PartCatalog.Chassis, StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(partCategory, PartCatalog.TrackLimiter, StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(partCategory, PartCatalog.RearShock, StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(partCategory, PartCatalog.RearSpring, StringComparison.OrdinalIgnoreCase))
+            {
+                adjustmentDescription = "; balance trims cleared";
+                return ClearSuspensionFineTune(working);
+            }
+
+            if (string.Equals(partCategory, PartCatalog.HeadlightColor, StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(partCategory, PartCatalog.HeadlightBrightness, StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(partCategory, PartCatalog.HeadlightBeam, StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(partCategory, PartCatalog.HeadlightAim, StringComparison.OrdinalIgnoreCase))
+            {
+                adjustmentDescription = "; operating mode returned to Follow Game Time";
+                if (!working.headlightEnabled.HasValue)
+                    return false;
+                working.headlightEnabled = null;
+                return true;
+            }
+
+            return false;
+        }
+
+        private static bool ClearEngineFineTune(TuneProfile working)
+        {
+            FineTuneSettings fine = working?.fineTune;
+            if (fine == null)
+                return false;
+
+            bool changed = fine.powerTrimPercent != 0f || fine.weightTrimPercent != 0f;
+            fine.powerTrimPercent = 0f;
+            fine.weightTrimPercent = 0f;
+            return changed;
+        }
+
+        private static bool ClearDrivetrainFineTune(TuneProfile working)
+        {
+            FineTuneSettings fine = working?.fineTune;
+            if (fine == null || fine.clutchTrimPercent == 0f)
+                return false;
+
+            fine.clutchTrimPercent = 0f;
+            return true;
+        }
+
+        private static bool ClearSuspensionFineTune(TuneProfile working)
+        {
+            FineTuneSettings fine = working?.fineTune;
+            if (fine == null)
+                return false;
+
+            bool changed = fine.centerOfMassYTrim != 0f || fine.centerOfMassZTrim != 0f;
+            fine.centerOfMassYTrim = 0f;
+            fine.centerOfMassZTrim = 0f;
+            return changed;
+        }
+
+        private static IEnumerable<string> PartCategoriesForGarageSection(string section)
+        {
+            switch (section)
+            {
+                case "engine":
+                    return new[] { PartCatalog.EngineCore, PartCatalog.EnginePiston, PartCatalog.EngineCrank, PartCatalog.Intake, PartCatalog.Turbo };
+                case "drivetrain":
+                    return new[] { PartCatalog.Clutch, PartCatalog.ClutchWeights, PartCatalog.RatioFeel, "brakeCalibration" };
+                case "track":
+                    return new[] { PartCatalog.Track };
+                case "steering":
+                    return new[] { PartCatalog.Skis, "steeringGeometry" };
+                case "suspension":
+                    return new[]
+                    {
+                        PartCatalog.Suspension,
+                        PartCatalog.Chassis,
+                        PartCatalog.TrackLimiter,
+                        PartCatalog.RearShock,
+                        PartCatalog.RearSpring,
+                        PartCatalog.Accessories
+                    };
+                case "lighting":
+                    return new[] { PartCatalog.HeadlightColor, PartCatalog.HeadlightBrightness, PartCatalog.HeadlightBeam, PartCatalog.HeadlightAim };
+                default:
+                    return Array.Empty<string>();
+            }
+        }
+
+        private static string GarageSectionForPartCategory(string category)
+        {
+            if (string.Equals(category, PartCatalog.EngineCore, StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(category, PartCatalog.EnginePiston, StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(category, PartCatalog.EngineCrank, StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(category, PartCatalog.Intake, StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(category, PartCatalog.Turbo, StringComparison.OrdinalIgnoreCase))
+                return "engine";
+            if (string.Equals(category, PartCatalog.Clutch, StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(category, PartCatalog.ClutchWeights, StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(category, PartCatalog.RatioFeel, StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(category, "brakeCalibration", StringComparison.OrdinalIgnoreCase))
+                return "drivetrain";
+            if (string.Equals(category, PartCatalog.Track, StringComparison.OrdinalIgnoreCase))
+                return "track";
+            if (string.Equals(category, PartCatalog.Skis, StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(category, "steeringGeometry", StringComparison.OrdinalIgnoreCase))
+                return "steering";
+            if (string.Equals(category, PartCatalog.Suspension, StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(category, PartCatalog.Chassis, StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(category, PartCatalog.TrackLimiter, StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(category, PartCatalog.RearShock, StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(category, PartCatalog.RearSpring, StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(category, PartCatalog.Accessories, StringComparison.OrdinalIgnoreCase))
+                return "suspension";
+            if (string.Equals(category, PartCatalog.HeadlightColor, StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(category, PartCatalog.HeadlightBrightness, StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(category, PartCatalog.HeadlightBeam, StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(category, PartCatalog.HeadlightAim, StringComparison.OrdinalIgnoreCase))
+                return "lighting";
+            return string.Empty;
+        }
+
+        private static void BuildGaragePresets(
             AlpineTuningMod mod,
             VisualElement content,
             VehicleScriptableObject target,
@@ -1300,715 +5604,431 @@ namespace AlpineTuning
             Action render,
             Action<string> setStatus,
             Action setupChanged,
+            Func<bool> saveAsNewSetup,
+            Func<bool> hasUnsavedDraft,
+            Func<TuneProfile, bool> loadSetupSlot,
+            Func<TuneProfile, bool> setDefaultSetupSlot,
             Func<string> getSelectedProfileId,
             Action<string> setSelectedProfileId,
             Func<string> getPendingDeleteProfileId,
             Action<string> setPendingDeleteProfileId,
+            Func<string> getPendingLoadProfileId,
+            Action<string> setPendingLoadProfileId,
             Func<bool> getFactoryResetArmed,
-            Action<bool> setFactoryResetArmed)
+            Action<bool> setFactoryResetArmed,
+            List<Button> tileButtons,
+            SUIManagedList tileContent)
         {
-            var currentSection = Section("Current Setup");
-            currentSection.Add(MutedLabel("Changes are preserved automatically for this sled."));
-            AddButtonRow(currentSection,
-                SmallButton("Save Setup", () =>
-                {
-                    setPendingDeleteProfileId?.Invoke(null);
-                    string message;
-                    setStatus(mod.SaveCurrentSetupAsSlot(working, target, out message)
-                        ? message
-                        : (string.IsNullOrWhiteSpace(message) ? AlpineNativeUiConfig.SaveFailedText : message));
-                    render();
-                }));
-            content.Add(currentSection);
-
-            var restoreSection = Section("Reset");
-            bool factoryResetArmed = getFactoryResetArmed != null && getFactoryResetArmed();
-            restoreSection.Add(MutedLabel("Reset returns this sled's current setup to stock."));
-            AddButtonRow(restoreSection,
-                DangerButton(factoryResetArmed ? "Confirm Reset" : "Reset to Stock", () =>
-                {
-                    setPendingDeleteProfileId?.Invoke(null);
-
-                    if (!factoryResetArmed)
-                    {
-                        setFactoryResetArmed?.Invoke(true);
-                        setStatus("Press Reset to Stock again to confirm.");
-                        render();
-                        return;
-                    }
-
-                    setFactoryResetArmed?.Invoke(false);
-                    if (mod.ResetToFactory(target, false))
-                    {
-                        setWorking(mod.CreateWorkingProfile(target));
-                        setStatus(AlpineNativeUiConfig.FactoryDefaultsRestoredText);
-                    }
-                    else
-                    {
-                        setStatus(AlpineNativeUiConfig.ResetFailedText);
-                    }
-
-                    render();
-                }));
-            content.Add(restoreSection);
-
-            var profiles = mod.ProfilesForSled(target);
-            if (profiles.Count == 0)
-            {
-                content.Add(MutedLabel(AlpineNativeUiConfig.NoSavedProfilesText));
-                content.Add(MutedLabel("Use Save Setup to create your first setup slot for this sled."));
-                return;
-            }
-
+            const string recoverySelection = "__recovery__";
             string selectedId = getSelectedProfileId != null ? getSelectedProfileId() : null;
-            string pendingDeleteId = getPendingDeleteProfileId != null ? getPendingDeleteProfileId() : null;
+            bool recoveryAvailable = mod.ArchivedProfilesForSled(target).Count > 0 ||
+                                     mod.ProfileHistoryForSled(target, 1).Count > 0;
+            bool currentDraftSelected = string.IsNullOrWhiteSpace(selectedId);
 
-            var savedSection = Section("Setup Slots");
+            Button currentTile = GarageTile(
+                "CURRENT DRAFT",
+                mod.Store.BuildProfilePartSummary(working),
+                currentDraftSelected,
+                () =>
+                {
+                    setSelectedProfileId?.Invoke(null);
+                    setPendingDeleteProfileId?.Invoke(null);
+                    setPendingLoadProfileId?.Invoke(null);
+                    setStatus?.Invoke("Current draft");
+                    render?.Invoke();
+                },
+                "action.current-draft",
+                "action.setups");
+            currentTile.name = "AlpinePreset-CurrentDraft";
+            tileContent.Add(currentTile);
+            tileButtons?.Add(currentTile);
 
-            foreach (var profile in profiles)
+            Action addRecoveryTile = () =>
+            {
+                if (!recoveryAvailable)
+                    return;
+                Button recoveryTile = GarageTile(
+                    "RECOVERY",
+                    "Removed setups and earlier saved revisions.",
+                    string.Equals(selectedId, recoverySelection, StringComparison.OrdinalIgnoreCase),
+                    () =>
+                    {
+                        setSelectedProfileId?.Invoke(recoverySelection);
+                        setPendingDeleteProfileId?.Invoke(null);
+                        setPendingLoadProfileId?.Invoke(null);
+                        setStatus?.Invoke("Recovery");
+                        render?.Invoke();
+                    },
+                    "action.recovery",
+                    "action.setups");
+                recoveryTile.name = "AlpinePreset-Recovery";
+                tileContent.Add(recoveryTile);
+                tileButtons?.Add(recoveryTile);
+            };
+
+            bool draftHasChanges = hasUnsavedDraft != null
+                ? hasUnsavedDraft()
+                : working != null && working.setupEdited;
+            string draftName = working != null && working.usesAutomaticName &&
+                               (draftHasChanges || string.IsNullOrWhiteSpace(working.name))
+                ? mod.Store.BuildAutomaticProfileName(working)
+                : (working?.name ?? "Saved Setup");
+
+            List<TuneProfile> profiles = mod.ProfilesForSled(target);
+            foreach (TuneProfile profile in profiles)
             {
                 TuneProfile captured = profile;
-                bool isSelected = !string.IsNullOrWhiteSpace(selectedId) &&
-                                  string.Equals(selectedId, captured.profileId, StringComparison.OrdinalIgnoreCase);
-                bool isPendingDelete = !string.IsNullOrWhiteSpace(pendingDeleteId) &&
-                                       string.Equals(pendingDeleteId, captured.profileId, StringComparison.OrdinalIgnoreCase);
-
-                var card = Card(isSelected);
-                var cardHeader = new VisualElement();
-                cardHeader.style.flexDirection = FlexDirection.Row;
-                cardHeader.style.flexWrap = Wrap.Wrap;
-                cardHeader.style.alignItems = Align.Center;
-
-                var name = CardTitle(captured.name ?? "(unnamed setup)");
-                name.style.flexGrow = 1;
-                cardHeader.Add(name);
-
-                if (isSelected)
-                {
-                    cardHeader.Add(Badge("Selected"));
-                }
-                else
-                {
-                    cardHeader.Add(SmallButton("Select", () =>
+                bool isPreviewSelected = string.Equals(
+                    selectedId,
+                    captured.profileId,
+                    StringComparison.OrdinalIgnoreCase);
+                bool isLoaded;
+                bool isDefault;
+                mod.GetSetupSlotUsage(captured, target, out isLoaded, out isDefault);
+                var tileState = new List<string>();
+                if (isLoaded)
+                    tileState.Add("LOADED");
+                if (isDefault)
+                    tileState.Add("DEFAULT");
+                tileState.Add(mod.Store.BuildProfilePartSummary(captured));
+                tileState.Add(FormatUnixTime(captured.updatedUnixTime));
+                string subtitle = string.Join("  |  ", tileState.ToArray());
+                Button tile = GarageTile(
+                    captured.name ?? "(unnamed setup)",
+                    subtitle,
+                    isPreviewSelected,
+                    () =>
                     {
                         setSelectedProfileId?.Invoke(captured.profileId);
                         setPendingDeleteProfileId?.Invoke(null);
+                        setPendingLoadProfileId?.Invoke(null);
+                        setStatus("Setup preview");
                         render();
-                    }));
-                }
-
-                card.Add(cardHeader);
-
-                var preview = TuneStore.Clone(captured);
-                mod.PreviewProfile(preview, target);
-                card.Add(StatsPreview(mod, target, preview.resolvedStats, preview.requiresReload));
-                card.Add(MutedLabel($"Builder: {DisplayOrUnknown(captured.author)} | Updated: {FormatUnixTime(captured.updatedUnixTime)}"));
-
-                if (isSelected)
+                    },
+                    "action.setups");
+                tile.name = "AlpinePreset-" + SafeElementName(captured.profileId);
+                tileContent.Add(tile);
+                if (tileButtons != null)
                 {
-                    var renameField = new TextField("Rename Setup")
-                    {
-                        value = captured.name ?? string.Empty
-                    };
-                    ApplyControlStyle(renameField);
-                    renameField.RegisterValueChangedCallback(evt =>
-                    {
-                        string message;
-                        if (mod.RenameSetupSlot(captured, target, evt.newValue, out message))
-                        {
-                            captured.name = evt.newValue;
-                            setStatus(message);
-                        }
-                        else if (!string.IsNullOrWhiteSpace(message))
-                        {
-                            setStatus(message);
-                        }
-                    });
-                    card.Add(renameField);
+                    if (isPreviewSelected)
+                        tileButtons.Insert(0, tile);
+                    else
+                    tileButtons.Add(tile);
+                }
+            }
 
-                    Button equipButton = PrimaryButton("Equip", () =>
+            addRecoveryTile();
+            if (currentDraftSelected)
+            {
+                var currentSection = Section("Current Draft");
+                currentSection.Add(CardTitle(draftName));
+                currentSection.Add(MutedLabel(mod.Store.BuildProfilePartSummary(working)));
+                AddButtonRow(currentSection, SmallButton("Save as New", () =>
+                {
+                    if (saveAsNewSetup == null || !saveAsNewSetup())
+                        return;
+                    setSelectedProfileId?.Invoke(working.profileId);
+                    setPendingDeleteProfileId?.Invoke(null);
+                    setPendingLoadProfileId?.Invoke(null);
+                    render?.Invoke();
+                }));
+                content.Add(currentSection);
+
+                var restoreSection = Section("Reset");
+                bool factoryResetArmed = getFactoryResetArmed != null && getFactoryResetArmed();
+                restoreSection.Add(MutedLabel("Stage the stock setup."));
+                Button resetToStockButton = DangerButton(
+                    factoryResetArmed ? "Confirm Reset" : "Reset to Stock",
+                    () =>
                     {
                         setPendingDeleteProfileId?.Invoke(null);
-                        TuneProfile equipped;
-                        string message;
-                        if (mod.EquipSetupSlot(captured, target, out equipped, out message))
-                            setWorking(equipped);
-
-                        setStatus(string.IsNullOrWhiteSpace(message)
-                            ? AlpineNativeUiConfig.ApplyFailedText
-                            : message);
-                        render();
-                    });
-
-                    Button duplicateButton = SmallButton("Duplicate Setup", () =>
-                    {
-                        setPendingDeleteProfileId?.Invoke(null);
-                        string message;
-                        mod.DuplicateSetupSlot(captured, target, out message);
-                        setStatus(string.IsNullOrWhiteSpace(message) ? "Setup duplicated." : message);
-                        render();
-                    });
-
-                    Button defaultButton = SmallButton("Set as Default", () =>
-                    {
-                        setPendingDeleteProfileId?.Invoke(null);
-                        string message;
-                        mod.SetDefaultSetup(captured, target, out message);
-                        setStatus(message);
-                        render();
-                    });
-
-                    Button shareButton = SmallButton("Share", () =>
-                    {
-                        setPendingDeleteProfileId?.Invoke(null);
-                        var toShare = TuneStore.Clone(captured);
-                        if (!mod.SaveProfile(toShare, target, false))
+                        setPendingLoadProfileId?.Invoke(null);
+                        if (!factoryResetArmed)
                         {
-                            setStatus(AlpineNativeUiConfig.SaveFailedText);
-                        }
-                        else
-                        {
-                            setStatus(mod.PublishProfile(toShare, target)
-                                ? AlpineNativeUiConfig.PublishedTuneText
-                                : (mod.Sharing != null && !string.IsNullOrWhiteSpace(mod.Sharing.StatusMessage)
-                                    ? mod.Sharing.StatusMessage
-                                    : AlpineNativeUiConfig.SharingUnavailableText));
-                        }
-                        render();
-                    });
-                    if (AlpineConstants.PeerSharingTemporarilyDisabled)
-                    {
-                        shareButton.text = "Sharing Paused";
-                        shareButton.SetEnabled(false);
-                    }
-
-                    Button deleteButton = DangerButton(isPendingDelete ? "Confirm Remove" : "Remove", () =>
-                    {
-                        if (!isPendingDelete)
-                        {
-                            setPendingDeleteProfileId?.Invoke(captured.profileId);
-                            setStatus($"Press Remove again to remove {captured.name}.");
+                            setFactoryResetArmed?.Invoke(true);
+                            setStatus("Confirm stock reset");
                             render();
                             return;
                         }
 
-                        mod.DeleteProfile(captured.profileId);
-                        if (string.Equals(selectedId, captured.profileId, StringComparison.OrdinalIgnoreCase))
-                            setSelectedProfileId?.Invoke(null);
-
-                        setPendingDeleteProfileId?.Invoke(null);
-                        setStatus($"Removed {captured.name}.");
+                        setFactoryResetArmed?.Invoke(false);
+                        TuneProfile stock = mod.Catalog.CreateDefaultProfile(target, working.author);
+                        stock.profileId = working.profileId;
+                        stock.name = working.name;
+                        stock.usesAutomaticName = working.usesAutomaticName;
+                        stock.setupSlotId = working.setupSlotId;
+                        stock.setupSlotName = working.setupSlotName;
+                        stock.isCurrentSetup = working.isCurrentSetup;
+                        stock.setupEdited = true;
+                        setWorking(stock);
+                        setStatus("Stock staged");
                         render();
                     });
-
-                    AddSplitButtonRow(card,
-                        new[] { equipButton, duplicateButton, defaultButton, shareButton },
-                        new[] { deleteButton });
-                }
-
-                savedSection.Add(card);
-            }
-
-            content.Add(savedSection);
-        }
-
-        private static void BuildShareTab(
-            AlpineTuningMod mod,
-            VisualElement content,
-            VehicleScriptableObject target,
-            TuneProfile working,
-            Action render,
-            Action<string> setStatus)
-        {
-            var sharingSection = Section("Multiplayer Sharing");
-            sharingSection.Add(MutedLabel(AlpineConstants.PeerSharingPausedNotice));
-            sharingSection.Add(MutedLabel("Local setup slots, defaults, lighting, and performance tuning remain available."));
-            content.Add(sharingSection);
-        }
-
-        private static void BuildPerformanceTab(
-            AlpineTuningMod mod,
-            VisualElement content,
-            VehicleScriptableObject target,
-            TuneProfile working,
-            Action render,
-            Action<string> setStatus)
-        {
-            var estimate = mod.EstimatePerformance(working, target);
-            var settings = mod.Settings;
-
-            var header = Section("Performance Estimate");
-            header.Add(MutedLabel($"{DisplayOrUnknown(estimate.sledName)} | {DisplayOrUnknown(estimate.setupName)}"));
-            header.Add(MutedLabel("Garage estimate based on the current setup. It is a tuning guide, not measured live dyno data."));
-            content.Add(header);
-
-            var bars = Section("Compared to Stock");
-            foreach (var stat in estimate.stats)
-                bars.Add(PerformanceBar(stat));
-            content.Add(bars);
-
-            var graph = Section("Estimated Dyno");
-            graph.Add(BuildCurveGraph(estimate, settings.units));
-            graph.Add(MutedLabel(
-                $"Peak Power: {UnitConversion.FormatPower(estimate.peakHorsepower, settings.units)} | " +
-                $"Peak Torque: {UnitConversion.FormatTorque(estimate.peakTorqueNm, settings.units)} | " +
-                $"Engagement: {estimate.engagementRpm:F0} rpm | " +
-                $"Weight: {UnitConversion.FormatWeight(estimate.estimatedWeightKg, settings.units)}"));
-            content.Add(graph);
-
-            if (settings.advancedDetails)
-            {
-                var advanced = Section("Advanced Estimate");
-                advanced.Add(MutedLabel("Curve and stat values are derived from setup parts, stock baseline values, and Alpine's tune math."));
-                if (working.resolvedStats != null)
-                {
-                    advanced.Add(MutedLabel($"Drive Response: {working.resolvedStats.powerFactor:F3}"));
-                    advanced.Add(MutedLabel($"Raw Track Bite: {working.resolvedStats.friction:F3}"));
-                    advanced.Add(MutedLabel($"Paddle Height: {TrackSpecResolver.FormatPaddleHeight(working.resolvedStats.lugHeight)}"));
-                    advanced.Add(MutedLabel($"Boost Estimate: {working.resolvedStats.estimatedBoostPsi:F1} psi"));
-                }
-                content.Add(advanced);
-            }
-        }
-
-        private static void AddCompatibilityReport(
-            AlpineTuningMod mod,
-            VisualElement content,
-            bool includeDetails,
-            bool includeDiagnosticActions,
-            Action render = null,
-            Action<string> setStatus = null)
-        {
-            var report = SleddersGameBindings.GetCompatibilityReport();
-            var section = Section("Compatibility");
-
-            if (report == null)
-            {
-                section.Add(MutedLabel("Status: unknown"));
-                content.Add(section);
+                // Keep one stable identity across the armed/confirmed labels so focus
+                // restoration leaves controller users on the confirmation action.
+                resetToStockButton.name = "alpine-button-reset-to-stock";
+                AddButtonRow(restoreSection, resetToStockButton);
+                content.Add(restoreSection);
+                if (profiles.Count == 0)
+                    content.Add(MutedLabel(AlpineNativeUiConfig.NoSavedProfilesText));
                 return;
             }
 
-            section.Add(MutedLabel($"Status: {DisplayOrUnknown(report.overallStatus)}"));
-            section.Add(MutedLabel(report.SummaryLine));
-
-            if (includeDetails)
+            if (string.Equals(selectedId, recoverySelection, StringComparison.OrdinalIgnoreCase))
             {
-                section.Add(MutedLabel($"Assembly: {DisplayOrUnknown(report.assemblyPath)}"));
-                section.Add(MutedLabel($"Last Write: {DisplayOrUnknown(report.assemblyLastWriteUtc)}"));
-                section.Add(MutedLabel($"Fingerprint: {DisplayOrUnknown(report.assemblyLightHash)} ({FormatBytes(report.assemblyLengthBytes)})"));
-
-                foreach (var capability in report.capabilities)
-                {
-                    if (capability == null)
-                        continue;
-
-                    section.Add(MutedLabel(
-                        $"{capability.label}: {DisplayOrUnknown(capability.state)}" +
-                        (string.IsNullOrWhiteSpace(capability.detail) ? string.Empty : $" - {capability.detail}")));
-                }
+                BuildGarageRecovery(mod, content, target, setSelectedProfileId, render, setStatus);
+                return;
             }
 
-            if (includeDiagnosticActions && mod != null && AlpineConstants.PeerSharingTemporarilyDisabled)
+            TuneProfile selectedProfile = profiles.FirstOrDefault(profile =>
+                string.Equals(profile.profileId, selectedId, StringComparison.OrdinalIgnoreCase));
+            if (selectedProfile == null)
             {
-                section.Add(MutedLabel("Peer transport diagnostics are paused with networked setup sharing."));
+                content.Add(MutedLabel("Choose a setup tile to preview and manage it."));
+                return;
             }
-            else if (includeDiagnosticActions && mod != null)
+
+            TuneProfile selectedSlot = selectedProfile;
+            bool pendingDelete = string.Equals(
+                getPendingDeleteProfileId != null ? getPendingDeleteProfileId() : null,
+                selectedSlot.profileId,
+                StringComparison.OrdinalIgnoreCase);
+            bool isCurrent;
+            bool isDefaultSetup;
+            mod.GetSetupSlotUsage(selectedSlot, target, out isCurrent, out isDefaultSetup);
+            string pendingSetupAction = getPendingLoadProfileId != null
+                ? getPendingLoadProfileId()
+                : null;
+            string loadActionKey = "load:" + selectedSlot.profileId;
+            string defaultActionKey = "default:" + selectedSlot.profileId;
+            bool pendingLoad = string.Equals(
+                pendingSetupAction,
+                loadActionKey,
+                StringComparison.OrdinalIgnoreCase);
+            bool pendingDefault = string.Equals(
+                pendingSetupAction,
+                defaultActionKey,
+                StringComparison.OrdinalIgnoreCase);
+            var detail = Section("Selected Setup");
+            var preview = TuneStore.Clone(selectedSlot);
+            mod.PreviewProfile(preview, target);
+            detail.Add(CardTitle(selectedSlot.name ?? "Saved Setup"));
+            if (isCurrent || isDefaultSetup)
             {
-                var settings = mod.Settings;
-                section.Add(MutedLabel("Steam ID scanning is a log-only diagnostic and stays off during normal peer discovery."));
+                var stateRow = new VisualElement();
+                stateRow.style.flexDirection = FlexDirection.Row;
+                stateRow.style.flexWrap = Wrap.Wrap;
+                if (isCurrent)
+                    stateRow.Add(Badge("LOADED"));
+                if (isDefaultSetup)
+                    stateRow.Add(Badge("DEFAULT"));
+                detail.Add(stateRow);
+            }
+            detail.Add(MutedLabel(mod.Store.BuildProfilePartSummary(selectedSlot)));
+            detail.Add(StatsPreview(mod, target, preview.resolvedStats, preview.requiresReload));
+            detail.Add(MutedLabel("UPDATED " + FormatUnixTime(selectedSlot.updatedUnixTime)));
 
-                var runScan = SmallButton("Run Steam ID Scan", () =>
+            var renameField = new TextField("Tune Name") { value = selectedSlot.name ?? string.Empty };
+            renameField.name = "AlpinePresetRename-" + SafeElementName(selectedSlot.profileId);
+            ApplyControlStyle(renameField);
+            Action<bool> commitRename = deferRender =>
+            {
+                string requestedName = (renameField.value ?? string.Empty).Trim();
+                if (string.Equals(requestedName, selectedSlot.name, StringComparison.Ordinal))
+                    return;
+                string message;
+                if (mod.RenameSetupSlot(selectedSlot, target, requestedName, out message))
                 {
-                    bool ran = SleddersGameBindings.LogNetClientSteamIdScan(settings.diagnosticSteamIdScanEnabled);
-                    setStatus?.Invoke(ran
-                        ? "Steam ID diagnostic scan written to the MelonLoader log."
-                        : "Enable the Steam ID diagnostic scanner first.");
-                });
-                runScan.SetEnabled(settings.diagnosticSteamIdScanEnabled);
-
-                AddButtonRow(section,
-                    SmallButton(settings.diagnosticSteamIdScanEnabled ? "Steam ID Scan: On" : "Steam ID Scan: Off", () =>
+                    selectedSlot.name = requestedName;
+                    selectedSlot.usesAutomaticName = false;
+                    if (working != null &&
+                        string.Equals(
+                            working.setupSlotId,
+                            selectedSlot.profileId,
+                            StringComparison.OrdinalIgnoreCase))
                     {
-                        settings.diagnosticSteamIdScanEnabled = !settings.diagnosticSteamIdScanEnabled;
-                        mod.SaveSettings();
-                        setStatus?.Invoke(settings.diagnosticSteamIdScanEnabled
-                            ? "Steam ID diagnostic scanner enabled."
-                            : "Steam ID diagnostic scanner disabled.");
-                        render?.Invoke();
-                    }),
-                    runScan);
-            }
+                        // RenameSetupSlot persists the slot immediately. Keep the
+                        // staged clone synchronized so its next Save cannot write
+                        // the previous name back over that accepted rename.
+                        working.name = requestedName;
+                        working.setupSlotName = requestedName;
+                        working.usesAutomaticName = false;
+                    }
+                    setPendingLoadProfileId?.Invoke(null);
+                    setStatus(message);
+                    if (deferRender)
+                        renameField.schedule.Execute(() => render());
+                    else
+                        render();
+                }
+                else if (!string.IsNullOrWhiteSpace(message))
+                {
+                    setStatus(message);
+                }
+            };
+            renameField.RegisterCallback<FocusOutEvent>(_ => commitRename(true));
+            renameField.RegisterCallback<KeyDownEvent>(evt =>
+            {
+                if (evt.keyCode != KeyCode.Return && evt.keyCode != KeyCode.KeypadEnter)
+                    return;
+                commitRename(false);
+                evt.StopPropagation();
+            });
+            detail.Add(renameField);
 
-            content.Add(section);
+            bool loadWouldDiscardDraft = draftHasChanges;
+            bool alreadyLoaded = isCurrent && !loadWouldDiscardDraft;
+            string loadLabel = alreadyLoaded
+                ? "Loaded"
+                : pendingLoad ? "Confirm Load" : "Load";
+            Button equipButton = PrimaryButton(loadLabel, () =>
+            {
+                setPendingDeleteProfileId?.Invoke(null);
+                if (loadWouldDiscardDraft && !pendingLoad)
+                {
+                    setPendingLoadProfileId?.Invoke(loadActionKey);
+                    setStatus("Load again to discard draft");
+                    render();
+                    return;
+                }
+
+                setPendingLoadProfileId?.Invoke(null);
+                if (loadSetupSlot != null && loadSetupSlot(selectedSlot))
+                    setSelectedProfileId?.Invoke(selectedSlot.profileId);
+                render();
+            });
+            equipButton.name = "AlpinePresetLoad-" + SafeElementName(selectedSlot.profileId);
+            equipButton.SetEnabled(!alreadyLoaded);
+
+            bool alreadyDefault = isCurrent && isDefaultSetup && !loadWouldDiscardDraft;
+            string defaultLabel = alreadyDefault
+                ? "Default"
+                : pendingDefault ? "Confirm Default" : isDefaultSetup ? "Load Default" : "Set Default";
+            Button defaultButton = SmallButton(defaultLabel, () =>
+            {
+                setPendingDeleteProfileId?.Invoke(null);
+                if (loadWouldDiscardDraft && !pendingDefault)
+                {
+                    setPendingLoadProfileId?.Invoke(defaultActionKey);
+                    setStatus("Set again to discard draft");
+                    render();
+                    return;
+                }
+
+                setPendingLoadProfileId?.Invoke(null);
+                if (setDefaultSetupSlot != null && setDefaultSetupSlot(selectedSlot))
+                    setSelectedProfileId?.Invoke(selectedSlot.profileId);
+                render();
+            });
+            defaultButton.name = "AlpinePresetDefault-" + SafeElementName(selectedSlot.profileId);
+            defaultButton.SetEnabled(!alreadyDefault);
+
+            Button duplicateButton = SmallButton("Duplicate", () =>
+            {
+                setPendingDeleteProfileId?.Invoke(null);
+                setPendingLoadProfileId?.Invoke(null);
+                string message;
+                TuneProfile duplicate = mod.DuplicateSetupSlot(selectedSlot, target, out message);
+                if (duplicate != null)
+                    setSelectedProfileId?.Invoke(duplicate.profileId);
+                setStatus(string.IsNullOrWhiteSpace(message) ? "Setup duplicated." : message);
+                render();
+            });
+            duplicateButton.name = "AlpinePresetDuplicate-" + SafeElementName(selectedSlot.profileId);
+            bool canRemove = !isCurrent && !isDefaultSetup;
+            string removeLabel = !canRemove
+                ? isCurrent ? "Loaded" : "Default"
+                : pendingDelete ? "Confirm Remove" : "Remove";
+            Button deleteButton = DangerButton(removeLabel, () =>
+            {
+                setPendingLoadProfileId?.Invoke(null);
+                if (!pendingDelete)
+                {
+                    setPendingDeleteProfileId?.Invoke(selectedSlot.profileId);
+                    setStatus("Confirm remove");
+                    render();
+                    return;
+                }
+
+                if (!mod.DeleteProfile(selectedSlot.profileId))
+                {
+                    setStatus("In use or remove failed");
+                    return;
+                }
+                setSelectedProfileId?.Invoke(null);
+                setPendingDeleteProfileId?.Invoke(null);
+                setStatus("Moved to recovery");
+                render();
+            });
+            deleteButton.name = "AlpinePresetRemove-" + SafeElementName(selectedSlot.profileId);
+            deleteButton.SetEnabled(canRemove);
+            AddSplitButtonRow(
+                detail,
+                new[] { equipButton, defaultButton },
+                new[] { duplicateButton, deleteButton });
+            content.Add(detail);
         }
 
-        private static void BuildGuideTab(AlpineTuningMod mod, VisualElement content)
-        {
-            var categories = Section("Tuning Guide");
-            categories.Add(MutedLabel("Engine changes estimated output, boost, and throttle feel."));
-            categories.Add(MutedLabel("Clutching changes engagement RPM and how strongly the sled holds power under load."));
-            categories.Add(MutedLabel("Track changes paddle height, track bite, powder float, and rotating weight."));
-            categories.Add(MutedLabel("Suspension changes weight transfer, ski stance, balance, and stability."));
-            categories.Add(MutedLabel("Lighting changes headlight color, brightness, beam, aim, and forced headlight mode."));
-            categories.Add(MutedLabel("Multiplayer setup sharing is paused while new P2P methods are investigated."));
-            content.Add(categories);
-
-            var statuses = Section("Statuses");
-            statuses.Add(MutedLabel("Ready: the selected sled can use this setup."));
-            statuses.Add(MutedLabel("Updated: the current spawned sled has been adjusted."));
-            statuses.Add(MutedLabel("Ready for next ride: the setup has been saved and will equip when that sled spawns."));
-            statuses.Add(MutedLabel("Setup saved: the current setup was written to a setup slot."));
-            statuses.Add(MutedLabel("Default setup saved: the current setup will equip automatically for that sled."));
-            statuses.Add(MutedLabel("Returned to stock: Alpine tuning fields were reset without changing vanilla cosmetics."));
-            content.Add(statuses);
-
-            var units = Section("Units");
-            units.Add(MutedLabel(mod.Settings.units == AlpineDisplayUnits.Imperial
-                ? "Imperial units are active: lb, hp, lb-ft, inches, rpm."
-                : "Metric units are active: kg, kW, Nm, mm, rpm."));
-            units.Add(MutedLabel("Power and dyno values are estimates unless a future live telemetry source is available."));
-            content.Add(units);
-
-            var limitations = Section("Current Limits");
-            limitations.Add(MutedLabel("Long Track Kit changes handling, bite, weight, and balance. Visual track length depends on game model support."));
-            limitations.Add(MutedLabel(AlpineConstants.PeerSharingPausedNotice));
-            content.Add(limitations);
-
-            AddCompatibilityReport(mod, content, mod != null && mod.Settings.advancedDetails, false);
-        }
-
-        private static void BuildUiSettingsTab(
+        private static void BuildGarageRecovery(
             AlpineTuningMod mod,
             VisualElement content,
+            VehicleScriptableObject target,
+            Action<string> setSelectedProfileId,
             Action render,
             Action<string> setStatus)
         {
-            var settings = mod.Settings;
-
-            var garageSection = Section("Garage Settings");
-            AddButtonRow(garageSection,
-                SmallButton(settings.units == AlpineDisplayUnits.Metric ? "Units: Metric" : "Units: Imperial", () =>
-                {
-                    settings.units = settings.units == AlpineDisplayUnits.Metric
-                        ? AlpineDisplayUnits.Imperial
-                        : AlpineDisplayUnits.Metric;
-                    mod.SaveSettings();
-                    setStatus("Units updated.");
-                    render();
-                }),
-                SmallButton(settings.advancedDetails ? "Advanced Details: On" : "Advanced Details: Off", () =>
-                {
-                    settings.advancedDetails = !settings.advancedDetails;
-                    mod.SaveSettings();
-                    setStatus(settings.advancedDetails ? "Advanced details shown." : "Advanced details hidden.");
-                    render();
-                }));
-            content.Add(garageSection);
-
-            AddCompatibilityReport(mod, content, settings.advancedDetails, settings.advancedDetails, render, setStatus);
-
-            if (!settings.advancedDetails)
+            List<TuneProfile> archived = mod.ArchivedProfilesForSled(target);
+            List<TuneHistoryEntry> history = mod.ProfileHistoryForSled(target, 20);
+            if (archived.Count == 0 && history.Count == 0)
                 return;
 
-            var debugSection = Section("Panel Layout");
-            debugSection.Add(MutedLabel("Layout controls for the native Alpine panel. Changes last until the game closes."));
-
-            AddRuntimeSlider(
-                debugSection,
-                "Panel Max Width",
-                AlpineNativeUiConfig.RuntimePanelWidthMin,
-                AlpineNativeUiConfig.RuntimePanelWidthMax,
-                RuntimeUi.PanelMaxWidth,
-                value => RuntimeUi.PanelMaxWidth = value,
-                render);
-
-            AddRuntimeSlider(
-                debugSection,
-                "Panel Max Height",
-                AlpineNativeUiConfig.RuntimePanelHeightMin,
-                AlpineNativeUiConfig.RuntimePanelHeightMax,
-                RuntimeUi.PanelMaxHeight,
-                value => RuntimeUi.PanelMaxHeight = value,
-                render);
-
-            AddRuntimeSlider(
-                debugSection,
-                "Panel Padding",
-                AlpineNativeUiConfig.RuntimePaddingMin,
-                AlpineNativeUiConfig.RuntimePaddingMax,
-                RuntimeUi.PanelPadding,
-                value => RuntimeUi.PanelPadding = value,
-                render);
-
-            AddRuntimeSlider(
-                debugSection,
-                "Button Height",
-                AlpineNativeUiConfig.RuntimeButtonHeightMin,
-                AlpineNativeUiConfig.RuntimeButtonHeightMax,
-                RuntimeUi.ButtonHeight,
-                value => RuntimeUi.ButtonHeight = value,
-                render);
-
-            AddRuntimeSlider(
-                debugSection,
-                "Title Font Size",
-                AlpineNativeUiConfig.RuntimeFontSizeMin,
-                AlpineNativeUiConfig.RuntimeFontSizeMax,
-                RuntimeUi.TitleFontSize,
-                value => RuntimeUi.TitleFontSize = value,
-                render);
-
-            AddRuntimeSlider(
-                debugSection,
-                "Panel Opacity",
-                AlpineNativeUiConfig.RuntimeOpacityMin,
-                AlpineNativeUiConfig.RuntimeOpacityMax,
-                RuntimeUi.PanelOpacity,
-                value => RuntimeUi.PanelOpacity = value,
-                render);
-
-            AddButtonRow(debugSection,
-                SmallButton("Reset UI Defaults", () =>
+            var recovery = Section("Recovery");
+            if (archived.Count > 0)
+                recovery.Add(MutedLabel("REMOVED SETUPS"));
+            foreach (TuneProfile removed in archived
+                         .GroupBy(profile => profile.profileId, StringComparer.OrdinalIgnoreCase)
+                         .Select(group => group.First()))
+            {
+                TuneProfile capturedRemoved = removed;
+                recovery.Add(MutedLabel(
+                    (capturedRemoved.name ?? "Setup") + "  |  " +
+                    mod.Store.BuildProfilePartSummary(capturedRemoved) + "  |  " +
+                    FormatUnixTime(capturedRemoved.updatedUnixTime)));
+                Button restoreButton = SmallButton("Restore", () =>
                 {
-                    RuntimeUi.ResetToDefaults();
-                    setStatus("Layout debug settings reset to hardcoded defaults.");
+                    TuneProfile restored;
+                    string message;
+                    if (mod.RestoreArchivedSetup(capturedRemoved.profileId, out restored, out message) && restored != null)
+                        setSelectedProfileId?.Invoke(restored.profileId);
+                    setStatus(string.IsNullOrWhiteSpace(message) ? "Restore failed" : message);
                     render();
-                }));
-
-            content.Add(debugSection);
-        }
-
-        private static void AddDonorDropdown(
-            AlpineTuningMod mod,
-            VisualElement content,
-            TuneProfile working,
-            Action render,
-            Action setupChanged)
-        {
-            var sleds = mod.SelectableSleds.ToList();
-            var options = new List<string> { "None" };
-
-            options.AddRange(sleds.Select(s =>
-                !string.IsNullOrWhiteSpace(s.displayName) ? s.displayName : s.name));
-
-            int selected = 0;
-
-            if (!string.IsNullOrWhiteSpace(working.donorSledKey))
-            {
-                int donorIndex = sleds.FindIndex(s => AlpineTuningMod.GetSledKey(s) == working.donorSledKey);
-                if (donorIndex >= 0)
-                    selected = donorIndex + 1;
+                });
+                restoreButton.name = "AlpineRecoveryRemoved-" + SafeElementName(capturedRemoved.profileId);
+                AddButtonRow(recovery, restoreButton);
             }
 
-            var dropdown = Dropdown("Engine Donor", options, selected);
-            SetTooltip(dropdown, "Uses another sled's stock engine and audio as the starting point for this setup.");
-            dropdown.RegisterValueChangedCallback(evt =>
+            if (history.Count > 0)
+                recovery.Add(MutedLabel("EARLIER VERSIONS"));
+            foreach (TuneHistoryEntry entry in history.Where(item => item != null && item.profile != null))
             {
-                int index = options.IndexOf(evt.newValue);
-
-                working.donorSledKey = index > 0 && index - 1 < sleds.Count
-                    ? AlpineTuningMod.GetSledKey(sleds[index - 1])
-                    : null;
-
-                setupChanged?.Invoke();
-            });
-
-            content.Add(dropdown);
-        }
-
-        private static void AddProfileNameField(VisualElement content, TuneProfile working, Action setupChanged)
-        {
-            var nameField = new TextField("Setup Name")
-            {
-                name = "alpine-control-setup-name",
-                value = working.name ?? "Current Setup"
-            };
-
-            ApplyControlStyle(nameField);
-            SetTooltip(nameField, "Names the setup slot shown in your garage.");
-            nameField.RegisterValueChangedCallback(evt =>
-            {
-                working.name = evt.newValue;
-                setupChanged?.Invoke();
-            });
-            content.Add(nameField);
-        }
-
-        private static void AddBoostEstimate(VisualElement content, ResolvedStats stats)
-        {
-            if (stats == null || stats.boostTargetPsi <= 0.01f)
-            {
-                content.Add(MutedLabel("Estimated boost: naturally aspirated or no Alpine boost target."));
-                return;
+                TuneHistoryEntry capturedEntry = entry;
+                recovery.Add(MutedLabel(
+                    (capturedEntry.profile.name ?? "Setup") + "  |  " +
+                    mod.Store.BuildProfilePartSummary(capturedEntry.profile) + "  |  " +
+                    FormatUnixTime(capturedEntry.archivedUnixTime)));
+                Button restoreHistoryButton = SmallButton("Restore as New", () =>
+                {
+                    TuneProfile restored;
+                    string message;
+                    if (mod.RestoreProfileHistory(capturedEntry, out restored, out message) && restored != null)
+                        setSelectedProfileId?.Invoke(restored.profileId);
+                    setStatus(string.IsNullOrWhiteSpace(message) ? "History restore failed" : message);
+                    render();
+                });
+                restoreHistoryButton.name = "AlpineRecoveryHistory-" + SafeElementName(capturedEntry.historyId);
+                AddButtonRow(recovery, restoreHistoryButton);
             }
-
-            content.Add(MutedLabel($"Estimated boost: {stats.estimatedBoostPsi:F1} psi"));
-            content.Add(MutedLabel($"Boost target: {stats.boostTargetPsi:F1} psi"));
-            if (stats.boostLimitPsi > 0.01f)
-                content.Add(MutedLabel($"Boost limit metadata: {stats.boostLimitPsi:F1} psi"));
-            content.Add(MutedLabel($"Altitude compensation: {stats.altitudeCompensationPercent:F0}%"));
-            content.Add(MutedLabel($"Estimated manifold pressure: {stats.estimatedManifoldPressureKpa:F0} kPa"));
-        }
-
-        private static VisualElement PerformanceBar(PerformanceStatEstimate stat)
-        {
-            var row = new VisualElement();
-            row.style.flexDirection = FlexDirection.Row;
-            row.style.flexWrap = Wrap.Wrap;
-            row.style.alignItems = Align.Center;
-            row.style.marginTop = AlpineNativeUiConfig.RowGap;
-            row.style.minWidth = 0;
-            SetTooltip(row, stat != null ? stat.tooltip : null);
-
-            var label = new Label(stat != null ? stat.label : string.Empty);
-            label.style.width = 150f;
-            label.style.color = AlpineNativeUiConfig.RowTextColor;
-            ApplyTextWrap(label);
-            row.Add(label);
-
-            var track = new VisualElement();
-            track.style.height = 10f;
-            track.style.width = 180f;
-            track.style.marginRight = AlpineNativeUiConfig.InlineGap;
-            track.style.backgroundColor = AlpineNativeUiConfig.ChipBackgroundColor;
-
-            var fill = new VisualElement();
-            fill.style.height = 10f;
-            fill.style.width = Length.Percent(Mathf.Clamp01(stat != null ? stat.normalized01 : 0f) * 100f);
-            fill.style.backgroundColor = AlpineNativeUiConfig.AccentColor;
-            track.Add(fill);
-            row.Add(track);
-
-            var delta = new Label(stat != null ? stat.deltaLabel : string.Empty);
-            delta.style.color = AlpineNativeUiConfig.MutedTextColor;
-            delta.style.minWidth = 72f;
-            ApplyTextWrap(delta);
-            row.Add(delta);
-            return row;
-        }
-
-        private static VisualElement BuildCurveGraph(AlpinePerformanceEstimate estimate, AlpineDisplayUnits units)
-        {
-            var graph = new VisualElement();
-            graph.style.flexDirection = FlexDirection.Column;
-            graph.style.paddingLeft = AlpineNativeUiConfig.CardPadding;
-            graph.style.paddingRight = AlpineNativeUiConfig.CardPadding;
-            graph.style.paddingTop = AlpineNativeUiConfig.CardPadding;
-            graph.style.paddingBottom = AlpineNativeUiConfig.CardPadding;
-            graph.style.backgroundColor = AlpineNativeUiConfig.CardBackgroundColor;
-            graph.style.marginTop = AlpineNativeUiConfig.RowGap;
-            SetTooltip(graph, "Estimated garage curve based on the current setup. It is a tuning guide, not a certified dyno result.");
-
-            var samples = estimate != null ? estimate.curve : null;
-            if (samples == null || samples.Count == 0)
-            {
-                graph.Add(MutedLabel("Curve unavailable until a sled setup is selected."));
-                return graph;
-            }
-
-            const int columns = 44;
-            const int rows = 10;
-            float max = 0f;
-            for (int i = 0; i < samples.Count; i++)
-                max = Mathf.Max(max, samples[i].stockHorsepower, samples[i].currentHorsepower);
-            max = Mathf.Max(1f, max);
-
-            char[,] cells = new char[rows, columns];
-            for (int y = 0; y < rows; y++)
-                for (int x = 0; x < columns; x++)
-                    cells[y, x] = ' ';
-
-            PlotCurve(samples, columns, rows, max, false, cells);
-            PlotCurve(samples, columns, rows, max, true, cells);
-
-            graph.Add(MutedLabel("Power Curve over RPM  (S=Stock, C=Current)"));
-            for (int y = 0; y < rows; y++)
-            {
-                char[] line = new char[columns];
-                for (int x = 0; x < columns; x++)
-                    line[x] = cells[y, x];
-
-                var label = new Label(new string(line));
-                label.style.color = AlpineNativeUiConfig.RowTextColor;
-                label.style.unityFontStyleAndWeight = FontStyle.Normal;
-                label.style.whiteSpace = WhiteSpace.NoWrap;
-                graph.Add(label);
-            }
-
-            graph.Add(MutedLabel($"2500 rpm{new string(' ', 24)}9000 rpm"));
-            return graph;
-        }
-
-        private static void PlotCurve(
-            List<PerformanceCurveSample> samples,
-            int columns,
-            int rows,
-            float max,
-            bool current,
-            char[,] cells)
-        {
-            for (int x = 0; x < columns; x++)
-            {
-                int sampleIndex = Mathf.Clamp(Mathf.RoundToInt(x / (float)(columns - 1) * (samples.Count - 1)), 0, samples.Count - 1);
-                float value = current ? samples[sampleIndex].currentHorsepower : samples[sampleIndex].stockHorsepower;
-                int y = Mathf.Clamp(rows - 1 - Mathf.RoundToInt(value / max * (rows - 1)), 0, rows - 1);
-                char mark = current ? 'C' : 'S';
-                cells[y, x] = cells[y, x] == ' ' ? mark : '*';
-            }
-        }
-
-        private static void AddPartDropdown(
-            AlpineTuningMod mod,
-            VisualElement content,
-            TuneProfile working,
-            string category,
-            Action render,
-            Action setupChanged,
-            string labelOverride = null)
-        {
-            var parts = mod.Catalog.PartsForCategory(category).ToList();
-            if (parts.Count == 0)
-                return;
-
-            var options = parts.Select(p => p.name).ToList();
-            string selectedPartId = working.GetPartId(category);
-            int selectedIndex = Mathf.Max(0, parts.FindIndex(p => p.id == selectedPartId));
-
-            var dropdown = Dropdown(labelOverride ?? mod.Catalog.LabelForCategory(category), options, selectedIndex);
-            SetTooltip(dropdown, TooltipForCategory(category));
-            dropdown.RegisterValueChangedCallback(evt =>
-            {
-                int index = options.IndexOf(evt.newValue);
-
-                if (index >= 0 && index < parts.Count)
-                    working.SetPartId(category, parts[index].id);
-
-                setupChanged?.Invoke();
-            });
-
-            content.Add(dropdown);
-        }
-
-        private static DropdownField Dropdown(string label, List<string> choices, int selectedIndex)
-        {
-            if (choices == null)
-                choices = new List<string>();
-
-            if (choices.Count == 0)
-                choices.Add(string.Empty);
-
-            selectedIndex = Mathf.Clamp(selectedIndex, 0, choices.Count - 1);
-
-            var dropdown = new DropdownField(label)
-            {
-                name = "alpine-control-" + SafeElementName(label),
-                choices = choices,
-                value = choices[selectedIndex]
-            };
-
-            ApplyControlStyle(dropdown);
-            return dropdown;
+            content.Add(recovery);
         }
 
         private static void AddSlider(
@@ -2040,6 +6060,7 @@ namespace AlpineTuning
 
             slider.label = $"{label}: {ValueText(slider.value)}";
             ApplyControlStyle(slider);
+            ApplyInlineSliderLabel(slider, slider.label);
             SetTooltip(slider, tooltip);
 
             slider.RegisterValueChangedCallback(evt =>
@@ -2047,154 +6068,11 @@ namespace AlpineTuning
                 float clamped = Mathf.Clamp(evt.newValue, min, max);
                 changed(clamped);
                 slider.label = $"{label}: {ValueText(clamped)}";
+                ApplyInlineSliderLabel(slider, slider.label);
                 setupChanged?.Invoke();
             });
 
             content.Add(slider);
-        }
-
-        private static Foldout BuildPartDetailsFoldout(AlpineTuningMod mod, TuneProfile working)
-        {
-            var foldout = new Foldout
-            {
-                text = "Changed Parts",
-                value = false
-            };
-
-            foldout.style.marginTop = AlpineNativeUiConfig.DefaultButtonRowMarginTop;
-
-            if (mod == null || working == null)
-            {
-                foldout.Add(MutedLabel("No setup selected."));
-                return foldout;
-            }
-
-            bool hasChangedPart = false;
-            foreach (string category in PartCatalog.OrderedCategories)
-            {
-                if (!AlpineNativeUiConfig.ShowNativeAccessoriesCategory &&
-                    string.Equals(category, PartCatalog.Accessories, StringComparison.OrdinalIgnoreCase))
-                {
-                    continue;
-                }
-
-                string partId = working.GetPartId(category);
-                string defaultPartId = mod.Catalog.DefaultPartId(category);
-                if (string.Equals(partId, defaultPartId, StringComparison.OrdinalIgnoreCase))
-                    continue;
-
-                var part = mod.Catalog.Find(partId) ?? mod.Catalog.Find(mod.Catalog.DefaultPartId(category));
-                if (part == null)
-                    continue;
-
-                hasChangedPart = true;
-                foldout.Add(MutedLabel($"{mod.Catalog.LabelForCategory(category)}: {part.name}"));
-                if (!string.IsNullOrWhiteSpace(part.description))
-                    foldout.Add(MutedLabel(part.description));
-            }
-
-            if (!hasChangedPart)
-                foldout.Add(MutedLabel("All visible part categories are stock."));
-
-            return foldout;
-        }
-
-        private static string TooltipForCategory(string category)
-        {
-            switch (category)
-            {
-                case PartCatalog.EngineCore:
-                    return "Changes the main engine package and estimated output.";
-                case PartCatalog.EnginePiston:
-                    return "Changes engine response and rotating mass.";
-                case PartCatalog.EngineCrank:
-                    return "Changes how smoothly and quickly the engine changes RPM.";
-                case PartCatalog.Turbo:
-                    return "Adds boost and altitude help. More boost increases power, heat, and belt load.";
-                case PartCatalog.Intake:
-                    return "Changes breathing and throttle response with small weight changes.";
-                case PartCatalog.Clutch:
-                    return "Changes engagement and shift behavior. Higher RPM setups feel more aggressive.";
-                case PartCatalog.ClutchWeights:
-                    return "Changes clutch weight feel. Lighter feels quicker; heavier feels calmer.";
-                case PartCatalog.RatioFeel:
-                    return "Approximates shorter or taller drive feel through power delivery and clutch response.";
-                case PartCatalog.Track:
-                    return "Changes paddle, bite, flotation, and track weight. Visual length depends on game model support.";
-                case PartCatalog.TrackLimiter:
-                    return "Changes weight transfer. Tight setups reduce lift; loose setups feel more playful.";
-                case PartCatalog.RearShock:
-                    return "Changes rear damping feel and stability.";
-                case PartCatalog.RearSpring:
-                    return "Changes rear support feel for rider weight, mountain use, or race response.";
-                case PartCatalog.Suspension:
-                    return "Changes balance, center of mass, and handling personality.";
-                case PartCatalog.Chassis:
-                    return "Changes sled weight and chassis balance.";
-                case PartCatalog.Skis:
-                    return "Changes front ski width and bite. Wider is stable; narrower turns tighter.";
-                case PartCatalog.HeadlightColor:
-                    return "Changes the visible color of your headlights.";
-                case PartCatalog.HeadlightBrightness:
-                    return "Changes headlight intensity and reach.";
-                case PartCatalog.HeadlightBeam:
-                    return "Changes beam width and distance.";
-                case PartCatalog.HeadlightAim:
-                    return "Aims headlights slightly up or down.";
-                case PartCatalog.Accessories:
-                    return "Changes native visual equipment only when explicitly selected.";
-                default:
-                    return null;
-            }
-        }
-
-        private static Label CreateTooltipOverlay()
-        {
-            var tooltip = new Label
-            {
-                name = "alpine-tooltip-overlay",
-                pickingMode = PickingMode.Ignore,
-                text = string.Empty
-            };
-
-            ApplyTooltipOverlayStyle(tooltip);
-            HideTooltip(tooltip);
-            return tooltip;
-        }
-
-        private static void ApplyTooltipOverlayStyle(Label tooltip)
-        {
-            if (tooltip == null)
-                return;
-
-            tooltip.pickingMode = PickingMode.Ignore;
-
-            // Absolute overlay: does not participate in flex layout and cannot resize the menu.
-            tooltip.style.position = Position.Absolute;
-            tooltip.style.display = DisplayStyle.None;
-
-            tooltip.style.left = 0f;
-            tooltip.style.top = 0f;
-
-            tooltip.style.maxWidth = 340f;
-            tooltip.style.minWidth = 120f;
-
-            tooltip.style.paddingLeft = 8f;
-            tooltip.style.paddingRight = 8f;
-            tooltip.style.paddingTop = 6f;
-            tooltip.style.paddingBottom = 6f;
-
-            tooltip.style.backgroundColor = new Color(0.04f, 0.05f, 0.06f, 0.96f);
-            tooltip.style.color = AlpineNativeUiConfig.RowTextColor;
-
-            tooltip.style.fontSize = Mathf.Max(10f, RuntimeUi.TitleFontSize - 5f);
-            tooltip.style.whiteSpace = WhiteSpace.Normal;
-
-            tooltip.style.flexGrow = 0;
-            tooltip.style.flexShrink = 0;
-
-            // Added last under root, so it renders above the panel without needing to
-            // steal picking/hover events.
         }
 
         private static void SetTooltip(VisualElement element, string text)
@@ -2205,247 +6083,6 @@ namespace AlpineTuning
             element.tooltip = string.IsNullOrWhiteSpace(text)
                 ? string.Empty
                 : text.Trim();
-        }
-
-        private static void AttachTooltipFeedback(VisualElement root, Label tooltip)
-        {
-            if (root == null || tooltip == null)
-                return;
-
-            Vector2 lastMousePosition = new Vector2(18f, 18f);
-
-            Action<VisualElement, Vector2> showForElement = (element, position) =>
-            {
-                string text = FindTooltip(element);
-
-                if (string.IsNullOrWhiteSpace(text))
-                {
-                    HideTooltip(tooltip);
-                    return;
-                }
-
-                ShowTooltip(tooltip, root, text, position);
-            };
-
-            root.RegisterCallback<MouseMoveEvent>(evt =>
-            {
-                lastMousePosition = evt.mousePosition;
-                showForElement(evt.target as VisualElement, lastMousePosition);
-            }, TrickleDown.TrickleDown);
-
-            root.RegisterCallback<MouseOverEvent>(evt =>
-            {
-                lastMousePosition = evt.mousePosition;
-                showForElement(evt.target as VisualElement, lastMousePosition);
-            }, TrickleDown.TrickleDown);
-
-            root.RegisterCallback<MouseLeaveEvent>(_ =>
-            {
-                HideTooltip(tooltip);
-            });
-
-            root.RegisterCallback<FocusInEvent>(evt =>
-            {
-                var element = evt.target as VisualElement;
-                if (element == null)
-                {
-                    HideTooltip(tooltip);
-                    return;
-                }
-
-                string text = FindTooltip(element);
-                if (string.IsNullOrWhiteSpace(text))
-                {
-                    HideTooltip(tooltip);
-                    return;
-                }
-
-                Vector2 focusPosition = TooltipPositionForElement(root, element);
-                ShowTooltip(tooltip, root, text, focusPosition);
-            }, TrickleDown.TrickleDown);
-
-            root.RegisterCallback<FocusOutEvent>(_ =>
-            {
-                HideTooltip(tooltip);
-            }, TrickleDown.TrickleDown);
-
-            root.RegisterCallback<DetachFromPanelEvent>(_ =>
-            {
-                HideTooltip(tooltip);
-            });
-        }
-
-        private static void ShowTooltip(Label tooltip, VisualElement root, string text, Vector2 desiredPosition)
-        {
-            if (tooltip == null || root == null || string.IsNullOrWhiteSpace(text))
-            {
-                HideTooltip(tooltip);
-                return;
-            }
-
-            tooltip.text = text.Trim();
-            tooltip.style.display = DisplayStyle.Flex;
-
-            // Re-apply these defensively in case native USS/classes touch labels globally.
-            tooltip.pickingMode = PickingMode.Ignore;
-            tooltip.style.position = Position.Absolute;
-            tooltip.style.flexGrow = 0;
-            tooltip.style.flexShrink = 0;
-
-            PositionTooltip(tooltip, root, desiredPosition);
-        }
-
-        private static void HideTooltip(Label tooltip)
-        {
-            if (tooltip == null)
-                return;
-
-            tooltip.text = string.Empty;
-            tooltip.style.display = DisplayStyle.None;
-        }
-
-        private static void PositionTooltip(Label tooltip, VisualElement root, Vector2 desiredPosition)
-        {
-            if (tooltip == null || root == null)
-                return;
-
-            const float offsetX = 14f;
-            const float offsetY = 18f;
-            const float safeMargin = 8f;
-
-            float x = desiredPosition.x + offsetX;
-            float y = desiredPosition.y + offsetY;
-
-            Rect rootBounds = root.layout;
-            Rect tooltipBounds = tooltip.layout;
-
-            float tooltipWidth = tooltipBounds.width > 1f ? tooltipBounds.width : 300f;
-            float tooltipHeight = tooltipBounds.height > 1f ? tooltipBounds.height : 48f;
-
-            float maxX = Mathf.Max(safeMargin, rootBounds.width - tooltipWidth - safeMargin);
-            float maxY = Mathf.Max(safeMargin, rootBounds.height - tooltipHeight - safeMargin);
-
-            x = Mathf.Clamp(x, safeMargin, maxX);
-            y = Mathf.Clamp(y, safeMargin, maxY);
-
-            tooltip.style.left = x;
-            tooltip.style.top = y;
-
-            // First layout pass may not know tooltip size yet. Re-clamp next frame.
-            tooltip.schedule.Execute(() =>
-            {
-                if (tooltip == null ||
-                    root == null ||
-                    tooltip.panel == null ||
-                    tooltip.style.display == DisplayStyle.None)
-                {
-                    return;
-                }
-
-                Rect updatedRootBounds = root.layout;
-                Rect updatedTooltipBounds = tooltip.layout;
-
-                float updatedWidth = updatedTooltipBounds.width > 1f ? updatedTooltipBounds.width : tooltipWidth;
-                float updatedHeight = updatedTooltipBounds.height > 1f ? updatedTooltipBounds.height : tooltipHeight;
-
-                float updatedMaxX = Mathf.Max(safeMargin, updatedRootBounds.width - updatedWidth - safeMargin);
-                float updatedMaxY = Mathf.Max(safeMargin, updatedRootBounds.height - updatedHeight - safeMargin);
-
-                float clampedX = Mathf.Clamp(x, safeMargin, updatedMaxX);
-                float clampedY = Mathf.Clamp(y, safeMargin, updatedMaxY);
-
-                tooltip.style.left = clampedX;
-                tooltip.style.top = clampedY;
-            });
-        }
-
-        private static Vector2 TooltipPositionForElement(VisualElement root, VisualElement element)
-        {
-            if (root == null || element == null)
-                return new Vector2(18f, 18f);
-
-            try
-            {
-                Rect rootWorld = root.worldBound;
-                Rect elementWorld = element.worldBound;
-
-                float x = elementWorld.xMax - rootWorld.xMin + 8f;
-                float y = elementWorld.yMin - rootWorld.yMin + 4f;
-
-                return new Vector2(x, y);
-            }
-            catch
-            {
-                return new Vector2(18f, 18f);
-            }
-        }
-
-        private static string FindTooltip(VisualElement element)
-        {
-            while (element != null)
-            {
-                if (!string.IsNullOrWhiteSpace(element.tooltip))
-                    return element.tooltip;
-
-                element = element.parent;
-            }
-
-            return null;
-        }
-        private static string FocusedElementName(VisualElement root)
-        {
-            try
-            {
-                var focused = root != null && root.panel != null
-                    ? root.panel.focusController.focusedElement as VisualElement
-                    : null;
-
-                return focused != null && !string.IsNullOrWhiteSpace(focused.name)
-                    ? focused.name
-                    : null;
-            }
-            catch
-            {
-                return null;
-            }
-        }
-
-        private static void RestoreUiState(
-            VisualElement root,
-            ScrollView content,
-            Dictionary<string, Vector2> scrollByTab,
-            string activeTab,
-            string focusedElementName)
-        {
-            if (root == null || content == null)
-                return;
-
-            root.schedule.Execute(() =>
-            {
-                if (scrollByTab != null && !string.IsNullOrWhiteSpace(activeTab) &&
-                    scrollByTab.TryGetValue(activeTab, out var offset))
-                {
-                    content.scrollOffset = offset;
-                }
-
-                if (!string.IsNullOrWhiteSpace(focusedElementName))
-                {
-                    var focusTarget = root.Q<VisualElement>(focusedElementName);
-                    focusTarget?.Focus();
-                }
-            });
-        }
-
-        private static void LogUiRefresh(string reason, VehicleScriptableObject target, string activeTab)
-        {
-            if (Time.unscaledTime < _lastUiRefreshLogTime + 0.50f)
-                return;
-
-            _lastUiRefreshLogTime = Time.unscaledTime;
-            MelonLogger.Msg(
-                $"Alpine UI refreshed: {DisplayOrUnknown(reason)}; " +
-                $"tab={DisplayOrUnknown(activeTab)}; " +
-                $"sled={(target != null ? AlpineTuningMod.GetSledDisplayName(target) : "none")}.");
         }
 
         private static string FormatPercentDelta(float value, float baseline)
@@ -2460,20 +6097,6 @@ namespace AlpineTuning
             return delta.ToString("+0;-0;0") + "%";
         }
 
-        private static string FormatHeadlightBinding(AlpineUserSettings settings)
-        {
-            if (settings == null || !settings.headlightToggleEnabled)
-                return "Off";
-
-            var values = new List<string>();
-            if (!string.IsNullOrWhiteSpace(settings.headlightKeyboardKey))
-                values.Add(settings.headlightKeyboardKey);
-            if (!string.IsNullOrWhiteSpace(settings.headlightControllerButton))
-                values.Add(settings.headlightControllerButton);
-
-            return values.Count == 0 ? "Not bound" : string.Join(" / ", values.ToArray());
-        }
-
         private static bool HasConfiguredHeadlightBinding(AlpineUserSettings settings)
         {
             return settings != null &&
@@ -2481,9 +6104,32 @@ namespace AlpineTuning
                     !string.IsNullOrWhiteSpace(settings.headlightControllerButton));
         }
 
-        private static string FormatSingleHeadlightBinding(string value)
+        private static string FormatSingleHeadlightBinding(string value, bool controller = false)
         {
-            return string.IsNullOrWhiteSpace(value) ? "Not set" : value;
+            if (string.IsNullOrWhiteSpace(value))
+                return "Not set";
+            if (!controller)
+                return value;
+
+            int marker = value.LastIndexOf("Button", StringComparison.OrdinalIgnoreCase);
+            if (!value.StartsWith("Joystick", StringComparison.OrdinalIgnoreCase) || marker < 0)
+                return value;
+
+            string suffix = value.Substring(marker + "Button".Length);
+            switch (suffix)
+            {
+                case "0": return "A / Cross";
+                case "1": return "B / Circle";
+                case "2": return "X / Square";
+                case "3": return "Y / Triangle";
+                case "4": return "Left Bumper";
+                case "5": return "Right Bumper";
+                case "6": return "View / Share";
+                case "7": return "Menu / Options";
+                case "8": return "Left Stick";
+                case "9": return "Right Stick";
+                default: return "Controller " + suffix;
+            }
         }
 
         private static string FormatHeadlightMode(TuneProfile profile)
@@ -2510,36 +6156,140 @@ namespace AlpineTuning
             return new string(chars).Trim('-').ToLowerInvariant();
         }
 
+        private static void SetGarageStatus(Label status, string message)
+        {
+            if (status == null)
+                return;
+            string full = (message ?? string.Empty).Trim();
+            string compact = full;
+            string normalized = full.ToLowerInvariant();
+            if (normalized.Contains("binding cancel"))
+                compact = "Binding cancelled";
+            else if (normalized.Contains("confirm clear"))
+                compact = "Confirm clear";
+            else if (normalized.Contains("binding") && normalized.Contains("saved"))
+                compact = "Binding saved";
+            else if (normalized.Contains("waiting") || normalized.Contains("press a key") ||
+                     normalized.Contains("press a button") || normalized.Contains("press input"))
+                compact = "Waiting";
+            else if ((normalized.Contains("failed") || normalized.Contains("could not")) &&
+                     (normalized.Contains("saved") || normalized.Contains("updated")))
+                compact = "Partial";
+            else if (normalized.Contains("staged") || normalized.Contains("updated") ||
+                     normalized.Contains("adjusted"))
+                compact = "Staged";
+            else if (normalized.Contains("saved") || normalized == "save")
+                compact = "Saved";
+            else if (normalized.Contains("loaded"))
+                compact = "Loaded";
+            else if (normalized.Contains("unavailable") || normalized.Contains("not found"))
+                compact = "Unavailable";
+            else if (normalized.Contains("failed") || normalized.Contains("could not"))
+                compact = "Failed";
+            else if (normalized.Contains("next ride"))
+                compact = "Next ride";
+            else if (full.Length > 20)
+                compact = full.Substring(0, 17).TrimEnd() + "...";
+
+            status.text = compact;
+            status.tooltip = full;
+            status.style.display = string.IsNullOrWhiteSpace(compact)
+                ? DisplayStyle.None
+                : DisplayStyle.Flex;
+        }
+
+        private static void ApplyInlineSliderLabel(Slider slider, string text)
+        {
+            if (slider == null || slider.labelElement == null)
+                return;
+            Label label = slider.labelElement;
+            label.text = text ?? string.Empty;
+            label.pickingMode = PickingMode.Ignore;
+            label.style.position = Position.Absolute;
+            label.style.left = 8f;
+            label.style.right = 8f;
+            label.style.top = 0f;
+            label.style.bottom = 0f;
+            label.style.width = StyleKeyword.Auto;
+            label.style.minWidth = 0f;
+            label.style.unityTextAlign = TextAnchor.MiddleCenter;
+            label.style.whiteSpace = WhiteSpace.NoWrap;
+            label.style.overflow = Overflow.Hidden;
+            label.style.color = AlpineNativeUiConfig.RowTextColor;
+            label.style.unityFontStyleAndWeight = FontStyle.Bold;
+            label.BringToFront();
+
+            slider.style.position = Position.Relative;
+            slider.style.alignSelf = Align.Stretch;
+            slider.style.width = Length.Percent(100f);
+            slider.style.maxWidth = Length.Percent(100f);
+            slider.style.minWidth = 0f;
+            slider.style.height = 32f;
+            VisualElement input = slider.Q<VisualElement>(className: "unity-base-field__input");
+            if (input != null)
+            {
+                input.style.flexGrow = 1f;
+                input.style.width = Length.Percent(100f);
+                input.style.maxWidth = Length.Percent(100f);
+                input.style.minWidth = 0f;
+            }
+        }
+
         private static VisualElement Section(string title)
         {
             var section = new VisualElement();
             section.style.flexDirection = FlexDirection.Column;
+            section.style.alignSelf = Align.Stretch;
+            section.style.width = Length.Percent(100f);
+            section.style.maxWidth = Length.Percent(100f);
+            section.style.minWidth = 0f;
             section.style.marginTop = AlpineNativeUiConfig.SectionGap;
             section.Add(SectionTitle(title));
             return section;
         }
 
-        private static VisualElement Card(bool selected)
+        private static TuneProfile PreviewClone(
+            AlpineTuningMod mod,
+            VehicleScriptableObject target,
+            TuneProfile source)
         {
-            var card = new VisualElement();
-            ApplyCardStyle(card, selected);
-            return card;
+            TuneProfile preview = TuneStore.Clone(source);
+            if (preview == null || mod == null || target == null)
+                return preview;
+            try
+            {
+                mod.PreviewProfile(preview, target);
+            }
+            catch (Exception ex)
+            {
+                MelonLogger.Warning($"Garage comparison preview skipped: {ex.GetType().Name}");
+            }
+            return preview;
         }
 
         private static VisualElement StatsPreview(AlpineTuningMod mod, VehicleScriptableObject sled, ResolvedStats stats, bool requiresReload)
         {
             var row = new VisualElement();
-            ApplyStatRowStyle(row);
+            row.style.flexDirection = FlexDirection.Column;
+            row.style.alignSelf = Align.Stretch;
+            row.style.width = Length.Percent(100f);
+            row.style.maxWidth = Length.Percent(100f);
+            row.style.minWidth = 0f;
+            row.style.marginBottom = AlpineNativeUiConfig.SectionGap;
 
             if (stats != null)
             {
                 var settings = mod != null ? mod.Settings : new AlpineUserSettings();
-                var defaults = mod != null && sled != null ? mod.Store.GetDefaults(AlpineTuningMod.GetSledKey(sled)) : null;
+                var defaults = mod != null && sled != null
+                    ? mod.Store.GetDefaults(AlpineTuningMod.GetSledKey(sled), AlpineTuningMod.GetVehicleId(sled))
+                    : null;
                 AddStatChip(row, "Engine Output", UnitConversion.FormatPower(stats.horsePower, settings.units));
-                AddStatChip(row, "Drive Response", $"{stats.powerFactor:F2}");
                 AddStatChip(row, "Paddle", TrackSpecResolver.FormatPaddleHeight(stats.lugHeight));
                 AddStatChip(row, "Track Bite", FormatPercentDelta(stats.friction, defaults != null ? defaults.friction : stats.friction));
                 AddStatChip(row, "Weight", UnitConversion.FormatWeight(stats.weight, settings.units));
+                AddStatChip(row, "Ski Stance", settings.units == AlpineDisplayUnits.Imperial
+                    ? UnitConversion.MillimetersToInches(stats.skiStance).ToString("F1") + " in"
+                    : stats.skiStance.ToString("F0") + " mm");
             }
 
             if (requiresReload)
@@ -2563,7 +6313,11 @@ namespace AlpineTuning
 
             var chip = Chip(text, true);
             if (string.Equals(text, AlpineNativeUiConfig.ReloadRequiredHintText, StringComparison.OrdinalIgnoreCase))
-                SetTooltip(chip, "This sled is not currently spawned or needs a rebuild. Your setup will equip automatically when you ride it.");
+            {
+                SetTooltip(
+                    chip,
+                    "This sled is not currently spawned or needs a rebuild. Your setup will equip automatically when you ride it.");
+            }
             row.Add(chip);
         }
 
@@ -2600,7 +6354,12 @@ namespace AlpineTuning
             label.style.color = AlpineNativeUiConfig.TitleTextColor;
             label.style.unityFontStyleAndWeight = FontStyle.Bold;
             label.style.marginBottom = AlpineNativeUiConfig.RowGap;
-            label.style.fontSize = Mathf.Max(12f, RuntimeUi.TitleFontSize - 3f);
+            label.style.fontSize = Mathf.Max(12f, AlpineNativeUiConfig.DefaultTitleFontSize - 3f);
+            label.style.alignSelf = Align.Stretch;
+            label.style.width = Length.Percent(100f);
+            label.style.maxWidth = Length.Percent(100f);
+            label.style.minWidth = 0f;
+            label.style.overflow = Overflow.Hidden;
             ApplyTextWrap(label);
             return label;
         }
@@ -2610,33 +6369,16 @@ namespace AlpineTuning
             var label = new Label(text ?? string.Empty);
             label.style.color = AlpineNativeUiConfig.TitleTextColor;
             label.style.unityFontStyleAndWeight = FontStyle.Bold;
-            label.style.fontSize = Mathf.Max(12f, RuntimeUi.TitleFontSize - 2f);
+            label.style.fontSize = Mathf.Max(12f, AlpineNativeUiConfig.DefaultTitleFontSize - 2f);
             label.style.marginRight = AlpineNativeUiConfig.InlineGap;
             label.style.flexShrink = 1;
+            label.style.alignSelf = Align.Stretch;
+            label.style.width = Length.Percent(100f);
+            label.style.maxWidth = Length.Percent(100f);
+            label.style.minWidth = 0f;
+            label.style.overflow = Overflow.Hidden;
             ApplyTextWrap(label);
             return label;
-        }
-
-        private static string DisplayOrUnknown(string value)
-        {
-            return string.IsNullOrWhiteSpace(value) ? "unknown" : value;
-        }
-
-        private static string FormatBytes(long bytes)
-        {
-            if (bytes <= 0)
-                return "unknown size";
-
-            const double kib = 1024d;
-            const double mib = kib * 1024d;
-
-            if (bytes >= mib)
-                return (bytes / mib).ToString("F1") + " MiB";
-
-            if (bytes >= kib)
-                return (bytes / kib).ToString("F1") + " KiB";
-
-            return bytes + " B";
         }
 
         private static string FormatUnixTime(long unixTime)
@@ -2654,34 +6396,6 @@ namespace AlpineTuning
             {
                 return "unknown";
             }
-        }
-
-        private static void AddRuntimeSlider(
-            VisualElement content,
-            string label,
-            float min,
-            float max,
-            float value,
-            Action<float> changed,
-            Action render)
-        {
-            var slider = new Slider(label, min, max)
-            {
-                value = Mathf.Clamp(value, min, max)
-            };
-
-            slider.label = $"{label}: {slider.value:F2}";
-            ApplyControlStyle(slider);
-
-            slider.RegisterValueChangedCallback(evt =>
-            {
-                float clamped = Mathf.Clamp(evt.newValue, min, max);
-                changed(clamped);
-                slider.label = $"{label}: {clamped:F2}";
-                render();
-            });
-
-            content.Add(slider);
         }
 
         private static void AddButtonRow(VisualElement content, params Button[] buttons)
@@ -2749,6 +6463,7 @@ namespace AlpineTuning
         {
             var button = new Button(clicked)
             {
+                name = "alpine-button-" + SafeElementName(text),
                 text = text
             };
 
@@ -2774,188 +6489,19 @@ namespace AlpineTuning
             return button;
         }
 
-        private static Button TabButton(string text, Action clicked)
-        {
-            var button = SmallButton(text, clicked);
-            button.style.minWidth = 84f;
-            return button;
-        }
-
         private static Label MutedLabel(string text)
         {
             var label = new Label(text ?? string.Empty);
             label.style.color = AlpineNativeUiConfig.MutedTextColor;
             label.style.marginTop = AlpineNativeUiConfig.DefaultMutedLabelMarginTop;
             label.style.flexShrink = 1;
+            label.style.alignSelf = Align.Stretch;
+            label.style.width = Length.Percent(100f);
+            label.style.maxWidth = Length.Percent(100f);
+            label.style.minWidth = 0f;
+            label.style.overflow = Overflow.Hidden;
             ApplyTextWrap(label);
             return label;
-        }
-
-        private static void ApplyRootStyle(VisualElement root, AlpineUiSurfaceMode mode)
-        {
-            if (root == null)
-                return;
-
-            root.style.flexShrink = 1;
-            root.style.minWidth = 0;
-            root.style.marginTop = AlpineNativeUiConfig.DefaultRootMarginTop;
-            root.style.marginBottom = AlpineNativeUiConfig.DefaultRootMarginBottom;
-            root.style.marginLeft = AlpineNativeUiConfig.DefaultRootMarginLeft;
-            root.style.marginRight = AlpineNativeUiConfig.DefaultRootMarginRight;
-
-            if (mode == AlpineUiSurfaceMode.GarageTab)
-            {
-                root.style.flexGrow = 1;
-                root.style.alignSelf = Align.Stretch;
-                root.style.width = Length.Percent(AlpineNativeUiConfig.DefaultPanelWidthPercent);
-                root.style.minWidth = AlpineNativeUiConfig.DefaultPanelMinWidth;
-                root.style.maxWidth = RuntimeUi.PanelMaxWidth;
-                root.style.maxHeight = StyleKeyword.None;
-                return;
-            }
-
-            root.style.flexGrow = 0;
-            root.style.alignSelf = Align.Stretch;
-            root.style.width = Length.Percent(100f);
-            root.style.maxWidth = StyleKeyword.None;
-            root.style.maxHeight = AlpineNativeUiConfig.DefaultInlineSurfaceMaxHeight;
-        }
-
-        private static void ApplyPanelStyle(VisualElement panel, AlpineUiSurfaceMode mode)
-        {
-            if (panel == null)
-                return;
-
-            Color panelColor = AlpineNativeUiConfig.PanelBackgroundColor;
-            panelColor.a = RuntimeUi.PanelOpacity;
-            float padding = mode == AlpineUiSurfaceMode.GarageTab
-                ? RuntimeUi.PanelPadding
-                : Mathf.Min(RuntimeUi.PanelPadding, 8f);
-
-            panel.style.paddingTop = padding;
-            panel.style.paddingBottom = padding;
-            panel.style.paddingLeft = padding;
-            panel.style.paddingRight = padding;
-            panel.style.marginTop = AlpineNativeUiConfig.DefaultPanelMarginTop;
-            panel.style.backgroundColor = panelColor;
-            panel.style.flexGrow = mode == AlpineUiSurfaceMode.GarageTab ? 1 : 0;
-            panel.style.flexShrink = 1;
-            panel.style.minWidth = 0;
-
-            if (mode == AlpineUiSurfaceMode.GarageTab)
-                panel.style.maxHeight = StyleKeyword.None;
-            else
-                panel.style.maxHeight = AlpineNativeUiConfig.DefaultInlineSurfaceMaxHeight;
-        }
-
-        private static void ApplyTitleStyle(Label title)
-        {
-            if (title == null)
-                return;
-
-            title.style.unityFontStyleAndWeight = FontStyle.Bold;
-            title.style.fontSize = RuntimeUi.TitleFontSize;
-            title.style.color = AlpineNativeUiConfig.TitleTextColor;
-            title.style.marginBottom = AlpineNativeUiConfig.RowGap;
-            title.style.flexShrink = 1;
-            ApplyTextWrap(title);
-        }
-
-        private static void ApplyStatRowStyle(VisualElement stats)
-        {
-            if (stats == null)
-                return;
-
-            stats.style.flexDirection = FlexDirection.Row;
-            stats.style.flexWrap = Wrap.Wrap;
-            stats.style.marginBottom = AlpineNativeUiConfig.SectionGap;
-            stats.style.flexShrink = 1;
-            stats.style.minWidth = 0;
-        }
-
-        private static void ApplyTabRowStyle(VisualElement tabs)
-        {
-            if (tabs == null)
-                return;
-
-            tabs.style.flexDirection = FlexDirection.Row;
-            tabs.style.flexWrap = Wrap.Wrap;
-            tabs.style.marginBottom = AlpineNativeUiConfig.RowGap;
-            tabs.style.flexShrink = 1;
-            tabs.style.minWidth = 0;
-        }
-
-        private static void ApplyActionRowStyle(VisualElement row, VisualElement primaryActions, VisualElement dangerActions)
-        {
-            if (row != null)
-            {
-                row.style.flexDirection = FlexDirection.Column;
-                row.style.marginBottom = AlpineNativeUiConfig.RowGap;
-                row.style.minWidth = 0;
-                row.style.flexShrink = 1;
-            }
-
-            if (primaryActions != null)
-            {
-                primaryActions.style.flexDirection = FlexDirection.Row;
-                primaryActions.style.flexWrap = Wrap.Wrap;
-                primaryActions.style.flexGrow = 1;
-                primaryActions.style.flexShrink = 1;
-                primaryActions.style.minWidth = 0;
-            }
-
-            if (dangerActions != null)
-            {
-                dangerActions.style.flexDirection = FlexDirection.Row;
-                dangerActions.style.flexWrap = Wrap.Wrap;
-                dangerActions.style.justifyContent = Justify.FlexEnd;
-                dangerActions.style.marginTop = AlpineNativeUiConfig.RowGap;
-                dangerActions.style.marginLeft = 0;
-                dangerActions.style.flexShrink = 1;
-                dangerActions.style.minWidth = 0;
-            }
-        }
-
-        private static void ApplyTabsStyle(VisualElement tabs)
-        {
-            if (tabs == null)
-                return;
-
-            tabs.style.flexDirection = FlexDirection.Row;
-            tabs.style.flexWrap = Wrap.Wrap;
-            tabs.style.marginBottom = AlpineNativeUiConfig.DefaultTabsMarginBottom;
-        }
-
-        private static void ApplyStatusStyle(Label status)
-        {
-            if (status == null)
-                return;
-
-            status.style.marginTop = AlpineNativeUiConfig.DefaultStatusMarginTop;
-            status.style.color = AlpineNativeUiConfig.StatusTextColor;
-            status.style.flexShrink = 1;
-            ApplyTextWrap(status);
-        }
-
-        private static void ApplyContentStyle(ScrollView content, AlpineUiSurfaceMode mode)
-        {
-            if (content == null)
-                return;
-
-            content.style.maxHeight = mode == AlpineUiSurfaceMode.GarageTab
-                ? RuntimeUi.PanelMaxHeight
-                : AlpineNativeUiConfig.DefaultInlinePanelMaxHeight;
-            content.style.flexGrow = 1;
-            content.style.flexShrink = 1;
-            content.style.minWidth = 0;
-        }
-
-        private static void ApplyDiagnosticsStyle(Foldout diagnostics)
-        {
-            if (diagnostics == null)
-                return;
-
-            diagnostics.style.marginTop = AlpineNativeUiConfig.FooterGap;
         }
 
         private static void ApplyControlStyle(VisualElement control)
@@ -2967,7 +6513,9 @@ namespace AlpineTuning
             control.style.flexGrow = 1;
             control.style.flexShrink = 1;
             control.style.minWidth = 0;
-            control.style.maxWidth = RuntimeUi.PanelMaxWidth;
+            control.style.alignSelf = Align.Stretch;
+            control.style.width = Length.Percent(100f);
+            control.style.maxWidth = Length.Percent(100f);
         }
 
         private static void ApplyButtonRowStyle(VisualElement row)
@@ -2990,73 +6538,11 @@ namespace AlpineTuning
             button.style.marginRight = AlpineNativeUiConfig.DefaultButtonMarginRight;
             button.style.marginTop = AlpineNativeUiConfig.DefaultButtonMarginTop;
             button.style.marginBottom = AlpineNativeUiConfig.DefaultButtonMarginBottom;
-            button.style.height = RuntimeUi.ButtonHeight;
+            button.style.height = AlpineNativeUiConfig.DefaultButtonHeight;
             button.style.minWidth = 72f;
             button.style.flexShrink = 1;
             button.style.backgroundColor = AlpineNativeUiConfig.ButtonBackgroundColor;
             button.style.color = AlpineNativeUiConfig.RowTextColor;
-        }
-
-        private static void ApplyNativeAttachedButtonStyle(Button button)
-        {
-            if (button == null)
-                return;
-
-            button.style.marginRight = AlpineNativeUiConfig.DefaultButtonMarginRight;
-            button.style.marginTop = AlpineNativeUiConfig.DefaultButtonMarginTop;
-            button.style.marginBottom = AlpineNativeUiConfig.DefaultButtonMarginBottom;
-            button.style.flexShrink = 1;
-        }
-
-        private static void ApplyFallbackAttachedButtonStyle(Button button)
-        {
-            if (button == null)
-                return;
-
-            button.style.backgroundColor = AlpineNativeUiConfig.ButtonBackgroundColor;
-            button.style.color = AlpineNativeUiConfig.RowTextColor;
-            button.style.minHeight = RuntimeUi.ButtonHeight;
-        }
-
-        private static void ApplyCardStyle(VisualElement card, bool selected)
-        {
-            if (card == null)
-                return;
-
-            card.style.flexDirection = FlexDirection.Column;
-            card.style.marginTop = AlpineNativeUiConfig.CardGap;
-            card.style.paddingLeft = AlpineNativeUiConfig.CardPadding;
-            card.style.paddingRight = AlpineNativeUiConfig.CardPadding;
-            card.style.paddingTop = AlpineNativeUiConfig.CardPadding;
-            card.style.paddingBottom = AlpineNativeUiConfig.CardPadding;
-            card.style.backgroundColor = selected
-                ? AlpineNativeUiConfig.SelectedCardBackgroundColor
-                : AlpineNativeUiConfig.CardBackgroundColor;
-            card.style.flexShrink = 1;
-            card.style.minWidth = 0;
-        }
-
-        private static void ApplyTabButtonStates(Dictionary<string, Button> buttons, string activeTab)
-        {
-            if (buttons == null)
-                return;
-
-            foreach (var pair in buttons)
-            {
-                Button button = pair.Value;
-                if (button == null)
-                    continue;
-
-                bool active = string.Equals(pair.Key, activeTab, StringComparison.OrdinalIgnoreCase);
-                button.EnableInClassList("open", active);
-                button.style.backgroundColor = active
-                    ? AlpineNativeUiConfig.ActiveButtonBackgroundColor
-                    : AlpineNativeUiConfig.ButtonBackgroundColor;
-                button.style.color = active
-                    ? AlpineNativeUiConfig.ActiveButtonTextColor
-                    : AlpineNativeUiConfig.RowTextColor;
-                button.style.unityFontStyleAndWeight = active ? FontStyle.Bold : FontStyle.Normal;
-            }
         }
 
         private static void ApplyTextWrap(Label label)
@@ -3070,58 +6556,6 @@ namespace AlpineTuning
         private static VisualElement FindVisualRoot(object controller)
         {
             return SleddersGameBindings.FindVisualRoot(controller);
-        }
-
-        private static bool TryRegisterNativeTab(
-            object nativeTabManager,
-            VisualElement tabPanel,
-            Button tabButton,
-            int insertIndex,
-            Action selected,
-            out int nativeIndex)
-        {
-            return SleddersGameBindings.TryRegisterNativeTab(
-                nativeTabManager,
-                tabPanel,
-                tabButton,
-                insertIndex,
-                selected,
-                out nativeIndex);
-        }
-
-        private static void SelectNativeTab(object nativeTabManager, int index)
-        {
-            SleddersGameBindings.SelectNativeTab(nativeTabManager, index);
-        }
-
-        private static void SelectTabWithoutNativeManager(
-            VisualElement tabs,
-            VisualElement tabButtons,
-            VisualElement selectedPanel,
-            Button selectedButton)
-        {
-            if (tabs == null || tabButtons == null)
-                return;
-
-            for (int i = 0; i < tabs.childCount; i++)
-                tabs[i].style.display = tabs[i] == selectedPanel ? DisplayStyle.Flex : DisplayStyle.None;
-
-            for (int i = 0; i < tabButtons.childCount; i++)
-                tabButtons[i].EnableInClassList("open", tabButtons[i] == selectedButton);
-        }
-
-        private static Button LastButtonChild(VisualElement parent)
-        {
-            if (parent == null)
-                return null;
-
-            for (int i = parent.childCount - 1; i >= 0; i--)
-            {
-                if (parent[i] is Button button)
-                    return button;
-            }
-
-            return null;
         }
 
         private static T FirstDescendant<T>(VisualElement root) where T : VisualElement
@@ -3142,6 +6576,21 @@ namespace AlpineTuning
             }
 
             return null;
+        }
+
+        private static void CollectDescendants<T>(VisualElement root, List<T> results)
+            where T : VisualElement
+        {
+            if (root == null || results == null)
+                return;
+
+            for (int i = 0; i < root.childCount; i++)
+            {
+                VisualElement child = root[i];
+                if (child is T typed)
+                    results.Add(typed);
+                CollectDescendants(child, results);
+            }
         }
 
         private static void CopyClasses(VisualElement source, VisualElement target)

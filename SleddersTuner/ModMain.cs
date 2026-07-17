@@ -5,12 +5,22 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
 using UnityEngine;
+using UnityEngine.UIElements;
 
-[assembly: MelonInfo(typeof(AlpineTuning.AlpineTuningMod), "Alpine Tuning 2.0", AlpineTuning.AlpineConstants.ModVersion, "Don")]
+[assembly: MelonInfo(typeof(AlpineTuning.AlpineTuningMod), "Alpine Tuning", AlpineTuning.AlpineConstants.ModVersion, "Alpine Tuning")]
 [assembly: MelonGame("Hanki Games", "Sledders")]
 
 namespace AlpineTuning
 {
+    internal enum HeadlightBindingCaptureResult
+    {
+        None,
+        Saved,
+        Cancelled,
+        TimedOut,
+        SaveFailed
+    }
+
     public class AlpineTuningMod : MelonMod
     {
         public static AlpineTuningMod Instance;
@@ -33,14 +43,14 @@ namespace AlpineTuning
             new Dictionary<string, PendingCurrentSetupSave>(StringComparer.OrdinalIgnoreCase);
         private readonly Dictionary<int, GarageSelectionState> _garageSelectionsByController =
             new Dictionary<int, GarageSelectionState>();
-        // Sledders vehicle physics use Unity world units; set false if a map's world Y is not altitude-like.
-        private const bool UseWorldYAsAltitudeMeters = true;
+        // World-space Y is a map coordinate, not a trustworthy altitude source.
+        // Native Sledders does not derate horsepower from transform.position.y.
         private const float CurrentSetupSaveDelaySeconds = 0.35f;
         private bool _defaultsBuilt;
         private float _nextNativeUiScanTime;
+        private float _nextSelectableSledRefreshTime;
         private float _nextCurrentSetupFlushTime;
         private bool _shutdownComplete;
-        private string _lastResolvedTargetLogKey;
 
         private string _pendingEngineAudioEnumType;
         private string _pendingEngineAudioEnumName;
@@ -51,12 +61,24 @@ namespace AlpineTuning
         private int _pendingEngineAudioAttemptsRemaining;
         private int _pendingEngineAudioLastControllerId = int.MinValue;
         private bool _pendingEngineAudioLoggedReady;
+        private int _lastAppliedEngineAudioVehicleControllerId = int.MinValue;
+        private string _lastAppliedEngineAudioEnumType;
+        private string _lastAppliedEngineAudioEnumName;
+        private int _lastAppliedEngineAudioEnumRawValue;
         private RuntimeHeadlightDefaults _activeHeadlightDefaults;
         private int _headlightDefaultsControllerId = int.MinValue;
+        private RuntimeAccessoryDefaults _activeAccessoryDefaults;
+        private int _accessoryDefaultsControllerId = int.MinValue;
+        private RuntimeNativePhysicsDefaults _activeNativePhysicsDefaults;
+        private int _nativePhysicsDefaultsControllerId = int.MinValue;
+        private SpawnValueSignature _activeSpawnValues;
+        private int _spawnValuesControllerId = int.MinValue;
         private bool? _activeHeadlightOverride;
         private bool _waitingForHeadlightKeyboardBinding;
         private bool _waitingForHeadlightControllerBinding;
         private float _headlightBindingCaptureDeadline;
+        private HeadlightBindingCaptureResult _headlightBindingCaptureResult;
+        private int _headlightBindingCancelFrame = -1;
         private float _nextHeadlightToggleTime;
         private bool _lastHeadlightToggleHadTarget;
         private static readonly KeyCode[] AllKeyCodes = (KeyCode[])Enum.GetValues(typeof(KeyCode));
@@ -64,17 +86,130 @@ namespace AlpineTuning
         private sealed class RuntimeHeadlightDefaults
         {
             public readonly List<RuntimeHeadlightDefault> lights = new List<RuntimeHeadlightDefault>();
+            public SnowmobileController controller;
+            public bool nativeSwitchEnabled;
         }
 
         private sealed class RuntimeHeadlightDefault
         {
             public Light light;
+            public HeadLight nativeHeadlight;
             public Color color;
             public float intensity;
             public float range;
             public float spotAngle;
             public Quaternion localRotation;
             public bool enabled;
+            public bool hasTunedValues;
+            public Color tunedColor;
+            public float tunedIntensity;
+            public float tunedRange;
+            public float tunedSpotAngle;
+            public Quaternion tunedLocalRotation;
+        }
+
+        // HeadLight.Refresh multiplies its fade curve by this captured native
+        // intensity. Keep it synchronized with Alpine's staged brightness so the
+        // native refresh path does not overwrite the selected output every frame.
+        private static readonly FieldInfo NativeHeadlightBaseIntensityField =
+            AccessTools.Field(typeof(HeadLight), "KDHFJKFPBBM");
+
+        private sealed class RuntimeAccessoryDefaults
+        {
+            public readonly List<RuntimeAccessoryDefault> objects = new List<RuntimeAccessoryDefault>();
+        }
+
+        private sealed class RuntimeAccessoryDefault
+        {
+            public GameObject gameObject;
+            public bool active;
+        }
+
+        private sealed class RuntimeNativePhysicsDefaults
+        {
+            public SnowmobileController controller;
+            public readonly List<RuntimeNativePhysicsField> fields = new List<RuntimeNativePhysicsField>();
+        }
+
+        private sealed class RuntimeNativePhysicsField
+        {
+            public object target;
+            public string fieldName;
+            public double value;
+            public NativePhysicsValueKind kind;
+        }
+
+        private sealed class SpawnValueSignature
+        {
+            public string stableIdentity;
+            public float horsePower;
+            public bool hasMaxRpm;
+            public float maxRpm;
+            public float lugHeight;
+            public float friction;
+            public float weight;
+            public float skiStance;
+            public float skisXDistanceOffset;
+            public bool isTurboOn;
+            public Vector3 centerOfMassOffset;
+            public Vector3 driverCenterOfMassOffset;
+
+            public static SpawnValueSignature FromSled(VehicleScriptableObject sled)
+            {
+                if (sled == null)
+                    return null;
+
+                return new SpawnValueSignature
+                {
+                    stableIdentity = SledIdentity.StableIdentityKey(sled),
+                    horsePower = sled.horsePower,
+                    hasMaxRpm = IsFinitePositive(sled.maxRpm),
+                    maxRpm = sled.maxRpm,
+                    lugHeight = sled.lugHeight,
+                    friction = sled.coefficientOfFriction,
+                    weight = sled.weight,
+                    skiStance = sled.skiStance,
+                    skisXDistanceOffset = sled.skisXDistanceOffset,
+                    isTurboOn = sled.isTurboOn,
+                    centerOfMassOffset = sled.centerOfMassOffset,
+                    driverCenterOfMassOffset = sled.driverCenterOfMassOffset
+                };
+            }
+        }
+
+        internal enum NativePhysicsValueKind
+        {
+            PowerEfficiency,
+            DrivetrainSpeed,
+            TrackMass,
+            AntiRollBar,
+            TrackRigidityFront,
+            TrackRigidityRear,
+            FrontSpring,
+            FrontDamper,
+            FrontCompressionDamping,
+            FrontReboundDamping,
+            RearSpring,
+            RearDamper,
+            RearCompressionDamping,
+            RearReboundDamping,
+            BrakeForce,
+            SkisMaxAngle,
+            ToeAngle,
+            LeftCamberFactor,
+            RightCamberFactor,
+            SkiGrip,
+            TrackGrip
+        }
+
+        internal enum NativePhysicsSubsystem
+        {
+            Drivetrain,
+            Brake,
+            Suspension,
+            Steering,
+            SkiGrip,
+            TrackGrip
         }
 
         private sealed class PendingCurrentSetupSave
@@ -86,6 +221,7 @@ namespace AlpineTuning
 
         private sealed class GarageSelectionState
         {
+            public VehicleSelectionUiController controller;
             public VehicleScriptableObject sled;
             public string source;
             public string stableKey;
@@ -98,20 +234,22 @@ namespace AlpineTuning
             Catalog = new PartCatalog();
             Store = new TuneStore(Catalog);
             Store.Initialize();
-            RemoteReplication = new AlpineRemoteReplication();
-            Sharing = new AlpinePeerSharing(this);
-            Sharing.Initialize();
+            if (!AlpineConstants.PeerSharingTemporarilyDisabled)
+            {
+                RemoteReplication = new AlpineRemoteReplication();
+                Sharing = new AlpinePeerSharing(this);
+                Sharing.Initialize();
+            }
 
             MelonLogger.Msg(
-                $"Alpine Tuning 2.0 initialized. Mod={AlpineConstants.ModVersion}, " +
+                $"Alpine Tuning {AlpineConstants.ModVersion} initialized. " +
                 $"Schema={AlpineConstants.SchemaVersion}, Catalog={AlpineConstants.CatalogVersion}");
-            MelonLogger.Msg(SleddersGameBindings.CapabilitySummary);
-            MelonLogger.Msg(Store.DiagnosticsSummary);
-            MelonLogger.Msg($"Peer sharing available: {Sharing.IsAvailable}");
         }
 
         public override void OnUpdate()
         {
+            PruneDestroyedActiveRuntime();
+
             if (Time.unscaledTime >= _nextNativeUiScanTime)
             {
                 bool attached = AlpineNativeUi.TryAttachOpenMenus(this);
@@ -121,7 +259,7 @@ namespace AlpineTuning
             Sharing?.Update();
             FlushPendingCurrentSetups(false);
             UpdateHeadlightInputBinding();
-            EnforceHeadlightOverride();
+            PrepareHeadlightOverride();
 
             if (ActiveSO == null)
                 return;
@@ -131,6 +269,48 @@ namespace AlpineTuning
 
             TryCaptureEngineAudioForCurrentSled();
             TryApplyPendingEngineAudioSwap();
+        }
+
+        private void PruneDestroyedActiveRuntime()
+        {
+            if (ActiveController != null)
+                return;
+
+            bool hadRuntimeState = ActiveSO != null ||
+                                   ActiveRespawn != null ||
+                                   _activeSpawnValues != null ||
+                                   _activeHeadlightDefaults != null ||
+                                   _activeAccessoryDefaults != null ||
+                                   _activeNativePhysicsDefaults != null;
+            if (!hadRuntimeState)
+                return;
+
+            MelonLogger.Msg("Cleared Alpine's stale local-sled runtime state after world teardown.");
+            ActiveSO = null;
+            ActiveController = null;
+            ActiveRespawn = null;
+            ActiveSpawnPos = default;
+            ActiveSpawnRot = default;
+            _activeSpawnValues = null;
+            _spawnValuesControllerId = int.MinValue;
+            _activeHeadlightDefaults = null;
+            _headlightDefaultsControllerId = int.MinValue;
+            _activeAccessoryDefaults = null;
+            _accessoryDefaultsControllerId = int.MinValue;
+            _activeNativePhysicsDefaults = null;
+            _nativePhysicsDefaultsControllerId = int.MinValue;
+            _activeHeadlightOverride = null;
+            _pendingEngineAudioApply = false;
+            _pendingEngineAudioEnumType = null;
+            _pendingEngineAudioEnumName = null;
+            _pendingEngineAudioEnumRawValue = 0;
+            _pendingEngineAudioAttemptsRemaining = 0;
+            _pendingEngineAudioLastControllerId = int.MinValue;
+            _pendingEngineAudioLoggedReady = false;
+            _lastAppliedEngineAudioVehicleControllerId = int.MinValue;
+            _lastAppliedEngineAudioEnumType = null;
+            _lastAppliedEngineAudioEnumName = null;
+            _lastAppliedEngineAudioEnumRawValue = 0;
         }
 
         public override void OnLateUpdate()
@@ -157,12 +337,30 @@ namespace AlpineTuning
 
             try
             {
+                AlpineNativeUi.DetachGarageSessions();
+            }
+            catch (Exception ex)
+            {
+                MelonLogger.Warning($"Alpine shutdown UI restoration skipped: {ex.GetType().Name}");
+            }
+
+            try
+            {
                 FlushPendingCurrentSetups(true);
                 Sharing?.Shutdown();
             }
             catch (Exception ex)
             {
-                MelonLogger.Warning($"Alpine shutdown sharing cleanup skipped: {ex.Message}");
+                MelonLogger.Warning($"Alpine shutdown sharing cleanup skipped: {ex.GetType().Name}");
+            }
+
+            try
+            {
+                RestoreAlpineMutationsBeforeShutdown();
+            }
+            catch (Exception ex)
+            {
+                MelonLogger.Warning($"Alpine shutdown state restoration skipped: {ex.GetType().Name}");
             }
 
             _pendingEngineAudioApply = false;
@@ -172,8 +370,18 @@ namespace AlpineTuning
             _pendingEngineAudioAttemptsRemaining = 0;
             _pendingEngineAudioLastControllerId = int.MinValue;
             _pendingEngineAudioLoggedReady = false;
+            _lastAppliedEngineAudioVehicleControllerId = int.MinValue;
+            _lastAppliedEngineAudioEnumType = null;
+            _lastAppliedEngineAudioEnumName = null;
+            _lastAppliedEngineAudioEnumRawValue = 0;
             _activeHeadlightDefaults = null;
             _headlightDefaultsControllerId = int.MinValue;
+            _activeAccessoryDefaults = null;
+            _accessoryDefaultsControllerId = int.MinValue;
+            _activeNativePhysicsDefaults = null;
+            _nativePhysicsDefaultsControllerId = int.MinValue;
+            _activeSpawnValues = null;
+            _spawnValuesControllerId = int.MinValue;
             _activeHeadlightOverride = null;
 
             if (Instance == this)
@@ -187,15 +395,72 @@ namespace AlpineTuning
             _garageSelectionsByController.Clear();
         }
 
+        private void RestoreAlpineMutationsBeforeShutdown()
+        {
+            if (Store == null)
+                return;
+
+            var candidates = new List<VehicleScriptableObject>(_selectableSleds);
+            if (ActiveSO != null && !candidates.Any(sled => ReferenceEquals(sled, ActiveSO)))
+                candidates.Add(ActiveSO);
+
+            var restoredInstances = new HashSet<int>();
+            foreach (VehicleScriptableObject sled in candidates)
+            {
+                if (sled == null ||
+                    !restoredInstances.Add(sled.GetInstanceID()) ||
+                    !IsSledModifiedByAlpine(sled))
+                {
+                    continue;
+                }
+
+                SledDefaults defaults = Store.GetDefaults(GetSledKey(sled), GetVehicleId(sled));
+                if (defaults != null)
+                    ApplyDefaultsToSled(sled, defaults);
+            }
+
+            if (ActiveController != null && ActiveSO != null)
+            {
+                RestoreNativePhysicsDefaults();
+                ApplyHeadlightDefaults();
+                RestoreAccessoryDefaults();
+
+                SledDefaults defaults = Store.GetDefaults(GetSledKey(ActiveSO), GetVehicleId(ActiveSO));
+                if (defaults != null)
+                {
+                    ApplyRuntimeDefaults(defaults);
+
+                    Component audioController = FindActiveEngineAudioController();
+                    if (audioController != null && HasEngineAudioToken(defaults))
+                    {
+                        SleddersGameBindings.TryApplyEngineAudioToken(
+                            audioController,
+                            defaults.engineAudioEnumType,
+                            defaults.engineAudioEnumName,
+                            defaults.engineAudioEnumRawValue,
+                            out _);
+                    }
+                }
+
+                // LocalInit copies VSO horsepower, track contact, body mass/COM,
+                // and ski offsets into spawned native components. Rebuild once
+                // from the now-restored stock asset so hot-unloading Alpine cannot
+                // leave those copied values tuned in the current ride.
+                if (!SleddersGameBindings.TryReCreateSnowmobile(
+                        ActiveController,
+                        out var recreateReason))
+                {
+                    MelonLogger.Warning(
+                        $"Stock sled recreation during Alpine shutdown was unavailable: {recreateReason}");
+                }
+            }
+
+            _sledsModifiedByAlpineThisSession.Clear();
+        }
+
         internal string LocalAuthorName
         {
-            get
-            {
-                if (Sharing != null && !string.IsNullOrWhiteSpace(Sharing.LocalName))
-                    return Sharing.LocalName;
-
-                return "Alpine-User";
-            }
+            get { return AlpineConstants.DefaultProfileAuthor; }
         }
 
         internal AlpineUserSettings Settings
@@ -210,6 +475,22 @@ namespace AlpineTuning
 
         internal bool IsCapturingHeadlightBinding =>
             _waitingForHeadlightKeyboardBinding || _waitingForHeadlightControllerBinding;
+
+        internal bool IsCapturingHeadlightKeyboardBinding =>
+            _waitingForHeadlightKeyboardBinding;
+
+        internal bool IsCapturingHeadlightControllerBinding =>
+            _waitingForHeadlightControllerBinding;
+
+        internal bool WasHeadlightBindingCancelHandledThisFrame =>
+            _headlightBindingCancelFrame == Time.frameCount;
+
+        internal HeadlightBindingCaptureResult ConsumeHeadlightBindingCaptureResult()
+        {
+            HeadlightBindingCaptureResult result = _headlightBindingCaptureResult;
+            _headlightBindingCaptureResult = HeadlightBindingCaptureResult.None;
+            return result;
+        }
 
         internal string HeadlightBindingCaptureLabel
         {
@@ -230,15 +511,64 @@ namespace AlpineTuning
             get
             {
                 TryBuildDefaults();
+                RefreshSelectableSledsIfDue(false);
                 return _selectableSleds;
             }
         }
 
         public static string GetSledKey(VehicleScriptableObject sled)
         {
-            return sled == null
-                ? "UNKNOWN"
-                : sled.name.Trim().Replace(' ', '_');
+            if (sled == null)
+                return "UNKNOWN";
+            string source = !string.IsNullOrWhiteSpace(sled.name)
+                ? sled.name
+                : sled.displayName;
+            return NormalizeSledKey(source);
+        }
+
+        internal static string NormalizeSledKey(string source)
+        {
+            string value = (source ?? string.Empty).Trim();
+            if (value.Length == 0)
+                return "UNKNOWN";
+
+            var key = new System.Text.StringBuilder(value.Length);
+            bool replacedUnsafeCharacter = false;
+            foreach (char character in value)
+            {
+                if (char.IsLetterOrDigit(character) || character == '_' ||
+                    character == '-' || character == '.')
+                {
+                    key.Append(character);
+                }
+                else if (char.IsWhiteSpace(character))
+                {
+                    // Preserve the historical ordinary-name mapping.
+                    key.Append('_');
+                    replacedUnsafeCharacter |= character != ' ';
+                }
+                else
+                {
+                    key.Append('_');
+                    replacedUnsafeCharacter = true;
+                }
+            }
+
+            string normalized = key.Length > 0 ? key.ToString() : "UNKNOWN";
+            if (!replacedUnsafeCharacter && normalized.Length <= 96)
+                return normalized;
+
+            uint hash = 2166136261u;
+            foreach (char character in value)
+            {
+                hash ^= character;
+                hash *= 16777619u;
+            }
+            string suffix = "_" + hash.ToString("X8", System.Globalization.CultureInfo.InvariantCulture);
+            int prefixLength = Math.Max(1, 96 - suffix.Length);
+            if (normalized.Length > prefixLength)
+                normalized = normalized.Substring(0, prefixLength);
+            return normalized + suffix;
         }
 
         public static string GetSledDisplayName(VehicleScriptableObject sled)
@@ -260,11 +590,6 @@ namespace AlpineTuning
             return SleddersGameBindings.GetVehicleId(sled, GetSledKey(sled));
         }
 
-        internal VehicleScriptableObject ResolveTargetSled(object menuContext)
-        {
-            return ResolveTargetSledContext(menuContext).sled;
-        }
-
         internal ResolvedSledTarget ResolveTargetSledContext(object menuContext)
         {
             VehicleScriptableObject sled = null;
@@ -282,11 +607,7 @@ namespace AlpineTuning
                 sled = SleddersGameBindings.TryGetVehicleSelectionSled(garage, out source);
                 if (sled != null)
                 {
-                    CacheGarageSelection(garage, sled, source, true);
-                    fromGarage = true;
-                }
-                else if (TryGetCachedGarageSelection(garage, out sled, out source))
-                {
+                    CacheGarageSelection(garage, sled, source);
                     fromGarage = true;
                 }
             }
@@ -298,7 +619,10 @@ namespace AlpineTuning
                 fromRuntime = sled != null;
             }
 
-            if (sled == null && ActiveSO != null)
+            // Never substitute the previously ridden sled for an unresolved garage
+            // selection. In that context a disabled tuner is safer than editing the
+            // wrong vehicle. Pause/runtime callers may still use ActiveSO.
+            if (sled == null && ActiveSO != null && !(menuContext is VehicleSelectionUiController))
             {
                 sled = ActiveSO;
                 source = "runtime fallback";
@@ -319,7 +643,6 @@ namespace AlpineTuning
                         : "Ready"
             };
 
-            LogResolvedTargetChange(resolved);
             return resolved;
         }
 
@@ -340,6 +663,12 @@ namespace AlpineTuning
                 return null;
 
             var computation = ComputeProfile(profile, sled);
+            if (computation == null || computation.stats == null)
+            {
+                profile.resolvedStats = null;
+                profile.requiresReload = false;
+                return null;
+            }
             profile.resolvedStats = computation.stats;
             profile.requiresReload = computation.requiresReload;
             profile.targetSledKey = GetSledKey(sled);
@@ -347,20 +676,21 @@ namespace AlpineTuning
             return computation.stats;
         }
 
-        internal AlpinePerformanceEstimate EstimatePerformance(TuneProfile profile, VehicleScriptableObject sled)
+        internal void PreviewProfilesWithSharedEnvironment(
+            VehicleScriptableObject sled,
+            params TuneProfile[] profiles)
         {
-            if (profile == null || sled == null)
-                return new AlpinePerformanceEstimate();
+            if (sled == null || profiles == null || profiles.Length == 0)
+                return;
 
-            var computation = ComputeProfile(profile, sled);
-            profile.resolvedStats = computation.stats;
-            profile.requiresReload = computation.requiresReload;
-
-            return AlpinePerformanceEstimate.Build(
-                GetSledDisplayName(sled),
-                CurrentSetupDisplayName(profile),
-                computation.baseDefaults,
-                computation);
+            // Sledders exposes no atmospheric correction input in its propulsion
+            // model. Resolve every reference through the same configured preview
+            // path so factory/current/candidate remain directly comparable.
+            foreach (TuneProfile profile in profiles)
+            {
+                if (profile != null)
+                    PreviewProfile(profile, sled);
+            }
         }
 
         internal bool ApplyProfile(TuneProfile profile, VehicleScriptableObject sled, bool persist, bool reloadIfNeeded)
@@ -371,7 +701,7 @@ namespace AlpineTuning
 
         internal bool ApplyProfile(TuneProfile profile, VehicleScriptableObject sled, bool persist, bool reloadIfNeeded, out string status)
         {
-            return ApplyProfile(profile, sled, persist, reloadIfNeeded, out status, true, true);
+            return ApplyProfile(profile, sled, persist, reloadIfNeeded, out status, true);
         }
 
         private bool ApplyProfile(
@@ -380,10 +710,10 @@ namespace AlpineTuning
             bool persist,
             bool reloadIfNeeded,
             out string status,
-            bool notifyActive,
-            bool logApplied)
+            bool notifyActive)
         {
             status = null;
+            bool persisted = false;
             if (profile == null || sled == null)
             {
                 status = "Select a sled to edit its setup.";
@@ -396,6 +726,11 @@ namespace AlpineTuning
                 Catalog.EnsureProfileSelections(profile);
 
                 var computation = ComputeProfile(profile, sled);
+                if (computation == null || computation.stats == null)
+                {
+                    status = computation?.unavailableReason ?? "Setup comparison is unavailable.";
+                    return false;
+                }
 
                 // Always return to the captured stock baseline before applying a profile.
                 // This makes part application idempotent: changing from one Alpine build to
@@ -406,6 +741,27 @@ namespace AlpineTuning
                 {
                     Store.PutDefaults(computation.baseDefaults);
                 }
+
+                profile.resolvedStats = computation.stats;
+                profile.requiresReload = computation.requiresReload;
+                profile.targetSledKey = GetSledKey(sled);
+                profile.targetVehicleId = GetVehicleId(sled);
+
+                // Persistence is the irreversible boundary. Do it before
+                // mutating the live asset/runtime so a failed write cannot leave
+                // an installed setup that the next launch cannot recover.
+                if (persist && !Store.SaveProfile(profile, true))
+                {
+                    TuneProfile written = Store.GetProfile(profile.profileId);
+                    bool profileWasWritten = written != null &&
+                        string.Equals(written.checksum, profile.checksum, StringComparison.OrdinalIgnoreCase);
+                    status = profileWasWritten
+                        ? "Setup saved, but default selection failed."
+                        : "Setup save failed.";
+                    MelonLogger.Warning(status);
+                    return false;
+                }
+                persisted = persist;
 
                 ApplyDefaultsToSled(sled, computation.baseDefaults);
                 if (sled == ActiveSO)
@@ -425,40 +781,47 @@ namespace AlpineTuning
 
                 MarkSledModifiedByAlpine(sled);
 
-                profile.resolvedStats = computation.stats;
-                profile.requiresReload = computation.requiresReload;
-                profile.targetSledKey = GetSledKey(sled);
-                profile.targetVehicleId = GetVehicleId(sled);
-
                 if (sled == ActiveSO)
                     QueueEngineAudioSwap(computation.audioDefaults, computation.audioSource);
-
-                if (persist && !Store.SaveProfile(profile, true))
-                {
-                    status = "Setup installed, but saving failed.";
-                    MelonLogger.Warning(status);
-                    return false;
-                }
 
                 if (persist && notifyActive)
                     NotifyActiveTuneChanged(profile, sled);
 
-                if (logApplied)
-                    LogAppliedTune(profile, sled, computation);
-
                 if (reloadIfNeeded && computation.requiresReload && sled == ActiveSO)
-                    ReloadSled();
-
-                if (reloadIfNeeded && computation.requiresReload && sled == ActiveSO)
+                {
+                    if (!ReloadSled(out string reloadStatus))
+                    {
+                        // A failed recreate leaves the original controller alive,
+                        // but ReloadSled deliberately restored its captured stock
+                        // objects before trying either rebuild path. Put the live
+                        // tune-only fields back so the old graph is not left in a
+                        // mixed stock/tuned state. Spawn-copied fields remain
+                        // pending until a later successful rebuild.
+                        if (ActiveController != null)
+                        {
+                            ApplyRuntimeController(computation, profile);
+                            ApplyHeadlightRuntime(computation.mergedEffect, profile);
+                            ApplyAccessoryMode(computation.mergedEffect.accessoryMode, computation.baseDefaults);
+                        }
+                        status = persist
+                            ? "Setup saved; rebuild failed."
+                            : "Rebuild failed.";
+                        if (!string.IsNullOrWhiteSpace(reloadStatus))
+                            MelonLogger.Warning(reloadStatus);
+                        return false;
+                    }
                     status = persist ? "Setup saved and ready." : "Setup ready.";
+                }
                 else
                     status = persist ? "Setup saved." : "Setup updated.";
                 return true;
             }
             catch (Exception ex)
             {
-                MelonLogger.Error($"ApplyProfile failed: {ex}");
-                status = $"Setup update failed: {ex.Message}";
+                MelonLogger.Error($"ApplyProfile failed: {ex.GetType().Name}");
+                status = persisted
+                    ? "Setup saved; install failed."
+                    : "Setup update failed.";
                 return false;
             }
         }
@@ -479,7 +842,7 @@ namespace AlpineTuning
             }
             catch (Exception ex)
             {
-                MelonLogger.Error($"SaveProfile failed: {ex}");
+                MelonLogger.Error($"SaveProfile failed: {ex.GetType().Name}");
                 return false;
             }
         }
@@ -512,17 +875,65 @@ namespace AlpineTuning
                 profile.setupSlotName = profile.name;
                 profile.setupEdited = false;
                 profile.isCurrentSetup = true;
-                QueueCurrentSetupSave(profile, sled, true);
+                if (!QueueCurrentSetupSave(profile, sled, true))
+                {
+                    status = "Setup slot saved, but the current setup record could not be preserved.";
+                    return false;
+                }
 
                 status = "Setup saved.";
                 return true;
             }
             catch (Exception ex)
             {
-                status = $"Setup save failed: {ex.Message}";
-                MelonLogger.Error($"SaveCurrentSetupAsSlot failed: {ex}");
+                status = $"Setup save failed: {ex.GetType().Name}";
+                MelonLogger.Error($"SaveCurrentSetupAsSlot failed: {ex.GetType().Name}");
                 return false;
             }
+        }
+
+        internal bool SaveCurrentSetupAsNewSlot(
+            TuneProfile profile,
+            VehicleScriptableObject sled,
+            out string status)
+        {
+            status = null;
+            if (profile == null || sled == null)
+            {
+                status = "Select a sled first.";
+                return false;
+            }
+
+            TuneProfile copy = TuneStore.Clone(profile);
+            copy.sourceProfileId = !string.IsNullOrWhiteSpace(profile.setupSlotId)
+                ? profile.setupSlotId
+                : profile.profileId;
+            copy.profileId = Guid.NewGuid().ToString("N");
+            copy.createdUnixTime = 0;
+            copy.updatedUnixTime = 0;
+            copy.setupSlotId = null;
+            copy.setupSlotName = null;
+            copy.setupEdited = true;
+            copy.isCurrentSetup = true;
+            copy.checksum = null;
+            if (!copy.usesAutomaticName && !string.IsNullOrWhiteSpace(copy.name))
+                copy.name += " Copy";
+
+            if (!SaveCurrentSetupAsSlot(copy, sled, out status))
+                return false;
+
+            profile.profileId = copy.profileId;
+            profile.name = copy.name;
+            profile.usesAutomaticName = copy.usesAutomaticName;
+            profile.createdUnixTime = copy.createdUnixTime;
+            profile.updatedUnixTime = copy.updatedUnixTime;
+            profile.setupSlotId = copy.setupSlotId;
+            profile.setupSlotName = copy.setupSlotName;
+            profile.setupEdited = false;
+            profile.isCurrentSetup = true;
+            profile.checksum = copy.checksum;
+            status = "Saved as new.";
+            return true;
         }
 
         internal bool SaveCurrentSetupAsDefault(TuneProfile profile, VehicleScriptableObject sled, out string status)
@@ -539,16 +950,9 @@ namespace AlpineTuning
                 if (string.IsNullOrWhiteSpace(profile.name))
                     profile.name = $"{GetSledDisplayName(sled)} Default Setup";
 
-                string applyStatus;
-                if (!UpdateCurrentSetup(profile, sled, out applyStatus))
-                {
-                    status = string.IsNullOrWhiteSpace(applyStatus)
-                        ? "Default setup could not be applied."
-                        : applyStatus;
-                    return false;
-                }
-
                 var defaultProfile = TuneStore.Clone(profile);
+                Catalog.EnsureProfileSelections(defaultProfile);
+                PreviewProfile(defaultProfile, sled);
                 defaultProfile.isCurrentSetup = false;
                 defaultProfile.setupEdited = false;
                 defaultProfile.setupSlotId = null;
@@ -562,11 +966,22 @@ namespace AlpineTuning
                 }
 
                 profile.profileId = defaultProfile.profileId;
+                profile.name = defaultProfile.name;
+                profile.usesAutomaticName = defaultProfile.usesAutomaticName;
                 profile.setupSlotId = defaultProfile.profileId;
                 profile.setupSlotName = defaultProfile.name;
                 profile.setupEdited = false;
                 profile.isCurrentSetup = true;
-                QueueCurrentSetupSave(profile, sled, true);
+
+                string applyStatus;
+                if (!UpdateCurrentSetup(profile, sled, out applyStatus))
+                {
+                    status = string.IsNullOrWhiteSpace(applyStatus)
+                        ? "Default saved; equip failed."
+                        : "Default saved; " + applyStatus;
+                    return false;
+                }
+
                 NotifyActiveTuneChanged(profile, sled);
 
                 status = HasRuntimeInstanceForSled(sled)
@@ -576,8 +991,8 @@ namespace AlpineTuning
             }
             catch (Exception ex)
             {
-                status = $"Default setup save failed: {ex.Message}";
-                MelonLogger.Error($"SaveCurrentSetupAsDefault failed: {ex}");
+                status = $"Default setup save failed: {ex.GetType().Name}";
+                MelonLogger.Error($"SaveCurrentSetupAsDefault failed: {ex.GetType().Name}");
                 return false;
             }
         }
@@ -597,19 +1012,27 @@ namespace AlpineTuning
                 profile.targetSledKey = GetSledKey(sled);
                 profile.targetVehicleId = GetVehicleId(sled);
                 profile.isCurrentSetup = true;
-                profile.setupEdited = true;
+                profile.setupEdited = IsSetupEditedFromBaseline(profile, sled);
                 PreviewProfile(profile, sled);
-
-                QueueCurrentSetupSave(profile, sled, false);
 
                 bool hasRuntime = HasRuntimeInstanceForSled(sled);
                 VehicleScriptableObject applyTarget = hasRuntime && ActiveSO != null ? ActiveSO : sled;
-                string applyStatus;
-                if (!ApplyProfile(profile, applyTarget, false, false, out applyStatus, false, false))
+                // Commit the draft before touching the live sled. A failed
+                // runtime mutation must never be able to discard the user's
+                // latest part/slider/headlight choice.
+                if (!QueueCurrentSetupSave(profile, sled, true))
                 {
-                    status = string.IsNullOrWhiteSpace(applyStatus)
-                        ? "Current Setup preserved."
-                        : applyStatus;
+                    status = "Current Setup save failed.";
+                    return false;
+                }
+
+                string applyStatus;
+                if (!ApplyProfile(profile, applyTarget, false, false, out applyStatus, false))
+                {
+                    status = "Current Setup preserved; " +
+                             (string.IsNullOrWhiteSpace(applyStatus)
+                                 ? "install failed."
+                                 : applyStatus);
                     return false;
                 }
 
@@ -622,8 +1045,8 @@ namespace AlpineTuning
             }
             catch (Exception ex)
             {
-                status = $"Setup update failed: {ex.Message}";
-                MelonLogger.Warning($"UpdateCurrentSetup failed: {ex.Message}");
+                status = $"Setup update failed: {ex.GetType().Name}";
+                MelonLogger.Warning($"UpdateCurrentSetup failed: {ex.GetType().Name}");
                 return false;
             }
         }
@@ -648,13 +1071,17 @@ namespace AlpineTuning
                 return false;
 
             equipped.setupEdited = false;
-            QueueCurrentSetupSave(equipped, sled, true);
             status = $"Equipped {profile.name}.";
             return true;
         }
 
-        internal bool SetDefaultSetup(TuneProfile profile, VehicleScriptableObject sled, out string status)
+        internal bool SetDefaultSetup(
+            TuneProfile profile,
+            VehicleScriptableObject sled,
+            out TuneProfile equipped,
+            out string status)
         {
+            equipped = null;
             status = null;
             if (profile == null || sled == null)
             {
@@ -662,9 +1089,90 @@ namespace AlpineTuning
                 return false;
             }
 
-            bool saved = Store.SetActiveProfile(GetSledKey(sled), profile.profileId);
-            status = saved ? "Default setup selected." : "Default setup could not be selected.";
-            return saved;
+            bool saved = Store.SetActiveProfile(
+                GetSledKey(sled),
+                GetVehicleId(sled),
+                profile.profileId);
+            if (!saved)
+            {
+                status = "Default setup could not be selected.";
+                return false;
+            }
+
+            if (!EquipSetupSlot(profile, sled, out equipped, out status))
+            {
+                status = string.IsNullOrWhiteSpace(status)
+                    ? "Default selected; equip failed."
+                    : "Default selected; " + status;
+                return false;
+            }
+
+            NotifyActiveTuneChanged(equipped, sled);
+            status = $"{profile.name} is now the default and equipped.";
+            return true;
+        }
+
+        private bool IsSetupEditedFromBaseline(TuneProfile profile, VehicleScriptableObject sled)
+        {
+            if (profile == null || sled == null)
+                return false;
+
+            TuneProfile baseline = null;
+            if (!string.IsNullOrWhiteSpace(profile.setupSlotId))
+                baseline = Store.GetProfile(profile.setupSlotId);
+
+            if (baseline == null)
+            {
+                baseline = Store.GetActiveProfileForSled(
+                    GetSledKey(sled),
+                    GetVehicleId(sled));
+            }
+
+            baseline = baseline != null
+                ? TuneStore.Clone(baseline)
+                : Catalog.CreateDefaultProfile(sled, LocalAuthorName);
+            Catalog.EnsureProfileSelections(baseline);
+            return !SetupContentMatches(profile, baseline);
+        }
+
+        private static bool SetupContentMatches(TuneProfile left, TuneProfile right)
+        {
+            if (left == null || right == null)
+                return false;
+
+            string leftDonor = SledIdentity.StableIdentityKey(
+                left.donorSledKey,
+                left.donorVehicleId);
+            string rightDonor = SledIdentity.StableIdentityKey(
+                right.donorSledKey,
+                right.donorVehicleId);
+            if (!string.Equals(leftDonor, rightDonor, StringComparison.OrdinalIgnoreCase) ||
+                left.headlightEnabled != right.headlightEnabled)
+            {
+                return false;
+            }
+
+            foreach (string category in PartCatalog.OrderedCategories)
+            {
+                if (!string.Equals(
+                        left.GetPartId(category),
+                        right.GetPartId(category),
+                        StringComparison.OrdinalIgnoreCase))
+                {
+                    return false;
+                }
+            }
+
+            FineTuneSettings a = left.fineTune ?? new FineTuneSettings();
+            FineTuneSettings b = right.fineTune ?? new FineTuneSettings();
+            const float epsilon = 0.00001f;
+            return !Differs(a.powerTrimPercent, b.powerTrimPercent, epsilon) &&
+                   !Differs(a.tractionTrimPercent, b.tractionTrimPercent, epsilon) &&
+                   !Differs(a.weightTrimPercent, b.weightTrimPercent, epsilon) &&
+                   !Differs(a.clutchTrimPercent, b.clutchTrimPercent, epsilon) &&
+                   !Differs(a.centerOfMassYTrim, b.centerOfMassYTrim, epsilon) &&
+                   !Differs(a.centerOfMassZTrim, b.centerOfMassZTrim, epsilon) &&
+                   !Differs(a.skiStanceTrim, b.skiStanceTrim, epsilon);
         }
 
         internal bool RenameSetupSlot(TuneProfile profile, VehicleScriptableObject sled, string newName, out string status)
@@ -685,7 +1193,34 @@ namespace AlpineTuning
 
             var renamed = TuneStore.Clone(profile);
             renamed.name = trimmed;
+            renamed.usesAutomaticName = false;
             bool saved = Store.SaveProfile(renamed, false);
+            if (saved)
+            {
+                TuneProfile current = Store.GetCurrentSetupForSled(GetSledKey(sled), GetVehicleId(sled));
+                if (current != null &&
+                    string.Equals(current.setupSlotId, profile.profileId, StringComparison.OrdinalIgnoreCase))
+                {
+                    current.setupSlotName = trimmed;
+                    if (!current.setupEdited)
+                        current.name = trimmed;
+                    if (!QueueCurrentSetupSave(current, sled, true))
+                    {
+                        // Keep the slot and current record aligned. If disk state
+                        // rejects the current-record update, restore the original
+                        // slot metadata before reporting failure.
+                        TuneProfile original = TuneStore.Clone(profile);
+                        if (original != null && Store.SaveProfile(original, false))
+                        {
+                            status = "Setup rename failed.";
+                            return false;
+                        }
+
+                        status = "Setup renamed; current name sync failed.";
+                        return true;
+                    }
+                }
+            }
             status = saved ? "Setup renamed." : "Setup rename failed.";
             return saved;
         }
@@ -701,9 +1236,8 @@ namespace AlpineTuning
 
             var duplicate = TuneStore.Clone(profile);
             duplicate.profileId = Guid.NewGuid().ToString("N");
-            duplicate.name = string.IsNullOrWhiteSpace(profile.name)
-                ? "Copied Setup"
-                : profile.name + " Copy";
+            duplicate.name = null;
+            duplicate.usesAutomaticName = true;
             duplicate.setupSlotId = duplicate.profileId;
             duplicate.setupSlotName = duplicate.name;
             duplicate.setupEdited = false;
@@ -719,9 +1253,78 @@ namespace AlpineTuning
             return duplicate;
         }
 
-        internal void DeleteProfile(string profileId)
+        internal bool DeleteProfile(string profileId)
         {
-            Store.DeleteProfile(profileId);
+            return Store.DeleteProfile(profileId);
+        }
+
+        internal bool GetSetupSlotUsage(
+            TuneProfile profile,
+            VehicleScriptableObject sled,
+            out bool isCurrent,
+            out bool isDefault)
+        {
+            isCurrent = false;
+            isDefault = false;
+            if (profile == null || sled == null)
+                return false;
+
+            string sledKey = GetSledKey(sled);
+            string vehicleId = GetVehicleId(sled);
+            isCurrent = Store.IsProfileCurrentForSled(profile.profileId, sledKey, vehicleId);
+            isDefault = Store.IsProfileDefaultForSled(profile.profileId, sledKey, vehicleId);
+            return isCurrent || isDefault;
+        }
+
+        internal List<TuneProfile> ArchivedProfilesForSled(VehicleScriptableObject sled)
+        {
+            if (sled == null)
+                return new List<TuneProfile>();
+
+            return Store.GetArchivedProfilesForSled(GetSledKey(sled), GetVehicleId(sled));
+        }
+
+        internal bool RestoreArchivedSetup(string profileId, out TuneProfile restored, out string status)
+        {
+            restored = null;
+            if (Store.RestoreLatestArchivedProfile(profileId, out restored))
+            {
+                status = "Setup restored.";
+                return true;
+            }
+
+            status = "Restore failed.";
+            return false;
+        }
+
+        internal List<TuneHistoryEntry> ProfileHistoryForSled(
+            VehicleScriptableObject sled,
+            int maximumEntries = 20)
+        {
+            if (sled == null)
+                return new List<TuneHistoryEntry>();
+
+            return Store.GetProfileHistoryForSled(
+                GetSledKey(sled),
+                GetVehicleId(sled),
+                maximumEntries);
+        }
+
+        internal bool RestoreProfileHistory(
+            TuneHistoryEntry entry,
+            out TuneProfile restored,
+            out string status)
+        {
+            restored = null;
+            if (entry == null ||
+                !Store.RestoreProfileHistory(entry.sourceProfileId, entry.historyId, out restored))
+            {
+                status = "History restore failed.";
+                return false;
+            }
+
+            status = "History restored as new.";
+            return true;
         }
 
         internal bool ResetToFactory(VehicleScriptableObject sled, bool reloadIfActive)
@@ -733,7 +1336,8 @@ namespace AlpineTuning
             {
                 TryBuildDefaults();
                 string sledKey = GetSledKey(sled);
-                var defaults = Store.GetDefaults(sledKey);
+                bool activeNativePhysicsMayBeTuned = sled == ActiveSO && IsSledModifiedByAlpine(sled);
+                var defaults = Store.GetDefaults(sledKey, GetVehicleId(sled));
                 if (defaults == null)
                 {
                     MelonLogger.Warning($"No defaults found for {sledKey}; reset skipped.");
@@ -749,7 +1353,7 @@ namespace AlpineTuning
 
                 ApplyDefaultsToSled(sled, defaults);
                 UnmarkSledModifiedByAlpine(sled);
-                if (!Store.SetActiveProfile(sledKey, null))
+                if (!Store.SetActiveProfile(sledKey, GetVehicleId(sled), null))
                     return false;
 
                 var stockSetup = Catalog.CreateDefaultProfile(sled, LocalAuthorName);
@@ -759,7 +1363,8 @@ namespace AlpineTuning
                 stockSetup.setupEdited = false;
                 stockSetup.isCurrentSetup = true;
                 PreviewProfile(stockSetup, sled);
-                QueueCurrentSetupSave(stockSetup, sled, true);
+                if (!QueueCurrentSetupSave(stockSetup, sled, true))
+                    return false;
 
                 NotifyActiveTuneCleared(sled);
 
@@ -769,15 +1374,23 @@ namespace AlpineTuning
                     ApplyHeadlightDefaults();
                     ApplyAccessoryMode("stock", defaults);
                     QueueEngineAudioSwap(defaults, sled);
-                    if (reloadIfActive)
-                        ReloadSled();
+                    if (reloadIfActive || activeNativePhysicsMayBeTuned)
+                    {
+                        if (!ReloadSled(out string reloadStatus))
+                        {
+                            MelonLogger.Warning(string.IsNullOrWhiteSpace(reloadStatus)
+                                ? "Factory reset is saved but the live sled rebuild failed."
+                                : reloadStatus);
+                            return false;
+                        }
+                    }
                 }
 
                 return true;
             }
             catch (Exception ex)
             {
-                MelonLogger.Error($"ResetToFactory failed: {ex}");
+                MelonLogger.Error($"ResetToFactory failed: {ex.GetType().Name}");
                 return false;
             }
         }
@@ -802,7 +1415,7 @@ namespace AlpineTuning
             }
             catch (Exception ex)
             {
-                MelonLogger.Error($"PublishProfile failed: {ex}");
+                MelonLogger.Error($"PublishProfile failed: {ex.GetType().Name}");
                 return false;
             }
         }
@@ -824,7 +1437,7 @@ namespace AlpineTuning
             }
             catch (Exception ex)
             {
-                MelonLogger.Warning($"Active Alpine tune broadcast skipped: {ex.Message}");
+                MelonLogger.Warning($"Active Alpine tune broadcast skipped: {ex.GetType().Name}");
             }
         }
 
@@ -841,7 +1454,7 @@ namespace AlpineTuning
             }
             catch (Exception ex)
             {
-                MelonLogger.Warning($"Active Alpine tune clear broadcast skipped: {ex.Message}");
+                MelonLogger.Warning($"Active Alpine tune clear broadcast skipped: {ex.GetType().Name}");
             }
         }
 
@@ -872,6 +1485,11 @@ namespace AlpineTuning
                 var clone = TuneStore.Clone(profile);
                 Catalog.EnsureProfileSelections(clone);
                 var computation = ComputeProfile(clone, target);
+                if (computation == null || computation.stats == null)
+                {
+                    status = computation?.unavailableReason ?? "Remote setup engine is unavailable.";
+                    return false;
+                }
                 clone.resolvedStats = computation.stats;
                 clone.requiresReload = computation.requiresReload;
                 if (Settings == null || !Settings.receivePeerSetups)
@@ -906,7 +1524,7 @@ namespace AlpineTuning
             }
             catch (Exception ex)
             {
-                status = $"Remote setup install failed: {ex.Message}";
+                status = $"Remote setup install failed: {ex.GetType().Name}";
                 MelonLogger.Warning(status);
                 return false;
             }
@@ -915,11 +1533,6 @@ namespace AlpineTuning
         internal TuneProfile ImportSharedProfile(TuneProfile profile)
         {
             return Store.ImportSharedProfile(profile);
-        }
-
-        internal bool RequestSharedProfile(ulong peerId, string profileId)
-        {
-            return Sharing != null && Sharing.RequestProfile(peerId, profileId);
         }
 
         internal bool ApplySharedProfile(string profileId)
@@ -965,15 +1578,10 @@ namespace AlpineTuning
             return EquipSetupSlot(imported, target, out equipped, out status);
         }
 
-        internal VehicleScriptableObject FindSledByKey(string sledKey)
-        {
-            TryBuildDefaults();
-            return _selectableSleds.FirstOrDefault(s => GetSledKey(s) == sledKey);
-        }
-
         internal VehicleScriptableObject FindSledByIdentity(string sledKey, string vehicleId)
         {
             TryBuildDefaults();
+            RefreshSelectableSledsIfDue(false);
 
             if (!string.IsNullOrWhiteSpace(vehicleId))
             {
@@ -982,11 +1590,19 @@ namespace AlpineTuning
 
                 if (byVehicleId != null)
                     return byVehicleId;
+
+                if (SledIdentity.HasNativeVehicleIdentity(sledKey, vehicleId))
+                    return null;
             }
 
             if (!string.IsNullOrWhiteSpace(sledKey))
-                return _selectableSleds.FirstOrDefault(s =>
-                    string.Equals(GetSledKey(s), sledKey, StringComparison.OrdinalIgnoreCase));
+            {
+                var byLegacyKey = _selectableSleds
+                    .Where(s => string.Equals(GetSledKey(s), sledKey, StringComparison.OrdinalIgnoreCase))
+                    .Take(2)
+                    .ToList();
+                return byLegacyKey.Count == 1 ? byLegacyKey[0] : null;
+            }
 
             return null;
         }
@@ -998,7 +1614,7 @@ namespace AlpineTuning
 
         internal bool HasRuntimeInstanceForSled(VehicleScriptableObject sled)
         {
-            if (sled == null || ActiveSO == null)
+            if (sled == null || ActiveController == null || ActiveSO == null)
                 return false;
 
             return SledIdentity.FromSled(sled, "target", false, false)
@@ -1010,15 +1626,15 @@ namespace AlpineTuning
             VehicleScriptableObject sled,
             string source)
         {
-            if (CacheGarageSelection(controller, sled, source, true))
+            RegisterSelectableSled(sled, source);
+            if (CacheGarageSelection(controller, sled, source))
                 AlpineNativeUi.NotifyGarageSelectionChanged(controller);
         }
 
         private bool CacheGarageSelection(
             VehicleSelectionUiController controller,
             VehicleScriptableObject sled,
-            string source,
-            bool logChange)
+            string source)
         {
             if (controller == null || sled == null)
                 return false;
@@ -1029,6 +1645,8 @@ namespace AlpineTuning
                 return false;
 
             if (_garageSelectionsByController.TryGetValue(controllerId, out var existing) &&
+                ReferenceEquals(existing.controller, controller) &&
+                ReferenceEquals(existing.sled, sled) &&
                 string.Equals(existing.stableKey, stableKey, StringComparison.OrdinalIgnoreCase))
             {
                 return false;
@@ -1036,94 +1654,50 @@ namespace AlpineTuning
 
             _garageSelectionsByController[controllerId] = new GarageSelectionState
             {
+                controller = controller,
                 sled = sled,
                 source = source,
                 stableKey = stableKey
             };
 
-            if (logChange)
-            {
-                MelonLogger.Msg(
-                    $"Garage sled selection changed: {GetSledDisplayName(sled)} " +
-                    $"(sledKey={GetSledKey(sled)}, vehicleId={GetVehicleId(sled) ?? "none"}, source={source ?? "garage"}).");
-            }
-
             return true;
         }
 
-        private bool TryGetCachedGarageSelection(
-            VehicleSelectionUiController controller,
-            out VehicleScriptableObject sled,
-            out string source)
+        internal void ForgetGarageSelection(VehicleSelectionUiController controller)
         {
-            sled = null;
-            source = null;
             if (controller == null)
-                return false;
+                return;
 
             int controllerId = controller.GetInstanceID();
-            if (!_garageSelectionsByController.TryGetValue(controllerId, out var state) ||
-                state == null ||
-                state.sled == null)
+            if (_garageSelectionsByController.TryGetValue(controllerId, out var state) &&
+                state != null &&
+                ReferenceEquals(state.controller, controller))
             {
-                return false;
+                _garageSelectionsByController.Remove(controllerId);
             }
-
-            sled = state.sled;
-            source = state.source ?? "garage selection";
-            return true;
-        }
-
-        internal string CurrentSetupDisplayName(TuneProfile profile)
-        {
-            if (profile == null)
-                return "Current Setup";
-
-            if (!string.IsNullOrWhiteSpace(profile.setupSlotName))
-                return profile.setupSlotName + (profile.setupEdited ? "*" : string.Empty);
-
-            return (string.IsNullOrWhiteSpace(profile.name) ? "Current Setup" : profile.name) +
-                   (profile.setupEdited ? "*" : string.Empty);
         }
 
         private bool DoesActiveRuntimeMatch(SledIdentity identity)
         {
-            return identity != null && ActiveSO != null && identity.Matches(ActiveSO);
+            return identity != null &&
+                   ActiveController != null &&
+                   ActiveSO != null &&
+                   identity.Matches(ActiveSO);
         }
 
-        private void LogResolvedTargetChange(ResolvedSledTarget resolved)
-        {
-            if (resolved == null || !resolved.HasSled)
-                return;
-
-            string key =
-                resolved.identity.StableKey + "|" +
-                (resolved.identity.fromGarageSelection ? "garage" : resolved.identity.fromRuntime ? "runtime" : "direct") + "|" +
-                (resolved.hasRuntimeInstance ? "live" : "preserved");
-
-            if (string.Equals(key, _lastResolvedTargetLogKey, StringComparison.OrdinalIgnoreCase))
-                return;
-
-            _lastResolvedTargetLogKey = key;
-            MelonLogger.Msg(
-                $"Sled setup target: {resolved.identity.displayName} " +
-                $"(sledKey={resolved.identity.sledKey}, vehicleId={resolved.identity.vehicleId ?? "none"}, " +
-                $"source={resolved.identity.source ?? "unknown"}, runtime={(resolved.hasRuntimeInstance ? "matched" : "not spawned")}).");
-        }
-
-        private void QueueCurrentSetupSave(TuneProfile profile, VehicleScriptableObject sled, bool writeNow)
+        private bool QueueCurrentSetupSave(TuneProfile profile, VehicleScriptableObject sled, bool writeNow)
         {
             if (profile == null || sled == null || Store == null)
-                return;
+                return false;
 
             string sledKey = GetSledKey(sled);
             string vehicleId = GetVehicleId(sled);
             string displayName = GetSledDisplayName(sled);
             string key = SledIdentity.StableIdentityKey(sledKey, vehicleId);
             if (string.IsNullOrWhiteSpace(key))
-                return;
+                return false;
 
-            Store.SetCurrentSetup(
+            bool accepted = Store.SetCurrentSetup(
                 profile,
                 sledKey,
                 vehicleId,
@@ -1132,12 +1706,17 @@ namespace AlpineTuning
                 profile.setupSlotName,
                 profile.setupEdited,
                 writeNow);
+            if (!accepted)
+            {
+                MelonLogger.Warning($"Current Setup could not be preserved for {displayName}.");
+                return false;
+            }
 
             if (writeNow)
             {
                 _pendingCurrentSetupSaves.Remove(key);
                 MelonLogger.Msg($"Current Setup preserved for {displayName}.");
-                return;
+                return true;
             }
 
             _pendingCurrentSetupSaves[key] = new PendingCurrentSetupSave
@@ -1146,6 +1725,7 @@ namespace AlpineTuning
                 vehicleId = vehicleId,
                 dueTime = Time.unscaledTime + CurrentSetupSaveDelaySeconds
             };
+            return true;
         }
 
         private void FlushPendingCurrentSetups(bool force)
@@ -1179,14 +1759,30 @@ namespace AlpineTuning
 
         internal void ReloadSled()
         {
+            string ignored;
+            ReloadSled(out ignored);
+        }
+
+        internal bool ReloadSled(out string status)
+        {
+            status = null;
             try
             {
-                Transform spawnTransform = ActiveController != null ? ActiveController.transform : null;
-                if (spawnTransform == null)
+                PruneDestroyedActiveRuntime();
+                SnowmobileController expectedController = ActiveController;
+                if (expectedController == null || ActiveSO == null)
                 {
-                    MelonLogger.Error("ReloadSled: Active controller transform is null.");
-                    return;
+                    status = "No live selected sled is available to rebuild.";
+                    return false;
                 }
+
+                // ReCreateSnowmobile can keep the controller while replacing its
+                // child physics graph. Restore every captured per-object value
+                // while that old graph is still alive so LocalInit cannot capture
+                // an Alpine-tuned brake, geometry, or contact grip as stock.
+                RestoreCapturedNativePhysicsDefaults();
+                ApplyHeadlightDefaults();
+                RestoreAccessoryDefaults();
 
                 if (_pendingEngineAudioApply)
                 {
@@ -1197,17 +1793,43 @@ namespace AlpineTuning
                     _pendingEngineAudioLoggedReady = false;
                 }
 
-                if (!SleddersGameBindings.TrySpawnPlayer(spawnTransform, true, out var reason))
+                // This is the same path Sledders uses after native vehicle/cosmetic
+                // changes and preserves the game's last-valid spawn state.
+                if (SleddersGameBindings.TryReCreateSnowmobile(
+                        expectedController,
+                        out var nativeReason))
                 {
-                    MelonLogger.Error($"ReloadSled: {reason}");
-                    return;
+                    MelonLogger.Msg("Alpine Tuning triggered native sled recreation.");
+                    status = "Sled rebuilt with the preserved setup.";
+                    return true;
                 }
 
-                MelonLogger.Msg("Alpine Tuning 2.0 triggered sled reload.");
+                Transform spawnTransform = expectedController != null
+                    ? expectedController.transform
+                    : null;
+                if (spawnTransform == null)
+                {
+                    status = $"Sled rebuild failed: {nativeReason}; active controller is unavailable.";
+                    MelonLogger.Error("ReloadSled: " + status);
+                    return false;
+                }
+
+                if (!SleddersGameBindings.TrySpawnPlayer(spawnTransform, true, out var fallbackReason))
+                {
+                    status = $"Sled rebuild failed: native path {nativeReason}; fallback {fallbackReason}.";
+                    MelonLogger.Error("ReloadSled: " + status);
+                    return false;
+                }
+
+                MelonLogger.Msg("Alpine Tuning triggered fallback sled reload.");
+                status = "Sled rebuilt with the preserved setup.";
+                return true;
             }
             catch (Exception ex)
             {
-                MelonLogger.Error($"ReloadSled failed: {ex}");
+                MelonLogger.Error($"ReloadSled failed: {ex.GetType().Name}");
+                status = $"Sled rebuild failed: {ex.GetType().Name}";
+                return false;
             }
         }
 
@@ -1216,10 +1838,9 @@ namespace AlpineTuning
             if (sled == null)
                 return false;
 
-            string sledKey = GetSledKey(sled);
-            string vehicleId = GetVehicleId(sled);
-            return _sledsModifiedByAlpineThisSession.Contains(sledKey) ||
-                   (!string.IsNullOrWhiteSpace(vehicleId) && _sledsModifiedByAlpineThisSession.Contains(vehicleId));
+            string identity = SledIdentity.StableIdentityKey(sled);
+            return !string.IsNullOrWhiteSpace(identity) &&
+                   _sledsModifiedByAlpineThisSession.Contains(identity);
         }
 
         private void MarkSledModifiedByAlpine(VehicleScriptableObject sled)
@@ -1227,10 +1848,9 @@ namespace AlpineTuning
             if (sled == null)
                 return;
 
-            _sledsModifiedByAlpineThisSession.Add(GetSledKey(sled));
-            string vehicleId = GetVehicleId(sled);
-            if (!string.IsNullOrWhiteSpace(vehicleId))
-                _sledsModifiedByAlpineThisSession.Add(vehicleId);
+            string identity = SledIdentity.StableIdentityKey(sled);
+            if (!string.IsNullOrWhiteSpace(identity))
+                _sledsModifiedByAlpineThisSession.Add(identity);
         }
 
         private void UnmarkSledModifiedByAlpine(VehicleScriptableObject sled)
@@ -1238,10 +1858,9 @@ namespace AlpineTuning
             if (sled == null)
                 return;
 
-            _sledsModifiedByAlpineThisSession.Remove(GetSledKey(sled));
-            string vehicleId = GetVehicleId(sled);
-            if (!string.IsNullOrWhiteSpace(vehicleId))
-                _sledsModifiedByAlpineThisSession.Remove(vehicleId);
+            string identity = SledIdentity.StableIdentityKey(sled);
+            if (!string.IsNullOrWhiteSpace(identity))
+                _sledsModifiedByAlpineThisSession.Remove(identity);
         }
 
         private void LogDefaultCaptureSkipped(string sledKey, string reason)
@@ -1270,6 +1889,8 @@ namespace AlpineTuning
                 if (_selectableSleds.Count == 0)
                     return;
 
+                Store.RefreshKnownVehicleIdentities(_selectableSleds);
+
                 foreach (var sled in _selectableSleds)
                 {
                     RefreshStatDefaultsFromCleanLoad(sled);
@@ -1282,23 +1903,30 @@ namespace AlpineTuning
             }
             catch (Exception ex)
             {
-                MelonLogger.Error($"TryBuildDefaults error: {ex}");
+                MelonLogger.Error($"TryBuildDefaults error: {ex.GetType().Name}");
             }
         }
 
-        private void BuildSelectableSledList()
+        private List<VehicleScriptableObject> BuildSelectableSledList()
         {
-            if (_selectableSleds.Count > 0)
-                return;
-
-            var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            var added = new List<VehicleScriptableObject>();
+            _selectableSleds.RemoveAll(sled => sled == null);
+            var seen = new HashSet<string>(
+                _selectableSleds
+                    .Where(sled => sled != null)
+                    .Select(SledIdentity.StableIdentityKey)
+                    .Where(key => !string.IsNullOrWhiteSpace(key)),
+                StringComparer.OrdinalIgnoreCase);
             var lists = Resources.FindObjectsOfTypeAll<VehicleListScriptableObject>();
             if (lists != null)
             {
                 foreach (var list in lists)
                 {
                     foreach (var sled in SleddersGameBindings.GetSelectableVehicles(list))
-                        AddSelectableSled(sled, seen);
+                    {
+                        if (AddSelectableSled(sled, seen))
+                            added.Add(sled);
+                    }
                 }
             }
 
@@ -1306,44 +1934,144 @@ namespace AlpineTuning
             if (loadedSleds != null)
             {
                 foreach (var sled in loadedSleds)
-                    AddSelectableSled(sled, seen);
+                {
+                    if (AddSelectableSled(sled, seen))
+                        added.Add(sled);
+                }
             }
 
-            AddSelectableSled(ActiveSO, seen);
+            if (AddSelectableSled(ActiveSO, seen))
+                added.Add(ActiveSO);
 
-            _selectableSleds.Sort((a, b) =>
-                string.Compare(GetSledDisplayName(a), GetSledDisplayName(b), StringComparison.OrdinalIgnoreCase));
+            if (added.Count > 0)
+            {
+                _selectableSleds.Sort((a, b) =>
+                    string.Compare(GetSledDisplayName(a), GetSledDisplayName(b), StringComparison.OrdinalIgnoreCase));
+            }
 
             if (_selectableSleds.Count == 0)
                 MelonLogger.Warning("No VehicleScriptableObject found; garage tuning list will be limited.");
-            else
+            else if (added.Count > 0)
                 MelonLogger.Msg($"Alpine discovered {_selectableSleds.Count} sled donor candidate(s).");
+
+            return added;
         }
 
-        private void AddSelectableSled(VehicleScriptableObject sled, HashSet<string> seen)
+        private bool AddSelectableSled(VehicleScriptableObject sled, HashSet<string> seen)
         {
             if (sled == null || seen == null)
-                return;
+                return false;
 
             string key = SledIdentity.StableIdentityKey(sled);
             if (string.IsNullOrWhiteSpace(key))
                 key = GetSledKey(sled);
 
             if (string.IsNullOrWhiteSpace(key) || !seen.Add(key))
-                return;
+                return false;
 
             _selectableSleds.Add(sled);
+            return true;
         }
 
-        private void EnsureDefaultsForSled(VehicleScriptableObject sled)
+        private void RegisterSelectableSled(VehicleScriptableObject sled, string source)
+        {
+            if (sled == null)
+                return;
+
+            string stableKey = SledIdentity.StableIdentityKey(sled);
+            int existingIndex = string.IsNullOrWhiteSpace(stableKey)
+                ? -1
+                : _selectableSleds.FindIndex(candidate =>
+                    candidate != null &&
+                    string.Equals(
+                        SledIdentity.StableIdentityKey(candidate),
+                        stableKey,
+                        StringComparison.OrdinalIgnoreCase));
+
+            if (existingIndex >= 0)
+            {
+                // A mod can reload its ScriptableObject while retaining the same
+                // stable vehicle identity. Prefer the instance handed to us by the
+                // native garage/runtime lifecycle over an older discovery result.
+                if (ReferenceEquals(_selectableSleds[existingIndex], sled))
+                    return;
+
+                _selectableSleds[existingIndex] = sled;
+                if (_defaultsBuilt)
+                {
+                    RefreshStatDefaultsFromCleanLoad(sled);
+                    EnsureDefaultsForSled(sled);
+                }
+                return;
+            }
+
+            var seen = new HashSet<string>(
+                _selectableSleds
+                    .Where(candidate => candidate != null)
+                    .Select(SledIdentity.StableIdentityKey)
+                    .Where(key => !string.IsNullOrWhiteSpace(key)),
+                StringComparer.OrdinalIgnoreCase);
+
+            if (!AddSelectableSled(sled, seen))
+                return;
+
+            _selectableSleds.Sort((a, b) =>
+                string.Compare(GetSledDisplayName(a), GetSledDisplayName(b), StringComparison.OrdinalIgnoreCase));
+
+            if (_defaultsBuilt)
+            {
+                Store?.RefreshKnownVehicleIdentities(_selectableSleds);
+                RefreshStatDefaultsFromCleanLoad(sled);
+                EnsureDefaultsForSled(sled);
+                Store?.MigrateLegacyPresets(new[] { sled }, LocalAuthorName);
+            }
+
+            MelonLogger.Msg(
+                $"Alpine registered late-loaded sled '{GetSledDisplayName(sled)}' " +
+                $"from {(!string.IsNullOrWhiteSpace(source) ? source : "runtime discovery")}.");
+        }
+
+        private void RefreshSelectableSledsIfDue(bool force)
+        {
+            if (!_defaultsBuilt)
+                return;
+
+            float now = Time.unscaledTime;
+            if (!force && now < _nextSelectableSledRefreshTime)
+                return;
+
+            _nextSelectableSledRefreshTime = now + 10f;
+            List<VehicleScriptableObject> added = BuildSelectableSledList();
+            if (added.Count == 0)
+                return;
+
+            Store?.RefreshKnownVehicleIdentities(_selectableSleds);
+
+            foreach (VehicleScriptableObject sled in added)
+            {
+                RefreshStatDefaultsFromCleanLoad(sled);
+                EnsureDefaultsForSled(sled);
+            }
+
+            Store?.MigrateLegacyPresets(added, LocalAuthorName);
+            MelonLogger.Msg($"Alpine initialized {added.Count} late-loaded sled donor candidate(s).");
+        }
+
+        private void EnsureDefaultsForSled(
+            VehicleScriptableObject sled,
+            bool forceRuntimeCapture = false)
         {
             if (sled == null)
                 return;
 
             string key = GetSledKey(sled);
+            string vehicleId = GetVehicleId(sled);
             bool modifiedByAlpine = IsSledModifiedByAlpine(sled);
-            var defaults = Store.GetDefaults(key);
-            if (defaults == null)
+            var defaults = Store.GetDefaults(key, vehicleId);
+            bool legacyIdentityMismatch = defaults != null &&
+                                          !string.Equals(vehicleId, key, StringComparison.OrdinalIgnoreCase) &&
+                                          !string.Equals(defaults.vehicleId, vehicleId, StringComparison.OrdinalIgnoreCase);
+            if (defaults == null || legacyIdentityMismatch)
             {
                 if (modifiedByAlpine)
                 {
@@ -1358,11 +2086,16 @@ namespace AlpineTuning
 
             if (sled == ActiveSO && ActiveController != null)
             {
-                if (modifiedByAlpine && HasCapturedControllerDefaults(defaults))
+                if (!forceRuntimeCapture &&
+                    modifiedByAlpine &&
+                    HasCapturedControllerDefaults(defaults))
                 {
                     LogDefaultCaptureSkipped(key, "active controller has already been tuned by Alpine");
                     return;
                 }
+
+                if (forceRuntimeCapture)
+                    defaults.controller = new ControllerDefaults();
 
                 CaptureRuntimeDefaults(defaults, ActiveController);
                 Store.PutDefaults(defaults);
@@ -1381,7 +2114,6 @@ namespace AlpineTuning
                    controller.hasClutchRpmMin ||
                    controller.hasClutchRpmMax ||
                    controller.hasMinThrottleOnClutchEngagement ||
-                   controller.hasWheelieThreshold ||
                    controller.hasStabilizerDamping ||
                    controller.hasTrackSpeedDamping ||
                    controller.hasTrackSpeedGyroMultiplier;
@@ -1393,13 +2125,14 @@ namespace AlpineTuning
                 return;
 
             string key = GetSledKey(sled);
+            string vehicleId = GetVehicleId(sled);
             if (IsSledModifiedByAlpine(sled))
             {
                 LogDefaultCaptureSkipped(key, "scriptable object has already been tuned by Alpine");
                 return;
             }
 
-            var existing = Store.GetDefaults(key);
+            var existing = Store.GetDefaults(key, vehicleId);
             if (existing == null || !StoredStatsDifferFromSled(existing, sled))
                 return;
 
@@ -1410,6 +2143,7 @@ namespace AlpineTuning
             refreshed.engineAudioEnumName = existing.engineAudioEnumName;
             refreshed.engineAudioEnumRawValue = existing.engineAudioEnumRawValue;
             refreshed.controller = existing.controller ?? new ControllerDefaults();
+            refreshed.nativePhysics = existing.nativePhysics ?? new NativePhysicsDefaults();
 
             Store.PutDefaults(refreshed);
             MelonLogger.Msg(
@@ -1421,10 +2155,12 @@ namespace AlpineTuning
         {
             return Differs(defaults.horsePower, sled.horsePower, 0.01f) ||
                    Differs(defaults.powerFactor, sled.powerFactor, 0.001f) ||
+                   (!defaults.hasMaxRpm && IsFinitePositive(sled.maxRpm)) ||
+                   (defaults.hasMaxRpm && Differs(defaults.maxRpm, sled.maxRpm, 0.1f)) ||
                    Differs(defaults.lugHeight, sled.lugHeight, 0.01f) ||
                    Differs(defaults.friction, sled.coefficientOfFriction, 0.001f) ||
                    Differs(defaults.weight, sled.weight, 0.01f) ||
-                   Differs(defaults.skiStance, sled.skiStance, 0.001f) ||
+                   Differs(defaults.skiStance, sled.skiStance, 0.1f) ||
                    Differs(defaults.skisXDistanceOffset, sled.skisXDistanceOffset, 0.001f) ||
                    defaults.isTurboOn != sled.isTurboOn ||
                    !StatsDefaultsMatch(defaults, sled) ||
@@ -1448,6 +2184,11 @@ namespace AlpineTuning
             return Mathf.Abs(a - b) > epsilon;
         }
 
+        private static bool IsFinitePositive(float value)
+        {
+            return !float.IsNaN(value) && !float.IsInfinity(value) && value > 0f;
+        }
+
         private static bool Differs(Vector3 a, Vector3 b, float epsilon)
         {
             return (a - b).sqrMagnitude > epsilon * epsilon;
@@ -1464,7 +2205,7 @@ namespace AlpineTuning
             if (profile == null)
                 return false;
 
-            MelonLogger.Msg($"Equipping preserved Alpine setup '{profile.name}' for {ActiveSO.name}.");
+            MelonLogger.Msg($"Equipping preserved Alpine setup for {ActiveSO.name}.");
             var activeClone = TuneStore.Clone(profile);
             if (ApplyProfile(activeClone, ActiveSO, false, false))
             {
@@ -1480,7 +2221,7 @@ namespace AlpineTuning
             EnsureDefaultsForSled(sled);
 
             string sledKey = GetSledKey(sled);
-            var baseDefaults = Store.GetDefaults(sledKey);
+            var baseDefaults = Store.GetDefaults(sledKey, GetVehicleId(sled));
             if (baseDefaults == null)
             {
                 if (IsSledModifiedByAlpine(sled))
@@ -1494,22 +2235,39 @@ namespace AlpineTuning
             var audioDefaults = baseDefaults;
             var audioSource = sled;
 
-            if (!string.IsNullOrWhiteSpace(profile.donorSledKey))
+            bool hasDonorReference = !string.IsNullOrWhiteSpace(profile.donorSledKey) ||
+                                     !string.IsNullOrWhiteSpace(profile.donorVehicleId);
+            if (hasDonorReference)
             {
-                var donorDefaults = Store.GetDefaults(profile.donorSledKey);
-                var donorSled = FindSledByKey(profile.donorSledKey);
-                if (donorDefaults != null)
+                var donorSled = FindSledByIdentity(profile.donorSledKey, profile.donorVehicleId);
+                var donorDefaults = Store.GetDefaults(
+                    profile.donorSledKey,
+                    !string.IsNullOrWhiteSpace(profile.donorVehicleId)
+                        ? profile.donorVehicleId
+                        : donorSled != null ? GetVehicleId(donorSled) : null);
+                if (donorSled == null || donorDefaults == null)
                 {
-                    engineDefaults = donorDefaults;
-                    audioDefaults = donorDefaults;
-                    audioSource = donorSled ?? sled;
-                    TryPopulateDefaultAudioToken(audioDefaults, audioSource, false);
+                    return new TuneComputation
+                    {
+                        baseDefaults = baseDefaults,
+                        engineDefaults = null,
+                        audioDefaults = baseDefaults,
+                        audioSource = sled,
+                        stats = null,
+                        requiresReload = false,
+                        unavailableReason = "Saved engine is unavailable; choose Stock or another engine."
+                    };
                 }
+
+                engineDefaults = donorDefaults;
+                audioDefaults = donorDefaults;
+                audioSource = donorSled;
+                TryPopulateDefaultAudioToken(audioDefaults, audioSource, false);
             }
 
             var effect = new PartEffect();
             var parts = new List<TunePart>();
-            bool requiresReload = false;
+            bool requiresReload;
 
             Catalog.EnsureProfileSelections(profile);
             foreach (string category in PartCatalog.OrderedCategories)
@@ -1520,22 +2278,28 @@ namespace AlpineTuning
                     continue;
 
                 parts.Add(part);
-                requiresReload |= part.requiresReload;
                 AlpineTuneMath.MergeEffect(effect, part.effect);
             }
 
             var fine = profile.fineTune ?? new FineTuneSettings();
             profile.fineTune = fine;
-            var simulationInput = BuildEngineSimulationInput(sled);
-            EngineSimulationResult simulationResult;
             var resolvedStats = AlpineTuneMath.ComputeStats(
                 baseDefaults,
                 engineDefaults,
                 parts,
                 effect,
-                fine,
-                simulationInput,
-                out simulationResult);
+                fine);
+
+            // These values are copied from VehicleScriptableObject into the native
+            // sled bodies/track/mesh during LocalInit. Mutating the asset while a
+            // ride is already alive cannot update that native state safely.
+            bool activeSpawnDiffers = ActiveSpawnValuesDiffer(
+                sled,
+                resolvedStats,
+                out bool comparedActiveSpawn);
+            requiresReload = comparedActiveSpawn
+                ? activeSpawnDiffers
+                : NativeSpawnValuesDiffer(baseDefaults, resolvedStats);
 
             return new TuneComputation
             {
@@ -1545,91 +2309,66 @@ namespace AlpineTuning
                 audioSource = audioSource,
                 parts = parts,
                 mergedEffect = effect,
-                simulationInput = simulationInput,
-                simulationResult = simulationResult,
                 requiresReload = requiresReload,
                 stats = resolvedStats
             };
         }
 
-        private EngineSimulationInput BuildEngineSimulationInput(VehicleScriptableObject sled)
+        internal static bool NativeSpawnValuesDiffer(SledDefaults defaults, ResolvedStats stats)
         {
-            var input = new EngineSimulationInput
-            {
-                altitudeCompensationEnabled = UseWorldYAsAltitudeMeters,
-                hasThrottle01 = false,
-                throttle01 = 0f,
-                hasNormalizedRpm = false,
-                normalizedRpm = 0f,
-                hasLoad01 = false,
-                load01 = 0f
-            };
+            if (defaults == null || stats == null)
+                return false;
 
-            if (!UseWorldYAsAltitudeMeters || sled == null || sled != ActiveSO || ActiveController == null)
-                return input;
+            return Differs(defaults.horsePower, stats.horsePower, 0.01f) ||
+                   defaults.hasMaxRpm != stats.hasMaxRpm ||
+                   (defaults.hasMaxRpm && Differs(defaults.maxRpm, stats.maxRpm, 0.1f)) ||
+                   Differs(defaults.lugHeight, stats.lugHeight, 0.01f) ||
+                   Differs(defaults.friction, stats.friction, 0.001f) ||
+                   Differs(defaults.weight, stats.weight, 0.01f) ||
+                   Differs(defaults.skiStance, stats.skiStance, 0.1f) ||
+                   Differs(defaults.skisXDistanceOffset, stats.skisXDistanceOffset, 0.0001f) ||
+                   Differs(defaults.centerOfMassOffset.ToVector3(), stats.centerOfMassOffset.ToVector3(), 0.0001f) ||
+                   Differs(defaults.driverCenterOfMassOffset.ToVector3(), stats.driverCenterOfMassOffset.ToVector3(), 0.0001f) ||
+                   defaults.isTurboOn != stats.isTurboOn;
+        }
 
-            Transform transform = ActiveController.transform;
-            if (transform != null)
+        private bool ActiveSpawnValuesDiffer(
+            VehicleScriptableObject sled,
+            ResolvedStats stats,
+            out bool compared)
+        {
+            compared = false;
+            if (sled == null ||
+                stats == null ||
+                ActiveController == null ||
+                _activeSpawnValues == null ||
+                _spawnValuesControllerId != ActiveController.GetInstanceID())
             {
-                input.hasAltitudeMeters = true;
-                input.altitudeMeters = transform.position.y;
+                return false;
             }
 
-            Rigidbody body = ActiveController.GetComponent<Rigidbody>();
-            if (body != null)
+            string identity = SledIdentity.StableIdentityKey(sled);
+            if (string.IsNullOrWhiteSpace(identity) ||
+                !string.Equals(
+                    identity,
+                    _activeSpawnValues.stableIdentity,
+                    StringComparison.OrdinalIgnoreCase))
             {
-                input.hasSpeedMetersPerSecond = true;
-                input.speedMetersPerSecond = body.linearVelocity.magnitude;
+                return false;
             }
 
-            return input;
-        }
-
-        private static void LogAppliedTune(TuneProfile profile, VehicleScriptableObject sled, TuneComputation computation)
-        {
-            if (computation == null || computation.stats == null)
-                return;
-
-            MelonLogger.Msg(
-                $"Installed Alpine setup '{profile.name}' to {sled.name}: " +
-                $"HP={computation.stats.horsePower:F1}, PF={computation.stats.powerFactor:F2}, " +
-                $"Paddle={TrackSpecResolver.FormatPaddleHeight(computation.stats.lugHeight)}, " +
-                $"Fric={computation.stats.friction:F2}");
-
-            var simulation = computation.simulationResult;
-            var gains = simulation != null ? simulation.gains : null;
-            if (simulation == null || gains == null || computation.engineDefaults == null)
-                return;
-
-            MelonLogger.Msg(
-                "Alpine power resolve: " +
-                $"baseHP={computation.engineDefaults.horsePower:F1}, " +
-                $"engineGain={FormatGain(gains.engineHorsepowerGain)}, " +
-                $"turboGain={FormatGain(gains.turboHorsepowerGain)}, " +
-                $"intakeGain={FormatGain(gains.intakeHorsepowerGain)}, " +
-                $"fineGain={FormatGain(gains.fineTuneHorsepowerGain)}, " +
-                $"beforeEnvHP={simulation.horsepowerBeforeEnvironment:F1}, " +
-                $"altitude={simulation.altitudeMeters:F0}m, " +
-                $"pressure={simulation.altitudePressureRatio:F3}, " +
-                $"turboComp={simulation.turboAltitudeCompensation:F2}, " +
-                $"air={simulation.effectiveAirRatio:F3}, " +
-                $"finalHP={simulation.horsepowerAfterEnvironment:F1}, " +
-                $"pfGain={FormatGain(gains.TotalPowerFactorGain)}, " +
-                $"beforeEnvPF={simulation.powerFactorBeforeEnvironment:F2}, " +
-                $"finalPF={simulation.powerFactorAfterEnvironment:F2}, " +
-                $"boostLimit={simulation.boostLimitPsi:F1}psi, " +
-                $"estBoost={simulation.estimatedBoostPsi:F1}psi, " +
-                $"estManifold={simulation.estimatedManifoldPressureKpa:F0}kPa");
-        }
-
-        private static string FormatGain(float gain)
-        {
-            return (gain * 100f).ToString("+0.0;-0.0;0.0") + "%";
-        }
-
-        private static void MergeEffect(PartEffect target, PartEffect source)
-        {
-            AlpineTuneMath.MergeEffect(target, source);
+            compared = true;
+            return Differs(_activeSpawnValues.horsePower, stats.horsePower, 0.01f) ||
+                   _activeSpawnValues.hasMaxRpm != stats.hasMaxRpm ||
+                   (_activeSpawnValues.hasMaxRpm && Differs(_activeSpawnValues.maxRpm, stats.maxRpm, 0.1f)) ||
+                   Differs(_activeSpawnValues.lugHeight, stats.lugHeight, 0.01f) ||
+                   Differs(_activeSpawnValues.friction, stats.friction, 0.001f) ||
+                   Differs(_activeSpawnValues.weight, stats.weight, 0.01f) ||
+                   Differs(_activeSpawnValues.skiStance, stats.skiStance, 0.1f) ||
+                   Differs(_activeSpawnValues.skisXDistanceOffset, stats.skisXDistanceOffset, 0.0001f) ||
+                   Differs(_activeSpawnValues.centerOfMassOffset, stats.centerOfMassOffset.ToVector3(), 0.0001f) ||
+                   Differs(_activeSpawnValues.driverCenterOfMassOffset, stats.driverCenterOfMassOffset.ToVector3(), 0.0001f) ||
+                   _activeSpawnValues.isTurboOn != stats.isTurboOn;
         }
 
         private static float ClampRelative(float value, float baseline, float minMult, float maxMult, float absoluteMin, float absoluteMax)
@@ -1643,14 +2382,6 @@ namespace AlpineTuning
         private static float ClampOffset(float value, float baseline, float maxDelta, float absoluteMin, float absoluteMax)
         {
             return Mathf.Clamp(value, Mathf.Max(absoluteMin, baseline - maxDelta), Mathf.Min(absoluteMax, baseline + maxDelta));
-        }
-
-        private static Vector3 ClampVectorOffset(Vector3 value, Vector3 baseline, Vector3 maxDelta)
-        {
-            return new Vector3(
-                ClampOffset(value.x, baseline.x, maxDelta.x, -10f, 10f),
-                ClampOffset(value.y, baseline.y, maxDelta.y, -10f, 10f),
-                ClampOffset(value.z, baseline.z, maxDelta.z, -10f, 10f));
         }
 
         private static Vector3 ClampVectorRelative(Vector3 value, Vector3 baseline, float minMult, float maxMult)
@@ -1695,6 +2426,8 @@ namespace AlpineTuning
             var stats = computation.stats;
             sled.horsePower = stats.horsePower;
             sled.powerFactor = stats.powerFactor;
+            if (stats.hasMaxRpm)
+                sled.maxRpm = stats.maxRpm;
             sled.lugHeight = stats.lugHeight;
             sled.coefficientOfFriction = stats.friction;
             sled.weight = stats.weight;
@@ -1711,12 +2444,15 @@ namespace AlpineTuning
             }
         }
 
-        private static void ApplySnowmobileStatBars(SnowmobileStats statBars, TuneComputation computation)
+        internal static void ApplySnowmobileStatBars(SnowmobileStats statBars, TuneComputation computation)
         {
             var defaults = computation.baseDefaults;
             if (defaults != null && defaults.hasSnowmobileStats)
             {
-                float powerRatio = Mathf.Clamp(SafeRatio(computation.stats.horsePower, computation.engineDefaults.horsePower), 0.60f, 1.80f);
+                // SnowmobileStats belongs to the recipient sled. An engine donor's
+                // defaults are the numerator source, not the stock comparison
+                // denominator; otherwise every donor swap incorrectly reads 1.0.
+                float powerRatio = Mathf.Clamp(SafeRatio(computation.stats.horsePower, defaults.horsePower), 0.60f, 1.80f);
                 float climbRatio = Mathf.Clamp(
                     (SafeRatio(computation.stats.lugHeight, defaults.lugHeight) +
                      SafeRatio(computation.stats.friction, defaults.friction)) * 0.5f,
@@ -1724,21 +2460,26 @@ namespace AlpineTuning
                     1.65f);
                 float agilityRatio = Mathf.Clamp(SafeRatio(defaults.weight, computation.stats.weight), 0.75f, 1.35f);
 
-                statBars.power = Mathf.Clamp01(defaults.statsPower * powerRatio);
-                statBars.climbing = Mathf.Clamp01(defaults.statsClimbing * climbRatio);
-                statBars.agility = Mathf.Clamp01(defaults.statsAgility * agilityRatio);
+                statBars.power = Mathf.Clamp(defaults.statsPower * powerRatio, 0f, 100f);
+                statBars.climbing = Mathf.Clamp(defaults.statsClimbing * climbRatio, 0f, 100f);
+                statBars.agility = Mathf.Clamp(defaults.statsAgility * agilityRatio, 0f, 100f);
                 return;
             }
 
-            statBars.power = Mathf.Clamp01(computation.stats.horsePower / 250f);
-            statBars.climbing = Mathf.Clamp01((computation.stats.lugHeight / 60f + computation.stats.friction / 2.4f) * 0.5f);
-            statBars.agility = Mathf.Clamp01(1.1f - computation.stats.weight / 450f);
+            statBars.power = Mathf.Clamp(computation.stats.horsePower / 250f * 100f, 0f, 100f);
+            statBars.climbing = Mathf.Clamp(
+                (computation.stats.lugHeight / 60f + computation.stats.friction / 2.4f) * 50f,
+                0f,
+                100f);
+            statBars.agility = Mathf.Clamp((1.1f - computation.stats.weight / 450f) * 100f, 0f, 100f);
         }
 
         private static void ApplyDefaultsToSled(VehicleScriptableObject sled, SledDefaults defaults)
         {
             sled.horsePower = defaults.horsePower;
             sled.powerFactor = defaults.powerFactor;
+            if (defaults.hasMaxRpm)
+                sled.maxRpm = defaults.maxRpm;
             sled.lugHeight = defaults.lugHeight;
             sled.coefficientOfFriction = defaults.friction;
             sled.weight = defaults.weight;
@@ -1784,48 +2525,37 @@ namespace AlpineTuning
             profile.fineTune = fine;
             ClampFineTune(fine);
 
-            float clutchTrim = 1f + fine.clutchTrimPercent / 100f;
-            float boostResponse = Mathf.Clamp(effect.boostResponseMultiplier, 0.70f, 1.35f);
-
-            if (defaults.hasThrottleExponent)
+            if (defaults.hasThrottleExponent && Mathf.Abs(effect.throttleExponentDelta) > 0.0001f)
                 SetFloatField(ActiveController, "throttleExponent", ClampOffset(defaults.throttleExponent + effect.throttleExponentDelta, defaults.throttleExponent, 0.20f, 0.25f, 4f));
 
             if (defaults.hasRpmSensitivity)
-                SetFloatField(ActiveController, "rpmSensitivity", ClampRelative(defaults.rpmSensitivity * effect.rpmSensitivityMultiplier * boostResponse, defaults.rpmSensitivity, 0.50f, 1.70f, 0.05f, 10f));
+                SetFloatField(ActiveController, "rpmSensitivity", AlpineTuneMath.ResolveRpmSensitivity(defaults.rpmSensitivity, effect));
 
             if (defaults.hasRpmSensitivityDown)
-                SetFloatField(ActiveController, "rpmSensitivityDown", ClampRelative(defaults.rpmSensitivityDown * effect.rpmSensitivityDownMultiplier, defaults.rpmSensitivityDown, 0.50f, 1.70f, 0.05f, 10f));
+                SetFloatField(ActiveController, "rpmSensitivityDown", AlpineTuneMath.ResolveRpmSensitivityDown(defaults.rpmSensitivityDown, effect));
 
-            float clutchMin = defaults.hasClutchRpmMin
-                ? ClampRelative((defaults.clutchRpmMin + effect.clutchRpmMinOffset) * clutchTrim, defaults.clutchRpmMin, 0.75f, 1.35f, 0f, 14000f)
-                : 0f;
+            AlpineTuneMath.ResolvedClutchRange clutch =
+                AlpineTuneMath.ResolveClutchRange(defaults, effect, fine);
+            if (clutch.HasMinimum)
+                SetFloatField(ActiveController, "clutchRpmMin", clutch.Minimum);
 
-            float clutchMax = defaults.hasClutchRpmMax
-                ? ClampRelative((defaults.clutchRpmMax + effect.clutchRpmMaxOffset) * clutchTrim, defaults.clutchRpmMax, 0.75f, 1.35f, 0f, 14000f)
-                : 0f;
+            if (clutch.HasMaximum)
+                SetFloatField(ActiveController, "clutchRpmMax", clutch.Maximum);
 
-            if (defaults.hasClutchRpmMin && defaults.hasClutchRpmMax && clutchMax < clutchMin + 100f)
-                clutchMax = Mathf.Min(14000f, clutchMin + 100f);
-
-            if (defaults.hasClutchRpmMin)
-                SetFloatField(ActiveController, "clutchRpmMin", clutchMin);
-
-            if (defaults.hasClutchRpmMax)
-                SetFloatField(ActiveController, "clutchRpmMax", clutchMax);
-
-            if (defaults.hasMinThrottleOnClutchEngagement)
+            if (defaults.hasMinThrottleOnClutchEngagement &&
+                Mathf.Abs(effect.minThrottleOnClutchEngagementOffset) > 0.0001f)
                 SetFloatField(ActiveController, "minThrottleOnClutchEngagement", Mathf.Clamp01(defaults.minThrottleOnClutchEngagement + effect.minThrottleOnClutchEngagementOffset));
 
-            if (defaults.hasWheelieThreshold)
-                SetFloatField(ActiveController, "wheelieThreshold", ClampOffset(defaults.wheelieThreshold + effect.wheelieThresholdOffset, defaults.wheelieThreshold, 0.25f, 0.05f, 3f));
-
             ApplyStabilizerRuntime(defaults, effect);
+            ApplyNativePhysicsRuntime(effect);
         }
 
         private void ApplyRuntimeDefaults(SledDefaults defaults)
         {
             if (ActiveController == null || defaults == null)
                 return;
+
+            RestoreNativePhysicsDefaults();
 
             var runtime = defaults.controller;
             if (runtime.hasThrottleExponent) SetFloatField(ActiveController, "throttleExponent", runtime.throttleExponent);
@@ -1834,8 +2564,6 @@ namespace AlpineTuning
             if (runtime.hasClutchRpmMin) SetFloatField(ActiveController, "clutchRpmMin", runtime.clutchRpmMin);
             if (runtime.hasClutchRpmMax) SetFloatField(ActiveController, "clutchRpmMax", runtime.clutchRpmMax);
             if (runtime.hasMinThrottleOnClutchEngagement) SetFloatField(ActiveController, "minThrottleOnClutchEngagement", runtime.minThrottleOnClutchEngagement);
-            if (runtime.hasWheelieThreshold) SetFloatField(ActiveController, "wheelieThreshold", runtime.wheelieThreshold);
-
             object stabilizer = GetStabilizer(ActiveController);
             if (stabilizer == null)
                 return;
@@ -1850,6 +2578,7 @@ namespace AlpineTuning
             _waitingForHeadlightKeyboardBinding = true;
             _waitingForHeadlightControllerBinding = false;
             _headlightBindingCaptureDeadline = Time.unscaledTime + 8f;
+            _headlightBindingCaptureResult = HeadlightBindingCaptureResult.None;
         }
 
         internal void BeginHeadlightControllerBind()
@@ -1857,15 +2586,47 @@ namespace AlpineTuning
             _waitingForHeadlightControllerBinding = true;
             _waitingForHeadlightKeyboardBinding = false;
             _headlightBindingCaptureDeadline = Time.unscaledTime + 8f;
+            _headlightBindingCaptureResult = HeadlightBindingCaptureResult.None;
         }
 
-        internal void ClearHeadlightBinding()
+        internal void CancelHeadlightBindingCapture()
         {
+            CompleteHeadlightBindingCapture(HeadlightBindingCaptureResult.Cancelled, true);
+        }
+
+        private void CompleteHeadlightBindingCapture(
+            HeadlightBindingCaptureResult result,
+            bool handledCancelInput)
+        {
+            _waitingForHeadlightKeyboardBinding = false;
+            _waitingForHeadlightControllerBinding = false;
+            _headlightBindingCaptureDeadline = 0f;
+            _headlightBindingCaptureResult = result;
+            if (handledCancelInput)
+                _headlightBindingCancelFrame = Time.frameCount;
+        }
+
+        internal bool ClearHeadlightBinding()
+        {
+            bool previousEnabled = Settings.headlightToggleEnabled;
+            string previousKeyboard = Settings.headlightKeyboardKey;
+            string previousController = Settings.headlightControllerButton;
+            bool previousConfigured = Settings.headlightBindingConfigured;
+            int previousRevision = Settings.headlightBindingRevision;
             Settings.headlightToggleEnabled = false;
             Settings.headlightKeyboardKey = null;
             Settings.headlightControllerButton = null;
             Settings.headlightBindingConfigured = false;
-            SaveSettings();
+            Settings.headlightBindingRevision = 2;
+            if (SaveSettings())
+                return true;
+
+            Settings.headlightToggleEnabled = previousEnabled;
+            Settings.headlightKeyboardKey = previousKeyboard;
+            Settings.headlightControllerButton = previousController;
+            Settings.headlightBindingConfigured = previousConfigured;
+            Settings.headlightBindingRevision = previousRevision;
+            return false;
         }
 
         private void UpdateHeadlightInputBinding()
@@ -1874,31 +2635,63 @@ namespace AlpineTuning
 
             if (_waitingForHeadlightKeyboardBinding || _waitingForHeadlightControllerBinding)
             {
+                // Escape is always the clear cancellation route and can never
+                // become the hotkey itself. This also prevents a garage Back
+                // press from being captured as a lighting binding.
+                if (Input.GetKeyDown(KeyCode.Escape))
+                {
+                    CancelHeadlightBindingCapture();
+                    return;
+                }
+
                 if (Time.unscaledTime > _headlightBindingCaptureDeadline)
                 {
-                    _waitingForHeadlightKeyboardBinding = false;
-                    _waitingForHeadlightControllerBinding = false;
+                    CompleteHeadlightBindingCapture(HeadlightBindingCaptureResult.TimedOut, false);
                     return;
                 }
 
                 KeyCode captured;
                 if (TryCaptureBindingKey(_waitingForHeadlightControllerBinding, out captured))
                 {
+                    bool previousEnabled = settings.headlightToggleEnabled;
+                    string previousKeyboard = settings.headlightKeyboardKey;
+                    string previousController = settings.headlightControllerButton;
+                    bool previousConfigured = settings.headlightBindingConfigured;
+                    int previousRevision = settings.headlightBindingRevision;
                     if (_waitingForHeadlightControllerBinding)
                         settings.headlightControllerButton = captured.ToString();
                     else
                         settings.headlightKeyboardKey = captured.ToString();
 
                     settings.headlightBindingConfigured = true;
+                    settings.headlightBindingRevision = 2;
                     settings.headlightToggleEnabled = true;
                     settings.Normalize();
-                    SaveSettings();
-                    _waitingForHeadlightKeyboardBinding = false;
-                    _waitingForHeadlightControllerBinding = false;
+                    bool saved = SaveSettings();
+                    if (!saved)
+                    {
+                        settings.headlightToggleEnabled = previousEnabled;
+                        settings.headlightKeyboardKey = previousKeyboard;
+                        settings.headlightControllerButton = previousController;
+                        settings.headlightBindingConfigured = previousConfigured;
+                        settings.headlightBindingRevision = previousRevision;
+                        MelonLogger.Warning("Headlight binding capture could not be saved; previous binding restored.");
+                    }
+                    CompleteHeadlightBindingCapture(
+                        saved
+                            ? HeadlightBindingCaptureResult.Saved
+                            : HeadlightBindingCaptureResult.SaveFailed,
+                        false);
                 }
 
                 return;
             }
+
+            // The garage owns Secondary/F (and controller context actions) while
+            // its tuning rail is open. Do not let a configured lighting hotkey
+            // consume the same physical input in that UI state.
+            if (AlpineNativeUi.IsGarageTuningOpen)
+                return;
 
             if (!settings.headlightToggleEnabled || Time.unscaledTime < _nextHeadlightToggleTime)
                 return;
@@ -1937,6 +2730,12 @@ namespace AlpineTuning
                 if (code == KeyCode.None || !Input.GetKeyDown(code))
                     continue;
 
+                if (code == KeyCode.Escape || code == KeyCode.Backspace ||
+                    code == KeyCode.Return || code == KeyCode.KeypadEnter ||
+                    code == KeyCode.Space || code == KeyCode.Tab ||
+                    IsReservedControllerUiButton(code))
+                    continue;
+
                 bool controller = code.ToString().StartsWith("Joystick", StringComparison.OrdinalIgnoreCase);
                 bool mouse = code.ToString().StartsWith("Mouse", StringComparison.OrdinalIgnoreCase);
                 if (controllerOnly != controller)
@@ -1951,11 +2750,26 @@ namespace AlpineTuning
             return false;
         }
 
+        private static bool IsReservedControllerUiButton(KeyCode code)
+        {
+            string name = code.ToString();
+            if (!name.StartsWith("Joystick", StringComparison.OrdinalIgnoreCase))
+                return false;
+
+            int marker = name.LastIndexOf("Button", StringComparison.OrdinalIgnoreCase);
+            if (marker < 0)
+                return false;
+
+            string suffix = name.Substring(marker + "Button".Length);
+            return string.Equals(suffix, "0", StringComparison.Ordinal) ||
+                   string.Equals(suffix, "1", StringComparison.Ordinal);
+        }
+
         internal bool ToggleHeadlightsForActiveSled(out string status)
         {
             status = null;
 
-            if (ActiveSO == null)
+            if (ActiveSO == null || ActiveController == null)
             {
                 status = "Headlight toggle skipped: no current sled.";
                 return false;
@@ -1974,50 +2788,38 @@ namespace AlpineTuning
                 return false;
             }
 
+            bool? previousMode = profile.headlightEnabled;
             profile.headlightEnabled = desired;
             string applyStatus;
-            UpdateCurrentSetup(profile, ActiveSO, out applyStatus);
+            if (!UpdateCurrentSetup(profile, ActiveSO, out applyStatus))
+            {
+                if (string.IsNullOrWhiteSpace(applyStatus) ||
+                    !applyStatus.StartsWith("Current Setup preserved;", StringComparison.OrdinalIgnoreCase))
+                {
+                    profile.headlightEnabled = previousMode;
+                }
+                status = string.IsNullOrWhiteSpace(applyStatus)
+                    ? "Headlight toggle could not be applied."
+                    : applyStatus;
+                return false;
+            }
+
             SetActiveHeadlightsEnabled(desired);
             status = desired ? "Headlights on." : "Headlights off.";
             return true;
         }
 
-        internal bool SetSetupHeadlightEnabled(TuneProfile profile, VehicleScriptableObject sled, bool enabled, out string status)
-        {
-            status = null;
-            if (profile == null || sled == null)
-            {
-                status = "Select a sled to edit headlights.";
-                return false;
-            }
-
-            profile.headlightEnabled = enabled;
-            bool updated = UpdateCurrentSetup(profile, sled, out status);
-            if (sled == ActiveSO)
-                SetActiveHeadlightsEnabled(enabled);
-
-            return updated;
-        }
-
-        internal bool ClearSetupHeadlightOverride(TuneProfile profile, VehicleScriptableObject sled, out string status)
-        {
-            status = null;
-            if (profile == null || sled == null)
-            {
-                status = "Select a sled to edit headlights.";
-                return false;
-            }
-
-            profile.headlightEnabled = null;
-            bool updated = UpdateCurrentSetup(profile, sled, out status);
-            if (updated)
-                status = "Headlights follow game time.";
-
-            return updated;
-        }
-
         internal bool AreActiveHeadlightsOn()
         {
+            // Light.enabled is only the rendered result. Native HeadLight.Refresh
+            // disables it during daylight and while the engine is stopped, so it
+            // cannot represent the rider's logical on/off selection.
+            if (ActiveController != null)
+                return ActiveController.isHeadlightOn;
+
+            if (_activeHeadlightOverride.HasValue)
+                return _activeHeadlightOverride.Value;
+
             var lights = SleddersGameBindings.GetHeadlightLights(ActiveController);
             if (lights == null || lights.Length == 0)
                 return false;
@@ -2033,6 +2835,47 @@ namespace AlpineTuning
 
         private void SetActiveHeadlightsEnabled(bool enabled)
         {
+            // UpdateGraphics passes this native switch to HeadLight.Refresh. That
+            // method owns the fade curve and SnowmobileStructure emissive material;
+            // changing only Light.enabled leaves the body glow and native state out
+            // of sync and is overwritten again on the next graphics update.
+            bool illuminate = enabled;
+            if (ActiveController != null)
+            {
+                ActiveController.isHeadlightOn = enabled;
+                illuminate = enabled && ActiveController.isEngineOn;
+
+                // Follow the exact native UpdateGraphics path. Refresh owns the
+                // fade curve, day/night gate, projected light and
+                // SnowmobileStructure.SetHeadlightEmission material channel.
+                HeadLight[] nativeHeadlights =
+                    ActiveController.GetComponentsInChildren<HeadLight>(true);
+                if (nativeHeadlights != null && nativeHeadlights.Length > 0)
+                {
+                    foreach (HeadLight headlight in nativeHeadlights)
+                    {
+                        if (headlight != null)
+                        {
+                            headlight.Refresh(illuminate);
+                            // Refresh intentionally applies the native time-of-day
+                            // gate. A saved Force On override is the one mode that
+                            // must remain visibly on during daylight; retain the
+                            // native fade/emission update, then override only the
+                            // projected light's daytime gate.
+                            if (_activeHeadlightOverride == true && illuminate)
+                            {
+                                Light projectedLight = headlight.GetComponent<Light>();
+                                if (projectedLight != null)
+                                    projectedLight.enabled = true;
+                            }
+                        }
+                    }
+                    return;
+                }
+            }
+
+            // Compatibility fallback for a future controller graph that exposes
+            // Light components but not the verified 1.1.6 HeadLight component.
             var lights = SleddersGameBindings.GetHeadlightLights(ActiveController);
             if (lights == null)
                 return;
@@ -2040,16 +2883,69 @@ namespace AlpineTuning
             foreach (var light in lights)
             {
                 if (light != null)
-                    light.enabled = enabled;
+                    light.enabled = illuminate;
             }
         }
 
         private void EnforceHeadlightOverride()
         {
-            if (ActiveSO == null || !_activeHeadlightOverride.HasValue)
+            if (ActiveSO == null)
                 return;
 
-            SetActiveHeadlightsEnabled(_activeHeadlightOverride.Value);
+            if (_activeHeadlightDefaults != null)
+            {
+                foreach (RuntimeHeadlightDefault defaults in _activeHeadlightDefaults.lights)
+                {
+                    if (defaults == null || defaults.light == null || !defaults.hasTunedValues)
+                        continue;
+
+                    defaults.light.color = defaults.tunedColor;
+                    defaults.light.range = defaults.tunedRange;
+                    defaults.light.spotAngle = defaults.tunedSpotAngle;
+                    defaults.light.transform.localRotation = defaults.tunedLocalRotation;
+
+                    // HeadLight.Refresh owns the fade curve and writes the
+                    // projected intensity from this native baseline. Reassert the
+                    // baseline without calling Refresh (or forcing full intensity)
+                    // a second time during LateUpdate.
+                    if (defaults.nativeHeadlight != null && NativeHeadlightBaseIntensityField != null)
+                        NativeHeadlightBaseIntensityField.SetValue(defaults.nativeHeadlight, defaults.tunedIntensity);
+                    else
+                        defaults.light.intensity = defaults.tunedIntensity;
+                }
+            }
+
+            if (!_activeHeadlightOverride.HasValue)
+                return;
+
+            bool logicalState = _activeHeadlightOverride.Value;
+            bool illuminate = logicalState &&
+                              (ActiveController == null || ActiveController.isEngineOn);
+            if (ActiveController != null)
+                ActiveController.isHeadlightOn = logicalState;
+
+            // Native UpdateGraphics has already advanced HeadLight.Refresh once
+            // this frame. Only Force On's deliberate daylight override and Force
+            // Off's hard disable are needed here; calling Refresh again would
+            // advance its fade curve multiple times per frame.
+            var lights = SleddersGameBindings.GetHeadlightLights(ActiveController);
+            if (lights == null)
+                return;
+            foreach (Light light in lights)
+            {
+                if (light != null)
+                    light.enabled = illuminate;
+            }
+        }
+
+        private void PrepareHeadlightOverride()
+        {
+            if (ActiveSO == null || ActiveController == null || !_activeHeadlightOverride.HasValue)
+                return;
+
+            // Publish the saved logical mode before native UpdateGraphics. The
+            // game's own Refresh call then advances fade/emission exactly once.
+            ActiveController.isHeadlightOn = _activeHeadlightOverride.Value;
         }
 
         private void CaptureHeadlightDefaultsForActiveController(bool replace)
@@ -2065,7 +2961,11 @@ namespace AlpineTuning
             if (!replace && _activeHeadlightDefaults != null && _headlightDefaultsControllerId == controllerId)
                 return;
 
-            var captured = new RuntimeHeadlightDefaults();
+            var captured = new RuntimeHeadlightDefaults
+            {
+                controller = ActiveController,
+                nativeSwitchEnabled = ActiveController.isHeadlightOn
+            };
             var lights = SleddersGameBindings.GetHeadlightLights(ActiveController);
             if (lights != null)
             {
@@ -2074,11 +2974,21 @@ namespace AlpineTuning
                     if (light == null)
                         continue;
 
+                    HeadLight nativeHeadlight = light.GetComponent<HeadLight>();
+                    float nativeIntensity = light.intensity;
+                    if (nativeHeadlight != null && NativeHeadlightBaseIntensityField != null)
+                    {
+                        object capturedIntensity = NativeHeadlightBaseIntensityField.GetValue(nativeHeadlight);
+                        if (capturedIntensity is float value && value > 0.0001f)
+                            nativeIntensity = value;
+                    }
+
                     captured.lights.Add(new RuntimeHeadlightDefault
                     {
                         light = light,
+                        nativeHeadlight = nativeHeadlight,
                         color = light.color,
-                        intensity = light.intensity,
+                        intensity = nativeIntensity,
                         range = light.range,
                         spotAngle = light.spotAngle,
                         localRotation = light.transform.localRotation,
@@ -2098,6 +3008,12 @@ namespace AlpineTuning
             if (_activeHeadlightDefaults == null)
                 return;
 
+            if (_activeHeadlightDefaults.controller != null)
+            {
+                _activeHeadlightDefaults.controller.isHeadlightOn =
+                    _activeHeadlightDefaults.nativeSwitchEnabled;
+            }
+
             foreach (var defaults in _activeHeadlightDefaults.lights)
             {
                 if (defaults == null || defaults.light == null)
@@ -2109,6 +3025,74 @@ namespace AlpineTuning
                 defaults.light.spotAngle = defaults.spotAngle;
                 defaults.light.transform.localRotation = defaults.localRotation;
                 defaults.light.enabled = defaults.enabled;
+                if (defaults.nativeHeadlight != null && NativeHeadlightBaseIntensityField != null)
+                    NativeHeadlightBaseIntensityField.SetValue(defaults.nativeHeadlight, defaults.intensity);
+                defaults.hasTunedValues = false;
+            }
+
+            SetActiveHeadlightsEnabled(_activeHeadlightDefaults.nativeSwitchEnabled);
+        }
+
+        private void CaptureAccessoryDefaultsForActiveController(bool replace)
+        {
+            if (ActiveController == null)
+            {
+                _activeAccessoryDefaults = null;
+                _accessoryDefaultsControllerId = int.MinValue;
+                return;
+            }
+
+            int controllerId = ActiveController.GetInstanceID();
+            if (!replace && _activeAccessoryDefaults != null && _accessoryDefaultsControllerId == controllerId)
+                return;
+
+            var captured = new RuntimeAccessoryDefaults();
+            var seen = new HashSet<int>();
+            object[] components = SleddersGameBindings.GetSnowmobileAccessories(ActiveController);
+            string[] fields = { "windshieldObjects", "snowFlapObjects", "rearPartObjects", "tunnelReflectors" };
+            if (components != null)
+            {
+                foreach (object component in components)
+                {
+                    if (component == null)
+                        continue;
+
+                    foreach (string field in fields)
+                    {
+                        object value = SleddersGameBindings.GetFieldValue<object>(component, field);
+                        if (!(value is System.Collections.IEnumerable objects))
+                            continue;
+
+                        foreach (object item in objects)
+                        {
+                            GameObject gameObject = item as GameObject;
+                            if (gameObject == null || !seen.Add(gameObject.GetInstanceID()))
+                                continue;
+
+                            captured.objects.Add(new RuntimeAccessoryDefault
+                            {
+                                gameObject = gameObject,
+                                active = gameObject.activeSelf
+                            });
+                        }
+                    }
+                }
+            }
+
+            _activeAccessoryDefaults = captured;
+            _accessoryDefaultsControllerId = controllerId;
+        }
+
+        private void RestoreAccessoryDefaults()
+        {
+            CaptureAccessoryDefaultsForActiveController(false);
+            if (_activeAccessoryDefaults == null)
+                return;
+
+            foreach (RuntimeAccessoryDefault defaults in _activeAccessoryDefaults.objects)
+            {
+                if (defaults != null && defaults.gameObject != null)
+                    defaults.gameObject.SetActive(defaults.active);
             }
         }
 
@@ -2122,30 +3106,56 @@ namespace AlpineTuning
             if (_activeHeadlightDefaults == null)
                 return;
 
+            bool nativeSwitchEnabled = _activeHeadlightOverride ??
+                                       _activeHeadlightDefaults.nativeSwitchEnabled;
+            if (ActiveController != null)
+                ActiveController.isHeadlightOn = nativeSwitchEnabled;
+
             float pitch = Mathf.Clamp(effect.headlightPitchOffsetDegrees, -5f, 5f);
             foreach (var defaults in _activeHeadlightDefaults.lights)
             {
                 if (defaults == null || defaults.light == null)
                     continue;
 
-                defaults.light.color = effect.hasHeadlightColor ? effect.headlightColor : defaults.color;
-                defaults.light.intensity = Mathf.Clamp(
-                    defaults.intensity * effect.headlightIntensityMultiplier,
-                    0f,
-                    Mathf.Max(defaults.intensity * 2.5f, defaults.intensity + 0.01f));
-                defaults.light.range = Mathf.Clamp(
-                    defaults.range * effect.headlightRangeMultiplier,
-                    0f,
-                    Mathf.Max(defaults.range * 2.0f, defaults.range + 0.01f));
-                defaults.light.spotAngle = Mathf.Clamp(
-                    defaults.spotAngle * effect.headlightSpotAngleMultiplier,
-                    10f,
-                    160f);
-                defaults.light.transform.localRotation = defaults.localRotation * Quaternion.Euler(pitch, 0f, 0f);
+                defaults.tunedColor = effect.hasHeadlightColor ? effect.headlightColor : defaults.color;
+                defaults.tunedIntensity = Mathf.Approximately(effect.headlightIntensityMultiplier, 1f)
+                    ? defaults.intensity
+                    : Mathf.Clamp(
+                        defaults.intensity * effect.headlightIntensityMultiplier,
+                        0f,
+                        Mathf.Max(defaults.intensity * 2.5f, defaults.intensity + 0.01f));
+                defaults.tunedRange = Mathf.Approximately(effect.headlightRangeMultiplier, 1f)
+                    ? defaults.range
+                    : Mathf.Clamp(
+                        defaults.range * effect.headlightRangeMultiplier,
+                        0f,
+                        Mathf.Max(defaults.range * 2.0f, defaults.range + 0.01f));
+                defaults.tunedSpotAngle = Mathf.Approximately(effect.headlightSpotAngleMultiplier, 1f)
+                    ? defaults.spotAngle
+                    : Mathf.Clamp(
+                        defaults.spotAngle * effect.headlightSpotAngleMultiplier,
+                        10f,
+                        160f);
+                defaults.tunedLocalRotation = Mathf.Approximately(pitch, 0f)
+                    ? defaults.localRotation
+                    : defaults.localRotation * Quaternion.Euler(pitch, 0f, 0f);
+                defaults.hasTunedValues = true;
+                defaults.light.color = defaults.tunedColor;
+                defaults.light.intensity = defaults.tunedIntensity;
+                defaults.light.range = defaults.tunedRange;
+                defaults.light.spotAngle = defaults.tunedSpotAngle;
+                defaults.light.transform.localRotation = defaults.tunedLocalRotation;
+                if (defaults.nativeHeadlight != null && NativeHeadlightBaseIntensityField != null)
+                    NativeHeadlightBaseIntensityField.SetValue(defaults.nativeHeadlight, defaults.tunedIntensity);
 
                 if (profile != null && profile.headlightEnabled.HasValue)
-                    defaults.light.enabled = profile.headlightEnabled.Value;
+                {
+                    defaults.light.enabled = profile.headlightEnabled.Value &&
+                                             (ActiveController == null || ActiveController.isEngineOn);
+                }
             }
+
+            SetActiveHeadlightsEnabled(nativeSwitchEnabled);
         }
 
         private void ApplyStabilizerRuntime(ControllerDefaults defaults, PartEffect effect)
@@ -2160,8 +3170,493 @@ namespace AlpineTuning
             if (defaults.hasTrackSpeedDamping)
                 SetFieldValue(stabilizer, "trackSpeedDamping", ClampVectorRelative(defaults.trackSpeedDamping.ToVector3() * effect.trackSpeedDampingMultiplier, defaults.trackSpeedDamping.ToVector3(), 0.50f, 1.80f));
 
-            if (defaults.hasTrackSpeedGyroMultiplier)
+            if (defaults.hasTrackSpeedGyroMultiplier &&
+                !Mathf.Approximately(effect.trackSpeedGyroMultiplier, 1f))
                 SetFieldValue(stabilizer, "trackSpeedGyroMultiplier", ClampRelative(defaults.trackSpeedGyroMultiplier * effect.trackSpeedGyroMultiplier, defaults.trackSpeedGyroMultiplier, 0.60f, 1.50f, 0.01f, 10f));
+        }
+
+        private void CaptureNativePhysicsDefaultsForActiveController(bool force = false)
+        {
+            if (ActiveController == null)
+            {
+                _activeNativePhysicsDefaults = null;
+                _nativePhysicsDefaultsControllerId = int.MinValue;
+                return;
+            }
+
+            int controllerId = ActiveController.GetInstanceID();
+            if (!force &&
+                _activeNativePhysicsDefaults != null &&
+                _nativePhysicsDefaultsControllerId == controllerId &&
+                ReferenceEquals(_activeNativePhysicsDefaults.controller, ActiveController))
+            {
+                return;
+            }
+
+            var captured = new RuntimeNativePhysicsDefaults
+            {
+                controller = ActiveController
+            };
+
+            foreach (Component mesh in SleddersGameBindings.GetMeshInterpreters(ActiveController))
+            {
+                CaptureNativePhysicsField(captured, mesh, "powerEfficiency", NativePhysicsValueKind.PowerEfficiency);
+                CaptureNativePhysicsField(captured, mesh, "drivetrainMinSpeed", NativePhysicsValueKind.DrivetrainSpeed);
+                CaptureNativePhysicsField(captured, mesh, "drivetrainMaxSpeed1", NativePhysicsValueKind.DrivetrainSpeed);
+                CaptureNativePhysicsField(captured, mesh, "drivetrainMaxSpeed2", NativePhysicsValueKind.DrivetrainSpeed);
+                CaptureNativePhysicsField(captured, mesh, "trackMass", NativePhysicsValueKind.TrackMass);
+                CaptureNativePhysicsField(captured, mesh, "breakForce", NativePhysicsValueKind.BrakeForce);
+            }
+
+            foreach (Component suspension in SleddersGameBindings.GetSuspensionControllers(ActiveController))
+            {
+                CaptureNativePhysicsField(captured, suspension, "antiRollBarFactor", NativePhysicsValueKind.AntiRollBar);
+                CaptureNativePhysicsField(captured, suspension, "trackRigidityFront", NativePhysicsValueKind.TrackRigidityFront);
+                CaptureNativePhysicsField(captured, suspension, "trackRigidityRear", NativePhysicsValueKind.TrackRigidityRear);
+                CaptureNativeShock(captured, suspension, "frontSuspension", true);
+                CaptureNativeShock(captured, suspension, "rearSuspension", false);
+            }
+
+            Component controllerBase = SleddersGameBindings.GetSnowmobileControllerBase(ActiveController);
+            if (controllerBase != null)
+            {
+                CaptureNativePhysicsField(captured, controllerBase, "skisMaxAngle", NativePhysicsValueKind.SkisMaxAngle);
+                CaptureNativePhysicsField(captured, controllerBase, "toeAngle", NativePhysicsValueKind.ToeAngle);
+
+                Component leftSki = SleddersGameBindings.GetControllerBaseSki(controllerBase, true);
+                Component rightSki = SleddersGameBindings.GetControllerBaseSki(controllerBase, false);
+                CaptureNativePhysicsField(captured, leftSki, "camberFactor", NativePhysicsValueKind.LeftCamberFactor);
+                CaptureNativePhysicsField(captured, rightSki, "camberFactor", NativePhysicsValueKind.RightCamberFactor);
+            }
+
+            foreach (Component skiContactBase in SleddersGameBindings.GetSkiHardSurfaceContactBases(ActiveController))
+                CaptureNativePhysicsField(captured, skiContactBase, "grip", NativePhysicsValueKind.SkiGrip);
+
+            foreach (Component trackContactBase in SleddersGameBindings.GetTrackHardSurfaceContactBases(ActiveController))
+                CaptureNativePhysicsField(captured, trackContactBase, "grip", NativePhysicsValueKind.TrackGrip);
+
+            _activeNativePhysicsDefaults = captured;
+            _nativePhysicsDefaultsControllerId = controllerId;
+
+            if (captured.fields.Count > 0)
+            {
+                MelonLogger.Msg(
+                    $"Captured {captured.fields.Count} native drivetrain/handling values.");
+            }
+            else
+            {
+                MelonLogger.Warning(
+                    "Native drivetrain/handling defaults were unavailable; only verified fallback tuning remains active.");
+            }
+        }
+
+        private static void CaptureNativeShock(
+            RuntimeNativePhysicsDefaults captured,
+            object suspension,
+            string fieldName,
+            bool front)
+        {
+            object shock = GetFieldValue<object>(suspension, fieldName);
+            if (!IsNativePhysicsTargetAlive(shock))
+                return;
+
+            CaptureNativeShockSettings(captured, shock, "soft", front);
+            CaptureNativeShockSettings(captured, shock, "hard", front);
+        }
+
+        private void CaptureNativePhysicsPreviewDefaults(SledDefaults defaults)
+        {
+            if (defaults == null || _activeNativePhysicsDefaults == null)
+                return;
+
+            var preview = new NativePhysicsDefaults();
+            SetPreviewValue(preview, "powerEfficiency", NativePhysicsValueKind.PowerEfficiency, "powerEfficiency");
+            SetPreviewValue(preview, "drivetrainMinSpeed", NativePhysicsValueKind.DrivetrainSpeed, "drivetrainMinSpeed");
+            SetPreviewValue(preview, "drivetrainMaxSpeed1", NativePhysicsValueKind.DrivetrainSpeed, "drivetrainMaxSpeed1");
+            SetPreviewValue(preview, "drivetrainMaxSpeed2", NativePhysicsValueKind.DrivetrainSpeed, "drivetrainMaxSpeed2");
+            SetPreviewValue(preview, "trackMass", NativePhysicsValueKind.TrackMass, "trackMass");
+            SetPreviewValue(preview, "brakeForce", NativePhysicsValueKind.BrakeForce, "breakForce");
+            SetPreviewValue(preview, "antiRollBar", NativePhysicsValueKind.AntiRollBar, null);
+            SetPreviewValue(preview, "trackRigidityFront", NativePhysicsValueKind.TrackRigidityFront, null);
+            SetPreviewValue(preview, "trackRigidityRear", NativePhysicsValueKind.TrackRigidityRear, null);
+            SetPreviewValue(preview, "frontSpring", NativePhysicsValueKind.FrontSpring, null);
+            SetPreviewValue(preview, "frontDamper", NativePhysicsValueKind.FrontDamper, null);
+            SetPreviewValue(preview, "frontCompressionDamping", NativePhysicsValueKind.FrontCompressionDamping, null);
+            SetPreviewValue(preview, "frontReboundDamping", NativePhysicsValueKind.FrontReboundDamping, null);
+            SetPreviewValue(preview, "rearSpring", NativePhysicsValueKind.RearSpring, null);
+            SetPreviewValue(preview, "rearDamper", NativePhysicsValueKind.RearDamper, null);
+            SetPreviewValue(preview, "rearCompressionDamping", NativePhysicsValueKind.RearCompressionDamping, null);
+            SetPreviewValue(preview, "rearReboundDamping", NativePhysicsValueKind.RearReboundDamping, null);
+            SetPreviewValue(preview, "skisMaxAngle", NativePhysicsValueKind.SkisMaxAngle, null);
+            SetPreviewValue(preview, "toeAngle", NativePhysicsValueKind.ToeAngle, null);
+            SetPreviewValue(preview, "leftCamberFactor", NativePhysicsValueKind.LeftCamberFactor, null);
+            SetPreviewValue(preview, "rightCamberFactor", NativePhysicsValueKind.RightCamberFactor, null);
+            SetPreviewValue(preview, "skiGrip", NativePhysicsValueKind.SkiGrip, null);
+            SetPreviewValue(preview, "trackGrip", NativePhysicsValueKind.TrackGrip, null);
+            defaults.nativePhysics = preview;
+        }
+
+        private void SetPreviewValue(
+            NativePhysicsDefaults preview,
+            string valueName,
+            NativePhysicsValueKind kind,
+            string fieldName)
+        {
+            if (preview == null || !TryMeanNativePhysicsValue(kind, fieldName, out float value))
+                return;
+
+            // Keep the serialized cache explicit and simple for UI/dyno readers.
+            switch (valueName)
+            {
+                case "powerEfficiency": preview.hasPowerEfficiency = true; preview.powerEfficiency = value; break;
+                case "drivetrainMinSpeed": preview.hasDrivetrainMinSpeed = true; preview.drivetrainMinSpeed = value; break;
+                case "drivetrainMaxSpeed1": preview.hasDrivetrainMaxSpeed1 = true; preview.drivetrainMaxSpeed1 = value; break;
+                case "drivetrainMaxSpeed2": preview.hasDrivetrainMaxSpeed2 = true; preview.drivetrainMaxSpeed2 = value; break;
+                case "trackMass": preview.hasTrackMass = true; preview.trackMass = value; break;
+                case "brakeForce": preview.hasBrakeForce = true; preview.brakeForce = value; break;
+                case "antiRollBar": preview.hasAntiRollBar = true; preview.antiRollBar = value; break;
+                case "trackRigidityFront": preview.hasTrackRigidityFront = true; preview.trackRigidityFront = value; break;
+                case "trackRigidityRear": preview.hasTrackRigidityRear = true; preview.trackRigidityRear = value; break;
+                case "frontSpring": preview.hasFrontSpring = true; preview.frontSpring = value; break;
+                case "frontDamper": preview.hasFrontDamper = true; preview.frontDamper = value; break;
+                case "frontCompressionDamping": preview.hasFrontCompressionDamping = true; preview.frontCompressionDamping = value; break;
+                case "frontReboundDamping": preview.hasFrontReboundDamping = true; preview.frontReboundDamping = value; break;
+                case "rearSpring": preview.hasRearSpring = true; preview.rearSpring = value; break;
+                case "rearDamper": preview.hasRearDamper = true; preview.rearDamper = value; break;
+                case "rearCompressionDamping": preview.hasRearCompressionDamping = true; preview.rearCompressionDamping = value; break;
+                case "rearReboundDamping": preview.hasRearReboundDamping = true; preview.rearReboundDamping = value; break;
+                case "skisMaxAngle": preview.hasSkisMaxAngle = true; preview.skisMaxAngle = value; break;
+                case "toeAngle": preview.hasToeAngle = true; preview.toeAngle = value; break;
+                case "leftCamberFactor": preview.hasLeftCamberFactor = true; preview.leftCamberFactor = value; break;
+                case "rightCamberFactor": preview.hasRightCamberFactor = true; preview.rightCamberFactor = value; break;
+                case "skiGrip": preview.hasSkiGrip = true; preview.skiGrip = value; break;
+                case "trackGrip": preview.hasTrackGrip = true; preview.trackGrip = value; break;
+            }
+        }
+
+        private bool TryMeanNativePhysicsValue(
+            NativePhysicsValueKind kind,
+            string fieldName,
+            out float value)
+        {
+            value = 0f;
+            if (_activeNativePhysicsDefaults == null)
+                return false;
+
+            double total = 0d;
+            int count = 0;
+            foreach (RuntimeNativePhysicsField field in _activeNativePhysicsDefaults.fields)
+            {
+                if (field == null || field.kind != kind ||
+                    (!string.IsNullOrEmpty(fieldName) &&
+                     !string.Equals(field.fieldName, fieldName, StringComparison.Ordinal)))
+                {
+                    continue;
+                }
+
+                if (double.IsNaN(field.value) || double.IsInfinity(field.value))
+                    continue;
+
+                total += field.value;
+                count++;
+            }
+
+            if (count == 0)
+                return false;
+
+            double mean = total / count;
+            if (mean < -float.MaxValue || mean > float.MaxValue)
+                return false;
+
+            value = (float)mean;
+            return !float.IsNaN(value) && !float.IsInfinity(value);
+        }
+
+        private static void CaptureNativeShockSettings(
+            RuntimeNativePhysicsDefaults captured,
+            object shock,
+            string fieldName,
+            bool front)
+        {
+            object settings = GetFieldValue<object>(shock, fieldName);
+            if (!IsNativePhysicsTargetAlive(settings))
+                return;
+
+            CaptureNativePhysicsField(
+                captured,
+                settings,
+                "springFactor",
+                front ? NativePhysicsValueKind.FrontSpring : NativePhysicsValueKind.RearSpring);
+            CaptureNativePhysicsField(
+                captured,
+                settings,
+                "damperFactor",
+                front ? NativePhysicsValueKind.FrontDamper : NativePhysicsValueKind.RearDamper);
+            CaptureNativePhysicsField(
+                captured,
+                settings,
+                "compressionRatio",
+                front ? NativePhysicsValueKind.FrontCompressionDamping : NativePhysicsValueKind.RearCompressionDamping);
+            CaptureNativePhysicsField(
+                captured,
+                settings,
+                "compressionFastRatio",
+                front ? NativePhysicsValueKind.FrontCompressionDamping : NativePhysicsValueKind.RearCompressionDamping);
+            CaptureNativePhysicsField(
+                captured,
+                settings,
+                "reboundRatio",
+                front ? NativePhysicsValueKind.FrontReboundDamping : NativePhysicsValueKind.RearReboundDamping);
+            CaptureNativePhysicsField(
+                captured,
+                settings,
+                "reboundFastRatio",
+                front ? NativePhysicsValueKind.FrontReboundDamping : NativePhysicsValueKind.RearReboundDamping);
+        }
+
+        private static void CaptureNativePhysicsField(
+            RuntimeNativePhysicsDefaults captured,
+            object target,
+            string fieldName,
+            NativePhysicsValueKind kind)
+        {
+            if (captured == null || !IsNativePhysicsTargetAlive(target))
+                return;
+
+            if (captured.fields.Any(existing =>
+                    ReferenceEquals(existing.target, target) &&
+                    string.Equals(existing.fieldName, fieldName, StringComparison.Ordinal)))
+            {
+                return;
+            }
+
+            if (!SleddersGameBindings.TryGetNumericField(target, fieldName, out var value))
+                return;
+
+            captured.fields.Add(new RuntimeNativePhysicsField
+            {
+                target = target,
+                fieldName = fieldName,
+                value = value,
+                kind = kind
+            });
+        }
+
+        private void RestoreNativePhysicsDefaults()
+        {
+            CaptureNativePhysicsDefaultsForActiveController();
+            RestoreCapturedNativePhysicsDefaults();
+        }
+
+        private void RestoreCapturedNativePhysicsDefaults()
+        {
+            if (_activeNativePhysicsDefaults == null)
+                return;
+
+            foreach (RuntimeNativePhysicsField field in _activeNativePhysicsDefaults.fields)
+            {
+                if (field == null || !IsNativePhysicsTargetAlive(field.target))
+                    continue;
+
+                SleddersGameBindings.SetNumericField(field.target, field.fieldName, field.value);
+            }
+        }
+
+        private void ApplyNativePhysicsRuntime(PartEffect effect)
+        {
+            if (effect == null)
+                return;
+
+            RestoreNativePhysicsDefaults();
+            if (_activeNativePhysicsDefaults == null)
+                return;
+
+            foreach (IGrouping<NativePhysicsSubsystem, RuntimeNativePhysicsField> subsystem in
+                     _activeNativePhysicsDefaults.fields
+                         .Where(field => field != null)
+                         .GroupBy(field => NativePhysicsSubsystemFor(field.kind)))
+            {
+                bool subsystemFailed = false;
+                foreach (RuntimeNativePhysicsField field in subsystem)
+                {
+                    if (!IsNativePhysicsTargetAlive(field.target))
+                        continue;
+
+                    float multiplier = NativePhysicsMultiplier(effect, field.kind);
+                    double tunedValue = ScaleNativePhysicsValue(field.value, multiplier, field.kind);
+                    if (!SleddersGameBindings.SetNumericField(field.target, field.fieldName, tunedValue))
+                    {
+                        subsystemFailed = true;
+                        break;
+                    }
+                }
+
+                if (!subsystemFailed)
+                    continue;
+
+                foreach (RuntimeNativePhysicsField field in subsystem)
+                {
+                    if (IsNativePhysicsTargetAlive(field.target))
+                        SleddersGameBindings.SetNumericField(field.target, field.fieldName, field.value);
+                }
+                MelonLogger.Warning(
+                    $"Native {subsystem.Key.ToString().ToLowerInvariant()} tuning was rolled back because one captured field became unavailable.");
+            }
+        }
+
+        internal static NativePhysicsSubsystem NativePhysicsSubsystemFor(NativePhysicsValueKind kind)
+        {
+            switch (kind)
+            {
+                case NativePhysicsValueKind.BrakeForce:
+                    return NativePhysicsSubsystem.Brake;
+                case NativePhysicsValueKind.AntiRollBar:
+                case NativePhysicsValueKind.TrackRigidityFront:
+                case NativePhysicsValueKind.TrackRigidityRear:
+                case NativePhysicsValueKind.FrontSpring:
+                case NativePhysicsValueKind.FrontDamper:
+                case NativePhysicsValueKind.FrontCompressionDamping:
+                case NativePhysicsValueKind.FrontReboundDamping:
+                case NativePhysicsValueKind.RearSpring:
+                case NativePhysicsValueKind.RearDamper:
+                case NativePhysicsValueKind.RearCompressionDamping:
+                case NativePhysicsValueKind.RearReboundDamping:
+                    return NativePhysicsSubsystem.Suspension;
+                case NativePhysicsValueKind.SkisMaxAngle:
+                case NativePhysicsValueKind.ToeAngle:
+                case NativePhysicsValueKind.LeftCamberFactor:
+                case NativePhysicsValueKind.RightCamberFactor:
+                    return NativePhysicsSubsystem.Steering;
+                case NativePhysicsValueKind.SkiGrip:
+                    return NativePhysicsSubsystem.SkiGrip;
+                case NativePhysicsValueKind.TrackGrip:
+                    return NativePhysicsSubsystem.TrackGrip;
+                default:
+                    return NativePhysicsSubsystem.Drivetrain;
+            }
+        }
+
+        private static float NativePhysicsMultiplier(PartEffect effect, NativePhysicsValueKind kind)
+        {
+            switch (kind)
+            {
+                case NativePhysicsValueKind.PowerEfficiency:
+                    return effect.nativePowerEfficiencyMultiplier;
+                case NativePhysicsValueKind.DrivetrainSpeed:
+                    return effect.nativeDrivetrainSpeedMultiplier;
+                case NativePhysicsValueKind.TrackMass:
+                    return effect.nativeTrackMassMultiplier;
+                case NativePhysicsValueKind.AntiRollBar:
+                    return effect.nativeAntiRollBarMultiplier;
+                case NativePhysicsValueKind.TrackRigidityFront:
+                    return effect.nativeTrackRigidityFrontMultiplier;
+                case NativePhysicsValueKind.TrackRigidityRear:
+                    return effect.nativeTrackRigidityRearMultiplier;
+                case NativePhysicsValueKind.FrontSpring:
+                    return effect.nativeFrontSpringMultiplier;
+                case NativePhysicsValueKind.FrontDamper:
+                    return effect.nativeFrontDamperMultiplier;
+                case NativePhysicsValueKind.FrontCompressionDamping:
+                    return effect.nativeFrontCompressionDampingMultiplier;
+                case NativePhysicsValueKind.FrontReboundDamping:
+                    return effect.nativeFrontReboundDampingMultiplier;
+                case NativePhysicsValueKind.RearSpring:
+                    return effect.nativeRearSpringMultiplier;
+                case NativePhysicsValueKind.RearDamper:
+                    return effect.nativeRearDamperMultiplier;
+                case NativePhysicsValueKind.RearCompressionDamping:
+                    return effect.nativeRearCompressionDampingMultiplier;
+                case NativePhysicsValueKind.RearReboundDamping:
+                    return effect.nativeRearReboundDampingMultiplier;
+                case NativePhysicsValueKind.BrakeForce:
+                    return effect.nativeBrakeForceMultiplier;
+                case NativePhysicsValueKind.SkisMaxAngle:
+                    return effect.nativeSkisMaxAngleMultiplier;
+                case NativePhysicsValueKind.ToeAngle:
+                    return effect.nativeToeAngleMultiplier;
+                case NativePhysicsValueKind.LeftCamberFactor:
+                case NativePhysicsValueKind.RightCamberFactor:
+                    return effect.nativeCamberFactorMultiplier;
+                case NativePhysicsValueKind.SkiGrip:
+                    return effect.nativeSkiGripMultiplier;
+                case NativePhysicsValueKind.TrackGrip:
+                    return effect.nativeTrackGripMultiplier;
+                default:
+                    return 1f;
+            }
+        }
+
+        internal static double ScaleNativePhysicsValue(
+            double baseline,
+            float multiplier,
+            NativePhysicsValueKind kind)
+        {
+            if (double.IsNaN(baseline) || double.IsInfinity(baseline) ||
+                float.IsNaN(multiplier) || float.IsInfinity(multiplier) ||
+                Math.Abs(baseline) < 0.0000001d)
+            {
+                return baseline;
+            }
+
+            float minimumMultiplier;
+            float maximumMultiplier;
+            switch (kind)
+            {
+                case NativePhysicsValueKind.PowerEfficiency:
+                case NativePhysicsValueKind.DrivetrainSpeed:
+                    minimumMultiplier = 0.75f;
+                    maximumMultiplier = 1.25f;
+                    break;
+                case NativePhysicsValueKind.TrackMass:
+                    minimumMultiplier = 0.75f;
+                    maximumMultiplier = 1.35f;
+                    break;
+                case NativePhysicsValueKind.BrakeForce:
+                    minimumMultiplier = 0.80f;
+                    maximumMultiplier = 1.20f;
+                    break;
+                case NativePhysicsValueKind.SkisMaxAngle:
+                    minimumMultiplier = 0.90f;
+                    maximumMultiplier = 1.10f;
+                    break;
+                case NativePhysicsValueKind.ToeAngle:
+                    minimumMultiplier = 0.70f;
+                    maximumMultiplier = 1.30f;
+                    break;
+                case NativePhysicsValueKind.LeftCamberFactor:
+                case NativePhysicsValueKind.RightCamberFactor:
+                    minimumMultiplier = 0.80f;
+                    maximumMultiplier = 1.20f;
+                    break;
+                case NativePhysicsValueKind.SkiGrip:
+                case NativePhysicsValueKind.TrackGrip:
+                    minimumMultiplier = 0.75f;
+                    maximumMultiplier = 1.35f;
+                    break;
+                case NativePhysicsValueKind.AntiRollBar:
+                case NativePhysicsValueKind.TrackRigidityFront:
+                case NativePhysicsValueKind.TrackRigidityRear:
+                    minimumMultiplier = 0.60f;
+                    maximumMultiplier = 1.60f;
+                    break;
+                default:
+                    minimumMultiplier = 0.65f;
+                    maximumMultiplier = 1.50f;
+                    break;
+            }
+
+            return baseline * Mathf.Clamp(multiplier, minimumMultiplier, maximumMultiplier);
+        }
+
+        private static bool IsNativePhysicsTargetAlive(object target)
+        {
+            if (target == null)
+                return false;
+
+            if (target is UnityEngine.Object unityObject)
+                return unityObject != null;
+
+            return true;
         }
 
         private void CaptureRuntimeDefaults(SledDefaults defaults, SnowmobileController controller)
@@ -2175,8 +3670,7 @@ namespace AlpineTuning
             CaptureFloat(controller, "clutchRpmMin", v => { defaults.controller.hasClutchRpmMin = true; defaults.controller.clutchRpmMin = v; });
             CaptureFloat(controller, "clutchRpmMax", v => { defaults.controller.hasClutchRpmMax = true; defaults.controller.clutchRpmMax = v; });
             CaptureFloat(controller, "minThrottleOnClutchEngagement", v => { defaults.controller.hasMinThrottleOnClutchEngagement = true; defaults.controller.minThrottleOnClutchEngagement = v; });
-            CaptureFloat(controller, "wheelieThreshold", v => { defaults.controller.hasWheelieThreshold = true; defaults.controller.wheelieThreshold = v; });
-
+            CaptureNativePhysicsPreviewDefaults(defaults);
             object stabilizer = GetStabilizer(controller);
             if (stabilizer == null)
                 return;
@@ -2216,9 +3710,11 @@ namespace AlpineTuning
             if (ActiveController == null)
                 return;
 
+            CaptureAccessoryDefaultsForActiveController(false);
             if (string.IsNullOrWhiteSpace(accessoryMode) ||
                 string.Equals(accessoryMode, "stock", StringComparison.OrdinalIgnoreCase))
             {
+                RestoreAccessoryDefaults();
                 return;
             }
 
@@ -2228,16 +3724,21 @@ namespace AlpineTuning
                 if (components == null || components.Length == 0)
                     return;
 
-                object accessories = components[0];
                 bool utility = accessoryMode == "utility";
                 bool raceTrim = accessoryMode == "race_trim";
 
                 if (utility || raceTrim)
                 {
-                    SetGameObjectListActive(accessories, "windshieldObjects", utility);
-                    SetGameObjectListActive(accessories, "snowFlapObjects", utility);
-                    SetGameObjectListActive(accessories, "rearPartObjects", utility);
-                    SetGameObjectListActive(accessories, "tunnelReflectors", utility);
+                    foreach (object accessories in components)
+                    {
+                        if (accessories == null)
+                            continue;
+
+                        SetGameObjectListActive(accessories, "windshieldObjects", utility);
+                        SetGameObjectListActive(accessories, "snowFlapObjects", utility);
+                        SetGameObjectListActive(accessories, "rearPartObjects", utility);
+                        SetGameObjectListActive(accessories, "tunnelReflectors", utility);
+                    }
                     return;
                 }
 
@@ -2245,7 +3746,7 @@ namespace AlpineTuning
             }
             catch (Exception ex)
             {
-                MelonLogger.Warning($"Accessory mode apply skipped: {ex.Message}");
+                MelonLogger.Warning($"Accessory mode apply skipped: {ex.GetType().Name}");
             }
         }
 
@@ -2280,6 +3781,25 @@ namespace AlpineTuning
             {
                 if (arg is VehicleScriptableObject sled)
                     return sled;
+            }
+
+            return null;
+        }
+
+        private static VehicleScriptableObject VehicleFromLocalInitArgs(object[] args)
+        {
+            if (args == null)
+                return null;
+
+            foreach (object argument in args)
+            {
+                if (argument is VehicleScriptableObject direct)
+                    return direct;
+
+                VehicleScriptableObject enveloped =
+                    SleddersGameBindings.GetFieldValue<VehicleScriptableObject>(argument, "KJFNKMCOKLL");
+                if (enveloped != null)
+                    return enveloped;
             }
 
             return null;
@@ -2320,15 +3840,79 @@ namespace AlpineTuning
             return SleddersGameBindings.GetVehicleFromController(controller);
         }
 
+        private void OnLocalSledInitializing(
+            SnowmobileController controller,
+            VehicleScriptableObject sled)
+        {
+            if (_shutdownComplete || sled == null || Store == null || Catalog == null)
+                return;
+
+            RegisterSelectableSled(sled, "local sled pre-initialization");
+            TryBuildDefaults();
+            RefreshStatDefaultsFromCleanLoad(sled);
+            EnsureDefaultsForSled(sled);
+
+            TuneProfile preserved =
+                Store.GetCurrentSetupForSled(GetSledKey(sled), GetVehicleId(sled)) ??
+                Store.GetActiveProfileForSled(GetSledKey(sled), GetVehicleId(sled));
+            if (preserved == null)
+                return;
+
+            // LocalInit copies VehicleScriptableObject values into the native body,
+            // track, skis and audio graph. Put the preserved setup on that source
+            // object before the copy occurs; the postfix then captures the newly
+            // initialized runtime baselines and applies live-only controller fields.
+            TuneProfile profile = TuneStore.Clone(preserved);
+            Catalog.EnsureProfileSelections(profile);
+            TuneComputation computation = ComputeProfile(profile, sled);
+            if (computation == null || computation.stats == null)
+            {
+                MelonLogger.Warning(computation?.unavailableReason ??
+                                    "Preserved Alpine setup could not be resolved before native initialization.");
+                return;
+            }
+            ApplyDefaultsToSled(sled, computation.baseDefaults);
+            ApplyStatsToSled(sled, computation);
+            ApplyEngineAudioToSled(sled, computation.audioDefaults, computation.audioSource);
+            MarkSledModifiedByAlpine(sled);
+
+            MelonLogger.Msg(
+                $"Prepared preserved Alpine setup before native initialization for {sled.name}.");
+        }
+
         private void OnLocalSledInitialized(SnowmobileController controller, Vector3 spawnPos, Quaternion spawnRot)
         {
+            if (_shutdownComplete)
+                return;
+
+            // LocalInit can announce a replacement before Unity destroys the old
+            // controller. Put every per-object Alpine mutation back first so the
+            // abandoned live graph cannot retain brake, geometry, grip, lighting,
+            // or accessory changes.
+            if (ActiveController != null && ActiveController != controller)
+            {
+                RestoreNativePhysicsDefaults();
+                ApplyHeadlightDefaults();
+                RestoreAccessoryDefaults();
+            }
+
             _activeHeadlightOverride = null;
             ActiveController = controller;
             ActiveSO = GetVehicleFromController(controller);
+            _activeSpawnValues = SpawnValueSignature.FromSled(ActiveSO);
+            _spawnValuesControllerId = controller != null
+                ? controller.GetInstanceID()
+                : int.MinValue;
             ActiveRespawn = controller != null ? controller.GetComponent<Respawnable>() : null;
             ActiveSpawnPos = spawnPos;
             ActiveSpawnRot = spawnRot;
             CaptureHeadlightDefaultsForActiveController(true);
+            CaptureAccessoryDefaultsForActiveController(true);
+            // ReCreateSnowmobile can rebuild the controller's child physics graph
+            // while retaining the same controller instance. LocalInit is the
+            // authoritative lifecycle boundary, so never reuse component targets
+            // captured before this initialization.
+            CaptureNativePhysicsDefaultsForActiveController(true);
 
             if (ActiveSO == null)
             {
@@ -2337,12 +3921,16 @@ namespace AlpineTuning
             }
 
             TryBuildDefaults();
+            RegisterSelectableSled(ActiveSO, "local sled initialization");
             RefreshStatDefaultsFromCleanLoad(ActiveSO);
-            EnsureDefaultsForSled(ActiveSO);
+            // LocalInit has just built a fresh native controller graph. Capture
+            // that exact controller/stabilizer baseline even though the prefix
+            // temporarily marked the source VSO as Alpine-modified.
+            EnsureDefaultsForSled(ActiveSO, true);
             bool appliedActive = TryApplyActiveProfileForCurrentSled();
             if (!appliedActive)
                 NotifyActiveTuneCleared(ActiveSO);
-            MelonLogger.Msg($"Detected local sled '{ActiveSO.name}' for Alpine Tuning 2.0.");
+            MelonLogger.Msg($"Detected local sled '{ActiveSO.name}' for Alpine Tuning {AlpineConstants.ModVersion}.");
         }
 
         private static T GetFieldValue<T>(object target, string fieldName)
@@ -2447,7 +4035,7 @@ namespace AlpineTuning
                 return;
             }
 
-            var defaults = Store.GetDefaults(GetSledKey(ActiveSO));
+            var defaults = Store.GetDefaults(GetSledKey(ActiveSO), GetVehicleId(ActiveSO));
             if (defaults == null || HasEngineAudioToken(defaults))
                 return;
 
@@ -2486,6 +4074,24 @@ namespace AlpineTuning
                 TryPopulateDefaultAudioToken(audioDefaults, audioSourceSO, false);
 
             if (!HasEngineAudioToken(audioDefaults))
+                return;
+
+            int vehicleControllerId = ActiveController != null
+                ? ActiveController.GetInstanceID()
+                : int.MinValue;
+            bool sameAsApplied =
+                vehicleControllerId != int.MinValue &&
+                vehicleControllerId == _lastAppliedEngineAudioVehicleControllerId &&
+                string.Equals(audioDefaults.engineAudioEnumType, _lastAppliedEngineAudioEnumType, StringComparison.Ordinal) &&
+                string.Equals(audioDefaults.engineAudioEnumName, _lastAppliedEngineAudioEnumName, StringComparison.Ordinal) &&
+                audioDefaults.engineAudioEnumRawValue == _lastAppliedEngineAudioEnumRawValue;
+            bool alreadyQueued =
+                _pendingEngineAudioApply &&
+                string.Equals(audioDefaults.engineAudioEnumType, _pendingEngineAudioEnumType, StringComparison.Ordinal) &&
+                string.Equals(audioDefaults.engineAudioEnumName, _pendingEngineAudioEnumName, StringComparison.Ordinal) &&
+                audioDefaults.engineAudioEnumRawValue == _pendingEngineAudioEnumRawValue;
+
+            if (sameAsApplied || alreadyQueued)
                 return;
 
             _pendingEngineAudioEnumType = audioDefaults.engineAudioEnumType;
@@ -2553,17 +4159,32 @@ namespace AlpineTuning
                     _pendingEngineAudioLoggedReady = true;
                 }
 
+                _lastAppliedEngineAudioVehicleControllerId = ActiveController != null
+                    ? ActiveController.GetInstanceID()
+                    : int.MinValue;
+                _lastAppliedEngineAudioEnumType = _pendingEngineAudioEnumType;
+                _lastAppliedEngineAudioEnumName = _pendingEngineAudioEnumName;
+                _lastAppliedEngineAudioEnumRawValue = _pendingEngineAudioEnumRawValue;
                 _pendingEngineAudioApply = false;
             }
             catch (Exception ex)
             {
                 _pendingEngineAudioApply = false;
-                MelonLogger.Warning($"Engine audio swap failed: {ex.Message}");
+                MelonLogger.Warning($"Engine audio swap failed: {ex.GetType().Name}");
+            }
+        }
+
+        [HarmonyPatch(typeof(VehicleSelectionUiController), "Close")]
+        private static class PatchGarageClose
+        {
+            public static bool Prefix(VehicleSelectionUiController __instance)
+            {
+                return AlpineNativeUi.AllowGarageControllerClose(__instance);
             }
         }
 
         [HarmonyPatch]
-        public static class PatchGarageSelectionItem
+        private static class PatchGarageSelectionItem
         {
             private const string MethodName = "JLLLALEALEK";
 
@@ -2585,13 +4206,13 @@ namespace AlpineTuning
                 }
                 catch (Exception ex)
                 {
-                    MelonLogger.Warning($"Garage selection hook skipped: {ex.Message}");
+                    MelonLogger.Warning($"Garage selection hook skipped: {ex.GetType().Name}");
                 }
             }
         }
 
         [HarmonyPatch]
-        public static class PatchGaragePreviewStats
+        private static class PatchGaragePreviewStats
         {
             private const string MethodName = "EAANABMPMLK";
 
@@ -2613,41 +4234,13 @@ namespace AlpineTuning
                 }
                 catch (Exception ex)
                 {
-                    MelonLogger.Warning($"Garage preview hook skipped: {ex.Message}");
+                    MelonLogger.Warning($"Garage preview hook skipped: {ex.GetType().Name}");
                 }
             }
         }
 
         [HarmonyPatch]
-        public static class PatchGarageDisplayStats
-        {
-            private const string MethodName = "DADIAJNKOCI";
-
-            public static bool Prepare()
-            {
-                return GetGarageSelectionMethod(MethodName) != null;
-            }
-
-            public static MethodBase TargetMethod()
-            {
-                return GetGarageSelectionMethod(MethodName);
-            }
-
-            public static void Postfix(VehicleSelectionUiController __instance, object[] __args)
-            {
-                try
-                {
-                    NotifyGarageSelectionFromArgs(__instance, __args, "garage display");
-                }
-                catch (Exception ex)
-                {
-                    MelonLogger.Warning($"Garage display hook skipped: {ex.Message}");
-                }
-            }
-        }
-
-        [HarmonyPatch]
-        public static class PatchGarageCustomizationRebuild
+        private static class PatchGarageCustomizationRebuild
         {
             private const string MethodName = "RebuildCustomizationView";
 
@@ -2669,14 +4262,28 @@ namespace AlpineTuning
                 }
                 catch (Exception ex)
                 {
-                    MelonLogger.Warning($"Garage customization hook skipped: {ex.Message}");
+                    MelonLogger.Warning($"Garage customization hook skipped: {ex.GetType().Name}");
                 }
             }
         }
 
         [HarmonyPatch(typeof(SnowmobileController), "LocalInit")]
-        public static class PatchLocalInit
+        private static class PatchLocalInit
         {
+            public static void Prefix(SnowmobileController __instance, object[] __args)
+            {
+                try
+                {
+                    Instance?.OnLocalSledInitializing(
+                        __instance,
+                        VehicleFromLocalInitArgs(__args));
+                }
+                catch (Exception ex)
+                {
+                    MelonLogger.Error($"Alpine LocalInit preparation failed: {ex.GetType().Name}");
+                }
+            }
+
             public static void Postfix(SnowmobileController __instance, Vector3 KMFHFHOFBFH, Quaternion LPNJFGKBIIC)
             {
                 try
@@ -2685,18 +4292,10 @@ namespace AlpineTuning
                 }
                 catch (Exception ex)
                 {
-                    MelonLogger.Error($"Alpine LocalInit patch failed: {ex}");
+                    MelonLogger.Error($"Alpine LocalInit patch failed: {ex.GetType().Name}");
                 }
             }
         }
 
-        [HarmonyPatch(typeof(PauseUIController), "Pause")]
-        public static class PatchPauseOpen
-        {
-            public static void Postfix(PauseUIController __instance)
-            {
-                AlpineNativeUi.AttachToPause(Instance, __instance);
-            }
-        }
     }
 }

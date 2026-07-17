@@ -6,7 +6,6 @@ namespace AlpineTuning
         public const float PoundsPerKilogram = 2.20462262f;
         public const float KilowattsPerHorsepower = 0.745699872f;
         public const float PoundFeetPerNewtonMeter = 0.737562149f;
-        public const float KilopascalsPerPsi = 6.89476f;
 
         public static float InchesToMillimeters(float inches)
         {
@@ -33,11 +32,6 @@ namespace AlpineTuning
             return horsepower * KilowattsPerHorsepower;
         }
 
-        public static float NewtonMetersToPoundFeet(float newtonMeters)
-        {
-            return newtonMeters * PoundFeetPerNewtonMeter;
-        }
-
         public static string FormatWeight(float kilograms, AlpineDisplayUnits units)
         {
             return units == AlpineDisplayUnits.Imperial
@@ -60,11 +54,5 @@ namespace AlpineTuning
                 : $"{HorsepowerToKilowatts(horsepower):F0} kW";
         }
 
-        public static string FormatTorque(float newtonMeters, AlpineDisplayUnits units)
-        {
-            return units == AlpineDisplayUnits.Imperial
-                ? $"{NewtonMetersToPoundFeet(newtonMeters):F0} lb-ft"
-                : $"{newtonMeters:F0} Nm";
-        }
     }
 }

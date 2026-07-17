@@ -120,9 +120,9 @@ All rights reserved.
     permission to combine, link, and distribute the Software with such third-party
     components solely as required to build, run, and use the Software as distributed.
 
-    All required third-party license texts, notices, and attributions are provided in:
-
-        /licenses/THIRD_PARTY_LICENSES.txt
+    Runtime dependency binaries are not bundled with this repository or release;
+    they are resolved from the user's existing Sledders and MelonLoader
+    installations. Their license texts and notices remain with those distributions.
 
     Each third-party component remains subject to its own license, and You must
     comply with those licenses independently in addition to this license.

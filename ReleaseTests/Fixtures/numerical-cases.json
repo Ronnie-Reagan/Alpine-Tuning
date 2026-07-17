@@ -1,0 +1,14 @@
+{
+  "factoryStanceMillimeters": 939.8,
+  "factoryStanceInches": 37.0,
+  "stanceTrimMeters": 0.05,
+  "stanceTrimMillimeters": 50.0,
+  "driveHorsepower": 150.0,
+  "driveEfficiency": 0.92,
+  "driveMinimumSpeed": 1.0,
+  "driveTaperStart": 52.77778,
+  "driveTaperEnd": 58.33334,
+  "nativePowerConversion": 782.7273,
+  "torqueConversionMetric": 9549.2966,
+  "torqueConversionImperial": 5252.113
+}

@@ -11,7 +11,6 @@ namespace AlpineTuning
 {
     internal class AlpinePeerSharing
     {
-        private const float PeerDiagIntervalSeconds = 30f;
         private const float PeerHelloIntervalSeconds = 30f;
 
         private readonly AlpineTuningMod _mod;
@@ -28,7 +27,6 @@ namespace AlpineTuning
         private TuneProfile _activeProfile;
         private bool _initialized;
         private bool _loggedUnavailable;
-        private float _nextPeerDiagTime;
         private float _nextHelloTime;
         private float _nextRemoteApplyTime;
         private float _nextSteamP2PBlockWarningTime;
@@ -43,17 +41,7 @@ namespace AlpineTuning
 
         public string LocalName
         {
-            get
-            {
-                try
-                {
-                    return SteamClient.IsValid ? SteamClient.Name : null;
-                }
-                catch
-                {
-                    return null;
-                }
-            }
+            get { return AlpineConstants.DefaultProfileAuthor; }
         }
 
         public IEnumerable<RemoteTuneSummary> RemoteSummaries => _remoteSummaries.Values;
@@ -92,7 +80,7 @@ namespace AlpineTuning
             }
             catch (Exception ex)
             {
-                LogUnavailableOnce($"Peer tune sharing unavailable: {ex.Message}");
+                LogUnavailableOnce($"Peer tune sharing unavailable: {ex.GetType().Name}");
             }
         }
 
@@ -114,11 +102,6 @@ namespace AlpineTuning
             _internalTransport.Update();
             UpdateSelectedTransportMode();
 
-            if (UnityEngine.Time.unscaledTime >= _nextPeerDiagTime)
-            {
-                _nextPeerDiagTime = UnityEngine.Time.unscaledTime + PeerDiagIntervalSeconds;
-                LogPeerTransportDiagnostics();
-            }
             PollPackets();
             CheckRequestTimeouts();
 
@@ -249,7 +232,7 @@ namespace AlpineTuning
             StatusMessage = sent ? "Broadcast active Alpine tune." : "Active tune is ready, but no peers were discovered.";
 
             if (sent)
-                MelonLogger.Msg($"Alpine active tune broadcast sent: {clone.name} ({clone.profileId}).");
+                MelonLogger.Msg("Alpine active tune broadcast sent.");
 
             return sent;
         }
@@ -360,7 +343,7 @@ namespace AlpineTuning
                     state.payloadRequested = true;
 
                 StatusMessage = "Remote active tune payload requested.";
-                MelonLogger.Msg($"Requested Alpine active tune payload from {peerId}.");
+                MelonLogger.Msg("Requested Alpine active tune payload.");
             }
             else
             {
@@ -368,20 +351,6 @@ namespace AlpineTuning
             }
 
             return sent;
-        }
-
-        public bool TryGetRemoteActivePayload(ulong peerId, out TuneProfile profile)
-        {
-            profile = null;
-            if (peerId == 0 || !_remoteActiveStates.TryGetValue(peerId, out var state) || state == null)
-                return false;
-
-            string key = ActivePayloadKey(peerId, state.profileId, state.checksum);
-            if (!_remoteActivePayloads.TryGetValue(key, out var cached) || cached == null)
-                return false;
-
-            profile = TuneStore.Clone(cached);
-            return true;
         }
 
         public bool TryGetRemoteActiveState(ulong peerId, out RemoteActiveTuneState state)
@@ -536,7 +505,7 @@ namespace AlpineTuning
             }
             catch (Exception ex)
             {
-                MelonLogger.Warning($"Alpine peer packet polling failed: {ex.Message}");
+                MelonLogger.Warning($"Alpine peer packet polling failed: {ex.GetType().Name}");
             }
         }
 
@@ -559,7 +528,7 @@ namespace AlpineTuning
                 ulong packetSender = packet.SteamId.Value;
                 if (!LooksLikeSteam64(packetSender))
                 {
-                    MelonLogger.Warning($"[AlpinePeerDiag] Ignored Steam P2P packet from non-Steam64 sender {packetSender}.");
+                    MelonLogger.Warning("Ignored Alpine Steam P2P packet with an invalid sender identity.");
                     return;
                 }
 
@@ -576,7 +545,7 @@ namespace AlpineTuning
             }
             catch (Exception ex)
             {
-                MelonLogger.Warning($"Alpine peer packet ignored: {ex.Message}");
+                MelonLogger.Warning($"Alpine peer packet ignored: {ex.GetType().Name}");
             }
         }
 
@@ -609,7 +578,7 @@ namespace AlpineTuning
             }
             catch (Exception ex)
             {
-                MelonLogger.Warning($"Alpine internal peer packet ignored: {ex.Message}");
+                MelonLogger.Warning($"Alpine internal peer packet ignored: {ex.GetType().Name}");
             }
         }
 
@@ -640,7 +609,6 @@ namespace AlpineTuning
                 message.activeState.senderId = senderId;
 
             TouchPeer(senderId, message.senderName, message.type);
-            MelonLogger.Msg($"[AlpinePeerDiag] Alpine message received: source={source}, senderSleddersClientId={message.senderSleddersClientId}, senderSteamId={message.senderSteamId}, type={message.type ?? "NULL"}");
 
             switch (message.type)
             {
@@ -791,7 +759,7 @@ namespace AlpineTuning
             if (!TuneStore.TryValidateProfileForCatalog(message.profile, _mod.Catalog, true, true, out var reason))
             {
                 StatusMessage = $"Received shared tune '{message.profile.name}' rejected: {reason}.";
-                MelonLogger.Warning(StatusMessage);
+                MelonLogger.Warning($"Received shared tune rejected: {reason}.");
                 return;
             }
 
@@ -893,7 +861,7 @@ namespace AlpineTuning
             TouchPeer(incoming.senderId, incoming.senderName, "active setup seen");
 
             if (changed)
-                MelonLogger.Msg($"Remote Alpine active tune summary received from {incoming.senderName ?? incoming.senderId.ToString()}: {incoming.profileName}.");
+                MelonLogger.Msg("Remote Alpine active tune summary received.");
 
             if (!incoming.hasPayload && !incoming.payloadRequested)
                 RequestActiveTune(incoming.senderId, incoming.profileId, incoming.checksum);
@@ -991,7 +959,7 @@ namespace AlpineTuning
             TouchPeer(message.senderId, message.senderName, "active setup received");
 
             StatusMessage = $"Received remote active tune payload '{clone.name}'.";
-            MelonLogger.Msg($"Remote Alpine active tune payload received from {message.senderName ?? message.senderId.ToString()}: {clone.name}.");
+            MelonLogger.Msg("Remote Alpine active tune payload received.");
             TryApplyRemoteActiveTune(state, clone, true);
         }
 
@@ -1017,7 +985,7 @@ namespace AlpineTuning
                 peer.lastSeenUnixTime = NowUnix();
             }
             StatusMessage = "Remote active Alpine tune cleared.";
-            MelonLogger.Msg($"Remote Alpine active tune cleared by {message.senderId}.");
+            MelonLogger.Msg("Remote Alpine active tune cleared.");
         }
 
         private bool TryApplyRemoteActiveTune(RemoteActiveTuneState state, TuneProfile profile, bool logStatus)
@@ -1041,9 +1009,9 @@ namespace AlpineTuning
             {
                 _lastRemoteApplyStatus[state.senderId] = state.applyStatus;
                 if (applied)
-                    MelonLogger.Msg($"Remote Alpine tune applied for {state.senderName ?? state.senderId.ToString()}: {state.applyStatus}");
+                    MelonLogger.Msg($"Remote Alpine tune applied: {state.applyStatus}");
                 else
-                    MelonLogger.Msg($"Remote Alpine tune waiting for {state.senderName ?? state.senderId.ToString()}: {state.applyStatus}");
+                    MelonLogger.Msg($"Remote Alpine tune waiting: {state.applyStatus}");
             }
 
             StatusMessage = state.applyStatus;
@@ -1111,19 +1079,19 @@ namespace AlpineTuning
 
             if (!_initialized)
             {
-                MelonLogger.Warning($"[AlpinePeerDiag] SendToPeer blocked: not initialized. peerId={peerId}, type={message?.type ?? "NULL"}");
+                MelonLogger.Warning("Alpine peer send blocked because sharing is not initialized.");
                 return false;
             }
 
             if (peerId == 0)
             {
-                MelonLogger.Warning($"[AlpinePeerDiag] SendToPeer blocked: peerId is zero. type={message?.type ?? "NULL"}");
+                MelonLogger.Warning("Alpine peer send blocked because the destination identity is invalid.");
                 return false;
             }
 
             if (peerId == localSteamId || (localSleddersId != 0 && peerId == localSleddersId))
             {
-                MelonLogger.Msg($"[AlpinePeerDiag] SendToPeer blocked: peerId is local player. peerId={peerId}, type={message?.type ?? "NULL"}");
+                MelonLogger.Msg("Alpine peer send blocked because the destination is the local player.");
                 return false;
             }
 
@@ -1149,7 +1117,7 @@ namespace AlpineTuning
 
             if (steamId == localId)
             {
-                MelonLogger.Msg($"[AlpinePeerDiag] Steam send blocked: peerId is local Steam ID. peer={steamId}, type={message?.type ?? "NULL"}");
+                MelonLogger.Msg("Alpine Steam send blocked because the destination is the local player.");
                 return false;
             }
 
@@ -1162,7 +1130,8 @@ namespace AlpineTuning
                 if (bytes.Length > AlpineConstants.MaxPeerMessageBytes)
                 {
                     StatusMessage = "Alpine tune packet not sent because it exceeds the size limit.";
-                    MelonLogger.Warning($"[AlpinePeerDiag] Steam send blocked: packet too large. bytes={bytes.Length}, max={AlpineConstants.MaxPeerMessageBytes}");
+                    MelonLogger.Warning(
+                        $"Alpine Steam send blocked because the packet is too large ({bytes.Length}/{AlpineConstants.MaxPeerMessageBytes} bytes).");
                     return false;
                 }
 
@@ -1173,13 +1142,10 @@ namespace AlpineTuning
                     AlpineConstants.SteamP2PChannel,
                     P2PSend.Reliable);
 
-                MelonLogger.Msg(
-                    $"[AlpinePeerDiag] Steam SendP2PPacket result: accepted={accepted}, type={message?.type ?? "NULL"}, steamPeer={steamId}");
-
                 if (!accepted)
                 {
                     StatusMessage = "Alpine tune packet send rejected by Steam.";
-                    MelonLogger.Warning($"[AlpinePeerDiag] Steam rejected packet. steamPeer={steamId}, type={message?.type ?? "NULL"}");
+                    MelonLogger.Warning("Steam rejected an Alpine tune packet.");
                     return false;
                 }
 
@@ -1187,7 +1153,7 @@ namespace AlpineTuning
             }
             catch (Exception ex)
             {
-                MelonLogger.Warning($"Could not send Alpine tune packet to Steam peer {steamId}: {ex.GetType().Name}: {ex.Message}");
+                MelonLogger.Warning($"Could not send Alpine tune packet through Steam: {ex.GetType().Name}");
                 StatusMessage = "Alpine tune packet send failed.";
                 return false;
             }
@@ -1196,7 +1162,7 @@ namespace AlpineTuning
         private void BlockSteamForInternalId(ulong sleddersClientId, string messageType, bool warn)
         {
             _lastSteamP2PBlockReason =
-                $"Steam P2P disabled for Sledders internal client id {sleddersClientId}; type={messageType ?? "NULL"}";
+                "Steam P2P disabled because the destination uses an internal Sledders client identity.";
 
             if (!warn)
                 return;
@@ -1205,7 +1171,7 @@ namespace AlpineTuning
                 return;
 
             _nextSteamP2PBlockWarningTime = UnityEngine.Time.unscaledTime + 30f;
-            MelonLogger.Warning("[AlpinePeerDiag] " + _lastSteamP2PBlockReason);
+            MelonLogger.Warning(_lastSteamP2PBlockReason);
         }
 
         private IEnumerable<ulong> DiscoverPeerIds()
@@ -1239,87 +1205,19 @@ namespace AlpineTuning
                 return;
             }
 
-            _selectedTransportMode = AlpinePeerTransportMode.DiagnosticsOnly;
-        }
-
-        private void LogPeerTransportDiagnostics()
-        {
-            try
-            {
-                bool steamValid = false;
-                ulong localId = 0;
-                string localName = null;
-                bool packetAvailable = false;
-
-                try
-                {
-                    steamValid = SteamClient.IsValid;
-                    if (steamValid)
-                    {
-                        localId = SteamClient.SteamId.Value;
-                        localName = SteamClient.Name;
-                    }
-                }
-                catch (Exception ex)
-                {
-                    MelonLogger.Warning($"[AlpinePeerDiag] SteamClient read failed: {ex.GetType().Name}: {ex.Message}");
-                }
-
-                try
-                {
-                    packetAvailable = SteamNetworking.IsP2PPacketAvailable(AlpineConstants.SteamP2PChannel);
-                }
-                catch (Exception ex)
-                {
-                    MelonLogger.Warning($"[AlpinePeerDiag] IsP2PPacketAvailable failed: {ex.GetType().Name}: {ex.Message}");
-                }
-
-                MelonLogger.Msg("========== ALPINE PEER TRANSPORT DIAG ==========");
-                MelonLogger.Msg($"[AlpinePeerDiag] initialized={_initialized}");
-                MelonLogger.Msg($"[AlpinePeerDiag] steamValid={steamValid}");
-                MelonLogger.Msg($"[AlpinePeerDiag] localSteamId={localId}");
-                MelonLogger.Msg($"[AlpinePeerDiag] localName={localName ?? "NULL"}");
-                MelonLogger.Msg($"[AlpinePeerDiag] localSleddersClientId={SleddersGameBindings.GetLocalSleddersClientId()}");
-                MelonLogger.Msg($"[AlpinePeerDiag] localSleddersName={SleddersGameBindings.GetNetClientNickname(SleddersGameBindings.GetLocalSleddersClientId()) ?? "NULL"}");
-                MelonLogger.Msg($"[AlpinePeerDiag] p2pChannel={AlpineConstants.SteamP2PChannel}");
-                MelonLogger.Msg($"[AlpinePeerDiag] incomingPacketAvailableOnChannel={packetAvailable}");
-                MelonLogger.Msg($"[AlpinePeerDiag] bindingCapability={SleddersGameBindings.CapabilitySummary}");
-                MelonLogger.Msg($"[AlpinePeerDiag] selectedTransportMode={_selectedTransportMode}");
-                MelonLogger.Msg($"[AlpinePeerDiag] netClient.netInterface.ready={_internalTransport.ClientReady}");
-                MelonLogger.Msg($"[AlpinePeerDiag] internalTransport.ready={_internalTransport.IsReady}");
-                MelonLogger.Msg($"[AlpinePeerDiag] internalTransport.canSend={_internalTransport.CanSend}");
-                MelonLogger.Msg($"[AlpinePeerDiag] internalTransport.hostRelayReady={_internalTransport.HostRelayReady}");
-                MelonLogger.Msg($"[AlpinePeerDiag] internalTransport.binding={_internalTransport.BindingStatus}");
-                MelonLogger.Msg($"[AlpinePeerDiag] internalTransport.lastSend={_internalTransport.LastSendStatus}");
-                MelonLogger.Msg($"[AlpinePeerDiag] internalTransport.lastReceive={_internalTransport.LastReceiveStatus}");
-                MelonLogger.Msg($"[AlpinePeerDiag] steamP2PBlock={_lastSteamP2PBlockReason}");
-
-                var peers = SleddersGameBindings.DiscoverPeers(localId, false);
-                MelonLogger.Msg($"[AlpinePeerDiag] DiscoverPeers returned {peers.Length} peer(s).");
-
-                foreach (var peer in peers)
-                {
-                    if (peer == null)
-                        continue;
-
-                    MelonLogger.Msg(
-                        $"[AlpinePeerDiag] remotePeer sleddersClientId={(peer.hasInternalClientId ? peer.sleddersClientId.ToString() : "none")}, " +
-                        $"steamId={(peer.hasSteamId ? peer.steamId.ToString() : "none")}, " +
-                        $"nick={peer.name ?? "NULL"}");
-                }
-
-                if (peers.Length == 0)
-                    MelonLogger.Warning("[AlpinePeerDiag] ZERO remote peer IDs found. HELLO cannot be sent until NetClient reports remote Sledders client IDs.");
-
-                MelonLogger.Msg("========== ALPINE PEER TRANSPORT END ==========");
-            }
-            catch (Exception ex)
-            {
-                MelonLogger.Warning($"[AlpinePeerDiag] LogPeerTransportDiagnostics failed: {ex.GetType().Name}: {ex.Message}");
-            }
+            _selectedTransportMode = AlpinePeerTransportMode.Disabled;
         }
         public void Shutdown()
         {
+            try
+            {
+                _mod.RemoteReplication?.Shutdown();
+            }
+            catch (Exception ex)
+            {
+                MelonLogger.Warning($"Alpine remote runtime restoration skipped: {ex.GetType().Name}");
+            }
+
             try
             {
                 if (_initialized)
@@ -1328,7 +1226,7 @@ namespace AlpineTuning
             }
             catch (Exception ex)
             {
-                MelonLogger.Warning($"Alpine peer sharing unsubscribe skipped: {ex.Message}");
+                MelonLogger.Warning($"Alpine peer sharing unsubscribe skipped: {ex.GetType().Name}");
             }
 
             _initialized = false;
@@ -1705,7 +1603,7 @@ namespace AlpineTuning
             }
             catch (Exception ex)
             {
-                MelonLogger.Warning($"Could not accept Alpine P2P session: {ex.Message}");
+                MelonLogger.Warning($"Could not accept Alpine P2P session: {ex.GetType().Name}");
             }
         }
 

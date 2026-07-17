@@ -1,4 +1,5 @@
 using System;
+using System.Globalization;
 
 namespace AlpineTuning
 {
@@ -55,6 +56,25 @@ namespace AlpineTuning
             return null;
         }
 
+        public static bool HasNativeVehicleIdentity(string sledKey, string vehicleId)
+        {
+            if (string.IsNullOrWhiteSpace(vehicleId) ||
+                string.Equals(vehicleId, sledKey, StringComparison.OrdinalIgnoreCase))
+            {
+                return false;
+            }
+
+            // Sledders 1.1.6 ItemIdentifier.ToString() is the underlying Int32.
+            // Older Alpine builds stored GUID-like vehicleId strings, which must
+            // remain eligible for guarded sled-key migration.
+            return int.TryParse(
+                       vehicleId,
+                       NumberStyles.Integer,
+                       CultureInfo.InvariantCulture,
+                       out int nativeId) &&
+                   nativeId != 0;
+        }
+
         public bool Matches(VehicleScriptableObject sled)
         {
             if (sled == null)
@@ -72,6 +92,14 @@ namespace AlpineTuning
                 string.Equals(vehicleId, otherVehicleId, StringComparison.OrdinalIgnoreCase))
             {
                 return true;
+            }
+
+            // A different current ItemIdentifier is authoritative. Falling back
+            // to a shared Unity asset name here can bind two mod sleds together.
+            if (HasNativeVehicleIdentity(sledKey, vehicleId) ||
+                HasNativeVehicleIdentity(otherSledKey, otherVehicleId))
+            {
+                return false;
             }
 
             if (!string.IsNullOrWhiteSpace(sledKey) &&

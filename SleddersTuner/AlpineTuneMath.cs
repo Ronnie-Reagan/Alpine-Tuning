@@ -5,22 +5,27 @@ namespace AlpineTuning
 {
     internal static class AlpineTuneMath
     {
+        internal enum EstimatedEngineArchetype
+        {
+            Unknown,
+            TwoStrokeNaturallyAspirated,
+            TwoStrokeTurbo,
+            FourStrokeNaturallyAspirated,
+            FourStrokeTurbo
+        }
+
+        internal struct ResolvedClutchRange
+        {
+            public bool HasMinimum;
+            public float Minimum;
+            public bool HasMaximum;
+            public float Maximum;
+        }
+
         private const float HpMinMult = 0.60f;
         private const float HpMaxMult = 1.75f;
         private const float HpAbsoluteMin = 20f;
         private const float HpAbsoluteMax = 380f;
-
-        private const float PfMinMult = 0.55f;
-        private const float PfMaxMult = 1.40f;
-        private const float PfAbsoluteMin = 0.20f;
-        private const float PfAbsoluteMax = 2.50f;
-
-        private const float PowerFactorPartGainScale = 0.85f;
-        private const float PowerFactorFineTuneGainScale = 0.50f;
-        private const float PowerFactorAirEffect = 0.35f;
-        private const float AltitudeMaxMeters = 4500f;
-        private const float PressureRatioMin = 0.50f;
-        private const float PressureRatioMax = 1.00f;
 
         private const float LugMinMult = 0.50f;
         private const float LugMaxMult = 2.25f;
@@ -31,16 +36,13 @@ namespace AlpineTuning
         private const float FrictionMaxMult = 1.65f;
         private const float FrictionAbsoluteMin = 0.05f;
         private const float FrictionAbsoluteMax = 3.00f;
-        private const float SeaLevelPressureKpa = 101.325f;
-
         public static ResolvedStats ComputeStats(
             SledDefaults baseDefaults,
             SledDefaults engineDefaults,
             PartEffect effect,
             FineTuneSettings fine)
         {
-            EngineSimulationResult ignored;
-            return ComputeStats(baseDefaults, engineDefaults, null, effect, fine, null, out ignored);
+            return ComputeStats(baseDefaults, engineDefaults, null, effect, fine);
         }
 
         public static ResolvedStats ComputeStats(
@@ -48,15 +50,10 @@ namespace AlpineTuning
             SledDefaults engineDefaults,
             IEnumerable<TunePart> parts,
             PartEffect effect,
-            FineTuneSettings fine,
-            EngineSimulationInput simulationInput,
-            out EngineSimulationResult simulationResult)
+            FineTuneSettings fine)
         {
             if (baseDefaults == null || engineDefaults == null)
-            {
-                simulationResult = null;
                 return null;
-            }
 
             if (effect == null)
                 effect = new PartEffect();
@@ -70,12 +67,15 @@ namespace AlpineTuning
             float weightTrim = 1f + fine.weightTrimPercent / 100f;
 
             var gains = ComputePowerGainBreakdown(parts, effect, fine);
-            float hpBeforeEnvironment = engineDefaults.horsePower * GainToMultiplier(gains.TotalHorsepowerGain);
-            float pfBeforeEnvironment = engineDefaults.powerFactor * GainToMultiplier(gains.TotalPowerFactorGain);
-            simulationResult = ComputeEngineSimulation(simulationInput, effect, gains, hpBeforeEnvironment, pfBeforeEnvironment);
-
-            float hp = simulationResult.horsepowerAfterEnvironment;
-            float pf = simulationResult.powerFactorAfterEnvironment;
+            float hp = engineDefaults.horsePower * GainToMultiplier(gains.TotalHorsepowerGain);
+            // powerFactor is retained solely so old factory defaults can be
+            // restored exactly. The current game physics never reads it, so
+            // Alpine never tunes or presents it as a performance control.
+            float pf = baseDefaults.powerFactor;
+            // An engine swap carries the donor engine's native induction state.
+            // Alpine turbo parts may add forced induction, but the recipient
+            // chassis must not keep or erase the donor's factory turbo flag.
+            bool resolvedTurbo = engineDefaults.isTurboOn || effect.isTurbo;
             float lug = TrackSpecResolver.ResolveLugHeightMillimeters(baseDefaults, effect);
             float friction = baseDefaults.friction * effect.frictionMultiplier * tractionTrim;
             float weight = (baseDefaults.weight * effect.weightMultiplier + effect.weightOffset) * weightTrim;
@@ -94,15 +94,14 @@ namespace AlpineTuning
 
             float skiStance =
                 baseDefaults.skiStance +
-                effect.skiStanceOffset +
-                fine.skiStanceTrim;
+                (effect.skiStanceOffset + fine.skiStanceTrim) * 1000f;
 
             float skisXDistanceOffset =
                 baseDefaults.skisXDistanceOffset +
-                effect.skisXDistanceOffset;
+                effect.skisXDistanceOffset +
+                fine.skiStanceTrim;
 
             hp = ClampRelative(hp, engineDefaults.horsePower, HpMinMult, HpMaxMult, HpAbsoluteMin, HpAbsoluteMax);
-            pf = ClampRelative(pf, engineDefaults.powerFactor, PfMinMult, PfMaxMult, PfAbsoluteMin, PfAbsoluteMax);
             lug = ClampRelative(lug, baseDefaults.lugHeight, LugMinMult, LugMaxMult, LugAbsoluteMin, LugAbsoluteMax);
             friction = ClampRelative(friction, baseDefaults.friction, FrictionMinMult, FrictionMaxMult, FrictionAbsoluteMin, FrictionAbsoluteMax);
             if (baseDefaults.weight > 1f)
@@ -112,30 +111,254 @@ namespace AlpineTuning
 
             com = ClampVectorOffset(com, baseCom, new Vector3(0.10f, 0.24f, 0.28f));
             driverCom = ClampVectorOffset(driverCom, baseDriverCom, new Vector3(0.10f, 0.16f, 0.16f));
-            skiStance = ClampOffset(skiStance, baseDefaults.skiStance, 0.18f, 0f, 4f);
+            // VehicleScriptableObject.skiStance is millimetres. Persisted part
+            // offsets and the schema-2 fine trim intentionally remain metres.
+            skiStance = ClampOffset(skiStance, baseDefaults.skiStance, 180f, 0f, 4000f);
             skisXDistanceOffset = ClampOffset(skisXDistanceOffset, baseDefaults.skisXDistanceOffset, 0.12f, -1f, 1f);
+            bool hasResolvedMaxRpm = engineDefaults.hasMaxRpm &&
+                                     IsFinite(engineDefaults.maxRpm) && engineDefaults.maxRpm > 1000f;
+            float resolvedMaxRpm = hasResolvedMaxRpm ? engineDefaults.maxRpm : 0f;
+            if (!hasResolvedMaxRpm && baseDefaults.hasMaxRpm &&
+                IsFinite(baseDefaults.maxRpm) && baseDefaults.maxRpm > 1000f)
+            {
+                hasResolvedMaxRpm = true;
+                resolvedMaxRpm = baseDefaults.maxRpm;
+            }
 
             return new ResolvedStats
             {
                 horsePower = hp,
                 powerFactor = pf,
+                hasMaxRpm = hasResolvedMaxRpm,
+                maxRpm = hasResolvedMaxRpm ? Mathf.Clamp(resolvedMaxRpm, 3000f, 14000f) : 0f,
                 lugHeight = lug,
                 friction = friction,
                 weight = weight,
                 skiStance = skiStance,
                 skisXDistanceOffset = skisXDistanceOffset,
-                isTurboOn = baseDefaults.isTurboOn || effect.isTurbo,
+                isTurboOn = resolvedTurbo,
                 engineText = !string.IsNullOrWhiteSpace(effect.engineText)
                     ? effect.engineText
-                    : baseDefaults.engineText,
+                    : engineDefaults.engineText,
                 centerOfMassOffset = Vec3Data.From(com),
-                driverCenterOfMassOffset = Vec3Data.From(driverCom),
-                boostTargetPsi = simulationResult.boostTargetPsi,
-                boostLimitPsi = simulationResult.boostLimitPsi,
-                estimatedBoostPsi = simulationResult.estimatedBoostPsi,
-                altitudeCompensationPercent = simulationResult.turboAltitudeCompensation * 100f,
-                estimatedManifoldPressureKpa = simulationResult.estimatedManifoldPressureKpa
+                driverCenterOfMassOffset = Vec3Data.From(driverCom)
             };
+        }
+
+        internal static float NativeDeliveredTrackPower(
+            float horsepower,
+            float efficiency,
+            float driveInput,
+            float trackSpeed,
+            float taperStart,
+            float taperEnd)
+        {
+            if (!IsFinite(horsepower) || !IsFinite(efficiency) || !IsFinite(driveInput) ||
+                !IsFinite(trackSpeed) || !IsFinite(taperStart) || !IsFinite(taperEnd) ||
+                taperEnd <= taperStart)
+            {
+                return 0f;
+            }
+
+            float speed = Mathf.Abs(trackSpeed);
+            float taper = speed <= taperStart
+                ? 1f
+                : speed >= taperEnd
+                    ? 0f
+                    : 1f - Mathf.InverseLerp(taperStart, taperEnd, speed);
+            return Mathf.Max(0f, horsepower) * 782.7273f *
+                   Mathf.Max(0f, efficiency) * Mathf.Clamp01(driveInput) * taper;
+        }
+
+        internal static float NativeTrackForce(float power, float trackSpeed, float minimumSpeed)
+        {
+            if (!IsFinite(power) || !IsFinite(trackSpeed) || !IsFinite(minimumSpeed) || minimumSpeed <= 0f)
+                return 0f;
+            return Mathf.Max(0f, power) / Mathf.Max(Mathf.Abs(trackSpeed), minimumSpeed);
+        }
+
+        internal static bool TryGetEstimatedEngineCurve(
+            string engineName,
+            bool turbo,
+            out EstimatedEngineArchetype archetype,
+            out Vector2[] anchors)
+        {
+            anchors = null;
+            string token = (engineName ?? string.Empty).ToUpperInvariant();
+            bool fourStroke = token.Contains("ACE");
+            bool twoStroke = token.Contains("E-TEC") || token.Contains("ETEC") ||
+                             token.Contains("PATRIOT") || token.Contains("KITTY") ||
+                             token.Contains("LIBERTY") || token.Contains("TRIPLE");
+            if (!fourStroke && !twoStroke)
+            {
+                archetype = EstimatedEngineArchetype.Unknown;
+                return false;
+            }
+
+            if (fourStroke && turbo)
+            {
+                archetype = EstimatedEngineArchetype.FourStrokeTurbo;
+                anchors = new[]
+                {
+                    new Vector2(0f, .50f), new Vector2(.30f, .80f),
+                    new Vector2(.70f, 1f), new Vector2(1f, .94f)
+                };
+            }
+            else if (fourStroke)
+            {
+                archetype = EstimatedEngineArchetype.FourStrokeNaturallyAspirated;
+                anchors = new[]
+                {
+                    new Vector2(0f, .42f), new Vector2(.35f, .72f),
+                    new Vector2(.76f, 1f), new Vector2(1f, .88f)
+                };
+            }
+            else if (turbo)
+            {
+                archetype = EstimatedEngineArchetype.TwoStrokeTurbo;
+                anchors = new[]
+                {
+                    new Vector2(0f, .38f), new Vector2(.40f, .70f),
+                    new Vector2(.82f, 1f), new Vector2(1f, .92f)
+                };
+            }
+            else
+            {
+                archetype = EstimatedEngineArchetype.TwoStrokeNaturallyAspirated;
+                anchors = new[]
+                {
+                    new Vector2(0f, .30f), new Vector2(.45f, .62f),
+                    new Vector2(.86f, 1f), new Vector2(1f, .88f)
+                };
+            }
+            return true;
+        }
+
+        internal static float InterpolateEstimatedEngineCurve(Vector2[] anchors, float normalizedRpm)
+        {
+            if (anchors == null || anchors.Length == 0 || !IsFinite(normalizedRpm))
+                return 0f;
+            normalizedRpm = Mathf.Clamp01(normalizedRpm);
+            for (int i = 1; i < anchors.Length; i++)
+            {
+                if (normalizedRpm <= anchors[i].x)
+                {
+                    float t = Mathf.InverseLerp(anchors[i - 1].x, anchors[i].x, normalizedRpm);
+                    return Mathf.Lerp(anchors[i - 1].y, anchors[i].y, t);
+                }
+            }
+            return anchors[anchors.Length - 1].y;
+        }
+
+        internal static float ResolveEstimatedRedline(ResolvedStats stats)
+        {
+            float value = stats != null && stats.hasMaxRpm ? stats.maxRpm : 8500f;
+            if (!IsFinite(value) || value <= 1000f)
+                value = 8500f;
+            return Mathf.Clamp(value, 3000f, 14000f);
+        }
+
+        internal static ResolvedClutchRange ResolveClutchRange(
+            ControllerDefaults defaults,
+            PartEffect effect,
+            FineTuneSettings fine)
+        {
+            var result = new ResolvedClutchRange();
+            if (defaults == null)
+                return result;
+
+            float trimPercent = fine?.clutchTrimPercent ?? 0f;
+            if (!IsFinite(trimPercent))
+                trimPercent = 0f;
+            float trim = 1f + Mathf.Clamp(trimPercent, -10f, 10f) / 100f;
+            float minimumOffset = effect?.clutchRpmMinOffset ?? 0f;
+            float maximumOffset = effect?.clutchRpmMaxOffset ?? 0f;
+            if (!IsFinite(minimumOffset))
+                minimumOffset = 0f;
+            if (!IsFinite(maximumOffset))
+                maximumOffset = 0f;
+
+            result.HasMinimum = defaults.hasClutchRpmMin && IsFinite(defaults.clutchRpmMin);
+            result.HasMaximum = defaults.hasClutchRpmMax && IsFinite(defaults.clutchRpmMax);
+            bool modified = Mathf.Abs(trimPercent) > 0.0001f ||
+                            Mathf.Abs(minimumOffset) > 0.0001f ||
+                            Mathf.Abs(maximumOffset) > 0.0001f;
+            if (!modified)
+            {
+                result.Minimum = result.HasMinimum ? defaults.clutchRpmMin : 0f;
+                result.Maximum = result.HasMaximum ? defaults.clutchRpmMax : 0f;
+                return result;
+            }
+
+            if (result.HasMinimum)
+            {
+                result.Minimum = ClampRelative(
+                    (defaults.clutchRpmMin + minimumOffset) * trim,
+                    defaults.clutchRpmMin,
+                    0.75f,
+                    1.35f,
+                    0f,
+                    14000f);
+            }
+            if (result.HasMaximum)
+            {
+                result.Maximum = ClampRelative(
+                    (defaults.clutchRpmMax + maximumOffset) * trim,
+                    defaults.clutchRpmMax,
+                    0.75f,
+                    1.35f,
+                    0f,
+                    14000f);
+            }
+            if (result.HasMinimum && result.HasMaximum && result.Maximum < result.Minimum + 100f)
+                result.Maximum = Mathf.Min(14000f, result.Minimum + 100f);
+
+            return result;
+        }
+
+        internal static float ResolveRpmSensitivity(float baseline, PartEffect effect)
+        {
+            float rpmMultiplier = SanitizePositive(effect?.rpmSensitivityMultiplier ?? 1f, 1f);
+            float turboMultiplier = SanitizePositive(effect?.turboRpmResponseMultiplier ?? 1f, 1f);
+            if (Mathf.Approximately(rpmMultiplier, 1f) && Mathf.Approximately(turboMultiplier, 1f))
+                return baseline;
+            return ClampRelative(
+                baseline * rpmMultiplier * Mathf.Clamp(turboMultiplier, 0.70f, 1.35f),
+                baseline,
+                0.50f,
+                1.70f,
+                0.05f,
+                10f);
+        }
+
+        internal static float ResolveRpmSensitivityDown(float baseline, PartEffect effect)
+        {
+            float multiplier = SanitizePositive(effect?.rpmSensitivityDownMultiplier ?? 1f, 1f);
+            if (Mathf.Approximately(multiplier, 1f))
+                return baseline;
+            return ClampRelative(
+                baseline * multiplier,
+                baseline,
+                0.50f,
+                1.70f,
+                0.05f,
+                10f);
+        }
+
+        internal static float ResolveEstimatedCurveStartRpm(
+            float redline,
+            ControllerDefaults recipientController,
+            PartEffect effect,
+            FineTuneSettings fine)
+        {
+            redline = !IsFinite(redline) || redline <= 1000f
+                ? 8500f
+                : Mathf.Clamp(redline, 3000f, 14000f);
+            ResolvedClutchRange clutch = ResolveClutchRange(recipientController, effect, fine);
+            float start = clutch.HasMinimum && clutch.Minimum > 0f
+                ? clutch.Minimum
+                : redline * 0.45f;
+            return Mathf.Clamp(start, 0f, redline);
         }
 
         public static void MergeEffect(PartEffect target, PartEffect source)
@@ -144,7 +367,6 @@ namespace AlpineTuning
                 return;
 
             target.horsePowerMultiplier = ComposeAdditiveMultiplier(target.horsePowerMultiplier, source.horsePowerMultiplier);
-            target.powerFactorMultiplier = ComposeAdditiveMultiplier(target.powerFactorMultiplier, source.powerFactorMultiplier);
             target.lugHeightMultiplier *= source.lugHeightMultiplier;
             if (source.lugHeightTargetMm > 0.01f)
                 target.lugHeightTargetMm = source.lugHeightTargetMm;
@@ -162,24 +384,36 @@ namespace AlpineTuning
             target.throttleExponentDelta += source.throttleExponentDelta;
             target.rpmSensitivityMultiplier *= source.rpmSensitivityMultiplier;
             target.rpmSensitivityDownMultiplier *= source.rpmSensitivityDownMultiplier;
-            target.turboAltitudeCompensation = Mathf.Max(
-                Mathf.Clamp01(target.turboAltitudeCompensation),
-                Mathf.Clamp01(source.turboAltitudeCompensation));
-            target.boostResponseMultiplier = Mathf.Clamp(
-                target.boostResponseMultiplier * SanitizePositive(source.boostResponseMultiplier, 1f),
+            target.turboRpmResponseMultiplier = Mathf.Clamp(
+                target.turboRpmResponseMultiplier * SanitizePositive(source.turboRpmResponseMultiplier, 1f),
                 0.70f,
                 1.35f);
-            if (source.boostTargetPsi > 0.01f)
-                target.boostTargetPsi = source.boostTargetPsi;
-            if (source.boostLimitPsi > 0.01f)
-                target.boostLimitPsi = source.boostLimitPsi;
             target.clutchRpmMinOffset += source.clutchRpmMinOffset;
             target.clutchRpmMaxOffset += source.clutchRpmMaxOffset;
             target.minThrottleOnClutchEngagementOffset += source.minThrottleOnClutchEngagementOffset;
-            target.wheelieThresholdOffset += source.wheelieThresholdOffset;
             target.stabilizerDampingMultiplier *= source.stabilizerDampingMultiplier;
             target.trackSpeedDampingMultiplier *= source.trackSpeedDampingMultiplier;
             target.trackSpeedGyroMultiplier *= source.trackSpeedGyroMultiplier;
+            target.nativePowerEfficiencyMultiplier *= source.nativePowerEfficiencyMultiplier;
+            target.nativeDrivetrainSpeedMultiplier *= source.nativeDrivetrainSpeedMultiplier;
+            target.nativeTrackMassMultiplier *= source.nativeTrackMassMultiplier;
+            target.nativeAntiRollBarMultiplier *= source.nativeAntiRollBarMultiplier;
+            target.nativeTrackRigidityFrontMultiplier *= source.nativeTrackRigidityFrontMultiplier;
+            target.nativeTrackRigidityRearMultiplier *= source.nativeTrackRigidityRearMultiplier;
+            target.nativeFrontSpringMultiplier *= source.nativeFrontSpringMultiplier;
+            target.nativeFrontDamperMultiplier *= source.nativeFrontDamperMultiplier;
+            target.nativeFrontCompressionDampingMultiplier *= source.nativeFrontCompressionDampingMultiplier;
+            target.nativeFrontReboundDampingMultiplier *= source.nativeFrontReboundDampingMultiplier;
+            target.nativeRearSpringMultiplier *= source.nativeRearSpringMultiplier;
+            target.nativeRearDamperMultiplier *= source.nativeRearDamperMultiplier;
+            target.nativeRearCompressionDampingMultiplier *= source.nativeRearCompressionDampingMultiplier;
+            target.nativeRearReboundDampingMultiplier *= source.nativeRearReboundDampingMultiplier;
+            target.nativeBrakeForceMultiplier *= source.nativeBrakeForceMultiplier;
+            target.nativeSkisMaxAngleMultiplier *= source.nativeSkisMaxAngleMultiplier;
+            target.nativeToeAngleMultiplier *= source.nativeToeAngleMultiplier;
+            target.nativeCamberFactorMultiplier *= source.nativeCamberFactorMultiplier;
+            target.nativeSkiGripMultiplier *= source.nativeSkiGripMultiplier;
+            target.nativeTrackGripMultiplier *= source.nativeTrackGripMultiplier;
             if (source.hasHeadlightColor)
             {
                 target.hasHeadlightColor = true;
@@ -266,74 +500,16 @@ namespace AlpineTuning
 
             float fineGain = fine != null ? PercentToGain(fine.powerTrimPercent) : 0f;
             gains.fineTuneHorsepowerGain = fineGain;
-            gains.fineTunePowerFactorGain = fineGain * PowerFactorFineTuneGainScale;
             return gains;
-        }
-
-        private static EngineSimulationResult ComputeEngineSimulation(
-            EngineSimulationInput input,
-            PartEffect effect,
-            PowerGainBreakdown gains,
-            float horsepowerBeforeEnvironment,
-            float powerFactorBeforeEnvironment)
-        {
-            var result = new EngineSimulationResult
-            {
-                gains = gains ?? new PowerGainBreakdown(),
-                horsepowerBeforeEnvironment = SanitizePositive(horsepowerBeforeEnvironment, 0f),
-                powerFactorBeforeEnvironment = SanitizePositive(powerFactorBeforeEnvironment, 0f)
-            };
-
-            bool useAltitude = input != null && input.altitudeCompensationEnabled && input.hasAltitudeMeters;
-            result.altitudeMeters = useAltitude
-                ? Mathf.Clamp(Sanitize(input.altitudeMeters, 0f), 0f, AltitudeMaxMeters)
-                : 0f;
-
-            result.altitudePressureRatio = useAltitude
-                ? ComputePressureRatio(result.altitudeMeters)
-                : 1f;
-
-            bool turbo = effect != null && effect.isTurbo;
-            result.turboAltitudeCompensation = turbo && effect != null
-                ? Mathf.Clamp01(effect.turboAltitudeCompensation)
-                : 0f;
-
-            result.effectiveAirRatio = Mathf.Lerp(
-                result.altitudePressureRatio,
-                1f,
-                result.turboAltitudeCompensation);
-
-            result.effectiveAirRatio = Mathf.Clamp(
-                Sanitize(result.effectiveAirRatio, 1f),
-                PressureRatioMin,
-                1f);
-
-            float powerFactorAirRatio = Mathf.Lerp(1f, result.effectiveAirRatio, PowerFactorAirEffect);
-            result.loadFactor = ResolveLoadFactor(input);
-            result.horsepowerAfterEnvironment = result.horsepowerBeforeEnvironment * result.effectiveAirRatio;
-            result.powerFactorAfterEnvironment = result.powerFactorBeforeEnvironment * powerFactorAirRatio;
-            result.boostTargetPsi = turbo && effect != null
-                ? Mathf.Max(0f, Sanitize(effect.boostTargetPsi, 0f))
-                : 0f;
-            result.boostLimitPsi = turbo && effect != null
-                ? Mathf.Max(result.boostTargetPsi, Sanitize(effect.boostLimitPsi, result.boostTargetPsi))
-                : 0f;
-            result.estimatedBoostPsi = result.boostTargetPsi * result.loadFactor;
-            result.estimatedManifoldPressureKpa =
-                SeaLevelPressureKpa * result.altitudePressureRatio +
-                result.estimatedBoostPsi * UnitConversion.KilopascalsPerPsi;
-            return result;
         }
 
         private static void AddPartGains(PowerGainBreakdown gains, string category, PartEffect effect)
         {
             float horsepowerGain = MultiplierToGain(effect.horsePowerMultiplier);
-            float powerFactorGain = MultiplierToGain(effect.powerFactorMultiplier) * PowerFactorPartGainScale;
 
             if (string.Equals(category, PartCatalog.EngineCore, System.StringComparison.OrdinalIgnoreCase))
             {
                 gains.engineHorsepowerGain += horsepowerGain;
-                gains.enginePowerFactorGain += powerFactorGain;
                 return;
             }
 
@@ -341,42 +517,22 @@ namespace AlpineTuning
                 string.Equals(category, PartCatalog.EngineCrank, System.StringComparison.OrdinalIgnoreCase))
             {
                 gains.engineHorsepowerGain += horsepowerGain;
-                gains.enginePowerFactorGain += powerFactorGain;
                 return;
             }
 
             if (string.Equals(category, PartCatalog.Turbo, System.StringComparison.OrdinalIgnoreCase))
             {
                 gains.turboHorsepowerGain += horsepowerGain;
-                gains.turboPowerFactorGain += powerFactorGain;
                 return;
             }
 
             if (string.Equals(category, PartCatalog.Intake, System.StringComparison.OrdinalIgnoreCase))
             {
                 gains.intakeHorsepowerGain += horsepowerGain;
-                gains.intakePowerFactorGain += powerFactorGain;
                 return;
             }
 
             gains.otherHorsepowerGain += horsepowerGain;
-            gains.otherPowerFactorGain += powerFactorGain;
-        }
-
-        private static float ComputePressureRatio(float altitudeMeters)
-        {
-            float altitude = Mathf.Clamp(Sanitize(altitudeMeters, 0f), 0f, AltitudeMaxMeters);
-            float baseTerm = Mathf.Max(0.10f, 1f - 2.25577e-5f * altitude);
-            float ratio = Mathf.Pow(baseTerm, 5.25588f);
-            return Mathf.Clamp(Sanitize(ratio, 1f), PressureRatioMin, PressureRatioMax);
-        }
-
-        private static float ResolveLoadFactor(EngineSimulationInput input)
-        {
-            if (input != null && input.hasLoad01)
-                return Mathf.Clamp01(Sanitize(input.load01, 1f));
-
-            return 1f;
         }
 
         private static float ComposeAdditiveMultiplier(float currentMultiplier, float addedMultiplier)

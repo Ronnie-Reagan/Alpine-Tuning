@@ -8,8 +8,9 @@ namespace AlpineTuning
     internal static class AlpineConstants
     {
         public const int SchemaVersion = 2;
-        public const string ModVersion = "2026.06.13";
-        public const string CatalogVersion = "2026.06.v1";
+        public const string ModVersion = "2026.07.17";
+        public const string CatalogVersion = "2026.07.v2";
+        public const string DefaultProfileAuthor = "Alpine Rider";
         public static readonly bool PeerSharingTemporarilyDisabled = true;
         public const string PeerSharingPausedNotice =
             "Networked setup sharing is paused for this build. It may return if new P2P sharing methods are found.";
@@ -46,7 +47,7 @@ namespace AlpineTuning
     internal class AlpineCompatibilityReport
     {
         public string overallStatus;
-        public string assemblyPath;
+        public string assemblyFileName;
         public string assemblyLastWriteUtc;
         public long assemblyLengthBytes;
         public string assemblyLightHash;
@@ -87,15 +88,17 @@ namespace AlpineTuning
     [Serializable]
     internal class AlpineUserSettings
     {
+        private const int CurrentHeadlightBindingRevision = 2;
+        private const string DefaultHeadlightControllerBinding = "JoystickButton9";
+
         public int schemaVersion = AlpineConstants.SchemaVersion;
         public AlpineDisplayUnits units = AlpineDisplayUnits.Metric;
-        public bool advancedDetails;
-        public bool diagnosticSteamIdScanEnabled;
 
         public bool headlightToggleEnabled;
         public string headlightKeyboardKey;
         public string headlightControllerButton;
         public bool headlightBindingConfigured;
+        public int headlightBindingRevision;
 
         public bool shareMySetup = false;
         public bool alwaysShareMySetup = false;
@@ -110,6 +113,34 @@ namespace AlpineTuning
         public void Normalize()
         {
             schemaVersion = AlpineConstants.SchemaVersion;
+            if (!Enum.IsDefined(typeof(AlpineDisplayUnits), units))
+                units = AlpineDisplayUnits.Metric;
+
+            if (headlightBindingRevision < CurrentHeadlightBindingRevision)
+            {
+                bool noBinding = string.IsNullOrWhiteSpace(headlightKeyboardKey) &&
+                                 string.IsNullOrWhiteSpace(headlightControllerButton);
+                bool oldLeftStickDefault =
+                    string.Equals(headlightControllerButton, "JoystickButton7", StringComparison.OrdinalIgnoreCase) ||
+                    string.Equals(headlightControllerButton, "JoystickButton8", StringComparison.OrdinalIgnoreCase);
+                if (noBinding)
+                {
+                    headlightKeyboardKey = null;
+                    headlightControllerButton = DefaultHeadlightControllerBinding;
+                    headlightToggleEnabled = true;
+                    headlightBindingConfigured = true;
+                }
+                else if (oldLeftStickDefault)
+                {
+                    // Migrate only the superseded controller default. A rider may
+                    // also have an intentional keyboard binding, which must not be
+                    // erased as part of the right-stick default migration.
+                    headlightControllerButton = DefaultHeadlightControllerBinding;
+                    headlightToggleEnabled = true;
+                    headlightBindingConfigured = true;
+                }
+                headlightBindingRevision = CurrentHeadlightBindingRevision;
+            }
 
             if (!headlightBindingConfigured)
             {
@@ -147,7 +178,8 @@ namespace AlpineTuning
         private static bool IsLegacyDefaultHeadlightBinding(string value)
         {
             return string.Equals(value, "H", StringComparison.OrdinalIgnoreCase) ||
-                   string.Equals(value, "JoystickButton7", StringComparison.OrdinalIgnoreCase);
+                   string.Equals(value, "JoystickButton7", StringComparison.OrdinalIgnoreCase) ||
+                   string.Equals(value, "JoystickButton8", StringComparison.OrdinalIgnoreCase);
         }
     }
 
@@ -188,6 +220,8 @@ namespace AlpineTuning
         public string vehicleId;
         public float horsePower;
         public float powerFactor;
+        public bool hasMaxRpm;
+        public float maxRpm;
         public float lugHeight;
         public float friction;
         public float weight;
@@ -210,6 +244,7 @@ namespace AlpineTuning
         public string engineAudioEnumName;
         public int engineAudioEnumRawValue;
         public ControllerDefaults controller = new ControllerDefaults();
+        public NativePhysicsDefaults nativePhysics = new NativePhysicsDefaults();
 
         public static SledDefaults FromSled(VehicleScriptableObject so, string key)
         {
@@ -220,6 +255,8 @@ namespace AlpineTuning
                 vehicleId = AlpineTuningMod.GetVehicleId(so),
                 horsePower = so.horsePower,
                 powerFactor = so.powerFactor,
+                hasMaxRpm = !float.IsNaN(so.maxRpm) && !float.IsInfinity(so.maxRpm) && so.maxRpm > 1000f,
+                maxRpm = so.maxRpm,
                 lugHeight = so.lugHeight,
                 friction = so.coefficientOfFriction,
                 weight = so.weight,
@@ -257,14 +294,71 @@ namespace AlpineTuning
         public float clutchRpmMax;
         public bool hasMinThrottleOnClutchEngagement;
         public float minThrottleOnClutchEngagement;
-        public bool hasWheelieThreshold;
-        public float wheelieThreshold;
         public bool hasStabilizerDamping;
         public Vec3Data stabilizerDamping = new Vec3Data();
         public bool hasTrackSpeedDamping;
         public Vec3Data trackSpeedDamping = new Vec3Data();
         public bool hasTrackSpeedGyroMultiplier;
         public float trackSpeedGyroMultiplier;
+    }
+
+    /// <summary>
+    /// Optional values captured from a freshly initialized local sled. These are
+    /// informational factory references for previews and native-model graphs;
+    /// runtime mutation still uses per-component captures so asymmetric or
+    /// duplicated game objects can always be restored exactly.
+    /// </summary>
+    [Serializable]
+    internal class NativePhysicsDefaults
+    {
+        public bool hasPowerEfficiency;
+        public float powerEfficiency;
+        public bool hasDrivetrainMinSpeed;
+        public float drivetrainMinSpeed;
+        public bool hasDrivetrainMaxSpeed1;
+        public float drivetrainMaxSpeed1;
+        public bool hasDrivetrainMaxSpeed2;
+        public float drivetrainMaxSpeed2;
+        public bool hasTrackMass;
+        public float trackMass;
+        public bool hasBrakeForce;
+        public float brakeForce;
+
+        public bool hasAntiRollBar;
+        public float antiRollBar;
+        public bool hasTrackRigidityFront;
+        public float trackRigidityFront;
+        public bool hasTrackRigidityRear;
+        public float trackRigidityRear;
+        public bool hasFrontSpring;
+        public float frontSpring;
+        public bool hasFrontDamper;
+        public float frontDamper;
+        public bool hasFrontCompressionDamping;
+        public float frontCompressionDamping;
+        public bool hasFrontReboundDamping;
+        public float frontReboundDamping;
+        public bool hasRearSpring;
+        public float rearSpring;
+        public bool hasRearDamper;
+        public float rearDamper;
+        public bool hasRearCompressionDamping;
+        public float rearCompressionDamping;
+        public bool hasRearReboundDamping;
+        public float rearReboundDamping;
+
+        public bool hasSkisMaxAngle;
+        public float skisMaxAngle;
+        public bool hasToeAngle;
+        public float toeAngle;
+        public bool hasLeftCamberFactor;
+        public float leftCamberFactor;
+        public bool hasRightCamberFactor;
+        public float rightCamberFactor;
+        public bool hasSkiGrip;
+        public float skiGrip;
+        public bool hasTrackGrip;
+        public float trackGrip;
     }
 
     [Serializable]
@@ -275,10 +369,13 @@ namespace AlpineTuning
         public string catalogVersion = AlpineConstants.CatalogVersion;
         public string profileId;
         public string name;
+        [JsonProperty(DefaultValueHandling = DefaultValueHandling.Ignore)]
+        public bool usesAutomaticName;
         public string author;
         public string targetSledKey;
         public string targetVehicleId;
         public string donorSledKey;
+        public string donorVehicleId;
         public List<PartSelection> selectedParts = new List<PartSelection>();
         public FineTuneSettings fineTune = new FineTuneSettings();
         public ResolvedStats resolvedStats = new ResolvedStats();
@@ -298,10 +395,17 @@ namespace AlpineTuning
 
         public string GetPartId(string category)
         {
+            if (selectedParts == null)
+                return null;
+
             for (int i = 0; i < selectedParts.Count; i++)
             {
-                if (string.Equals(selectedParts[i].category, category, StringComparison.OrdinalIgnoreCase))
-                    return selectedParts[i].partId;
+                PartSelection selection = selectedParts[i];
+                if (selection != null &&
+                    string.Equals(selection.category, category, StringComparison.OrdinalIgnoreCase))
+                {
+                    return selection.partId;
+                }
             }
 
             return null;
@@ -309,11 +413,16 @@ namespace AlpineTuning
 
         public void SetPartId(string category, string partId)
         {
+            if (selectedParts == null)
+                selectedParts = new List<PartSelection>();
+
             for (int i = 0; i < selectedParts.Count; i++)
             {
-                if (string.Equals(selectedParts[i].category, category, StringComparison.OrdinalIgnoreCase))
+                PartSelection selection = selectedParts[i];
+                if (selection != null &&
+                    string.Equals(selection.category, category, StringComparison.OrdinalIgnoreCase))
                 {
-                    selectedParts[i].partId = partId;
+                    selection.partId = partId;
                     return;
                 }
             }
@@ -346,6 +455,8 @@ namespace AlpineTuning
     {
         public float horsePower;
         public float powerFactor;
+        public bool hasMaxRpm;
+        public float maxRpm;
         public float lugHeight;
         public float friction;
         public float weight;
@@ -355,11 +466,6 @@ namespace AlpineTuning
         public string engineText;
         public Vec3Data centerOfMassOffset = new Vec3Data();
         public Vec3Data driverCenterOfMassOffset = new Vec3Data();
-        public float boostTargetPsi;
-        public float boostLimitPsi;
-        public float estimatedBoostPsi;
-        public float altitudeCompensationPercent;
-        public float estimatedManifoldPressureKpa;
     }
 
     internal class TunePart
@@ -375,7 +481,6 @@ namespace AlpineTuning
     internal class PartEffect
     {
         public float horsePowerMultiplier = 1f;
-        public float powerFactorMultiplier = 1f;
         public float lugHeightMultiplier = 1f;
         public float lugHeightTargetMm;
         public float lugHeightOffset;
@@ -391,17 +496,33 @@ namespace AlpineTuning
         public float throttleExponentDelta;
         public float rpmSensitivityMultiplier = 1f;
         public float rpmSensitivityDownMultiplier = 1f;
-        public float turboAltitudeCompensation;
-        public float boostResponseMultiplier = 1f;
-        public float boostTargetPsi;
-        public float boostLimitPsi;
+        public float turboRpmResponseMultiplier = 1f;
         public float clutchRpmMinOffset;
         public float clutchRpmMaxOffset;
         public float minThrottleOnClutchEngagementOffset;
-        public float wheelieThresholdOffset;
         public float stabilizerDampingMultiplier = 1f;
         public float trackSpeedDampingMultiplier = 1f;
         public float trackSpeedGyroMultiplier = 1f;
+        public float nativePowerEfficiencyMultiplier = 1f;
+        public float nativeDrivetrainSpeedMultiplier = 1f;
+        public float nativeTrackMassMultiplier = 1f;
+        public float nativeAntiRollBarMultiplier = 1f;
+        public float nativeTrackRigidityFrontMultiplier = 1f;
+        public float nativeTrackRigidityRearMultiplier = 1f;
+        public float nativeFrontSpringMultiplier = 1f;
+        public float nativeFrontDamperMultiplier = 1f;
+        public float nativeFrontCompressionDampingMultiplier = 1f;
+        public float nativeFrontReboundDampingMultiplier = 1f;
+        public float nativeRearSpringMultiplier = 1f;
+        public float nativeRearDamperMultiplier = 1f;
+        public float nativeRearCompressionDampingMultiplier = 1f;
+        public float nativeRearReboundDampingMultiplier = 1f;
+        public float nativeBrakeForceMultiplier = 1f;
+        public float nativeSkisMaxAngleMultiplier = 1f;
+        public float nativeToeAngleMultiplier = 1f;
+        public float nativeCamberFactorMultiplier = 1f;
+        public float nativeSkiGripMultiplier = 1f;
+        public float nativeTrackGripMultiplier = 1f;
         public bool hasHeadlightColor;
         public Color headlightColor = Color.white;
         public float headlightIntensityMultiplier = 1f;
@@ -414,6 +535,7 @@ namespace AlpineTuning
     internal class TuneComputation
     {
         public ResolvedStats stats = new ResolvedStats();
+        public string unavailableReason;
         public bool requiresReload;
         public SledDefaults baseDefaults;
         public SledDefaults engineDefaults;
@@ -421,8 +543,6 @@ namespace AlpineTuning
         public VehicleScriptableObject audioSource;
         public List<TunePart> parts = new List<TunePart>();
         public PartEffect mergedEffect = new PartEffect();
-        public EngineSimulationInput simulationInput;
-        public EngineSimulationResult simulationResult;
     }
 
     internal class PowerGainBreakdown
@@ -432,12 +552,6 @@ namespace AlpineTuning
         public float intakeHorsepowerGain;
         public float otherHorsepowerGain;
         public float fineTuneHorsepowerGain;
-
-        public float enginePowerFactorGain;
-        public float turboPowerFactorGain;
-        public float intakePowerFactorGain;
-        public float otherPowerFactorGain;
-        public float fineTunePowerFactorGain;
 
         public float TotalHorsepowerGain
         {
@@ -451,50 +565,6 @@ namespace AlpineTuning
             }
         }
 
-        public float TotalPowerFactorGain
-        {
-            get
-            {
-                return enginePowerFactorGain +
-                       turboPowerFactorGain +
-                       intakePowerFactorGain +
-                       otherPowerFactorGain +
-                       fineTunePowerFactorGain;
-            }
-        }
-    }
-
-    internal class EngineSimulationInput
-    {
-        public bool altitudeCompensationEnabled;
-        public bool hasAltitudeMeters;
-        public float altitudeMeters;
-        public bool hasThrottle01;
-        public float throttle01;
-        public bool hasNormalizedRpm;
-        public float normalizedRpm;
-        public bool hasSpeedMetersPerSecond;
-        public float speedMetersPerSecond;
-        public bool hasLoad01;
-        public float load01;
-    }
-
-    internal class EngineSimulationResult
-    {
-        public PowerGainBreakdown gains = new PowerGainBreakdown();
-        public float altitudeMeters;
-        public float altitudePressureRatio = 1f;
-        public float turboAltitudeCompensation;
-        public float effectiveAirRatio = 1f;
-        public float loadFactor = 1f;
-        public float horsepowerBeforeEnvironment;
-        public float horsepowerAfterEnvironment;
-        public float powerFactorBeforeEnvironment;
-        public float powerFactorAfterEnvironment;
-        public float boostTargetPsi;
-        public float boostLimitPsi;
-        public float estimatedBoostPsi;
-        public float estimatedManifoldPressureKpa;
     }
 
     [Serializable]

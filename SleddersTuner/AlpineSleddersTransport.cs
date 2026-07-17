@@ -13,8 +13,7 @@ namespace AlpineTuning
     {
         Disabled,
         SteamP2P,
-        SleddersInternal,
-        DiagnosticsOnly
+        SleddersInternal
     }
 
     internal sealed class AlpineSleddersTransport
@@ -36,8 +35,6 @@ namespace AlpineTuning
         private object _clientInterface;
         private object _serverInterface;
         private object _serverReceiveInterface;
-        private MethodInfo _clientNewWriterMethod;
-        private MethodInfo _clientSendMethod;
         private MethodInfo _serverNewWriterMethod;
         private MethodInfo _serverSendMethod;
         private MethodInfo _serverSendListMethod;
@@ -142,8 +139,6 @@ namespace AlpineTuning
                 {
                     _clientInterface = clientInterface;
                     _clientRegistered = false;
-                    _clientNewWriterMethod = FindNoArgMethod(_clientInterface.GetType(), "MDNBFANMMHH");
-                    _clientSendMethod = FindSendMethod(_clientInterface.GetType());
                     _registerClientMethod = FindRegisterMethod(_clientInterface.GetType());
                     _unregisterClientMethod = FindUnregisterMethod(_clientInterface.GetType());
                 }
@@ -283,8 +278,8 @@ namespace AlpineTuning
             }
             catch (Exception ex)
             {
-                reason = "register failed: " + ex.GetType().Name + ": " + ex.Message;
-                MelonLogger.Warning("[AlpineInternalTransport] " + reason);
+                reason = "register failed: " + ex.GetType().Name;
+                MelonLogger.Warning($"[AlpineInternalTransport] Register failed: {ex.GetType().Name}");
                 return false;
             }
         }
@@ -301,7 +296,7 @@ namespace AlpineTuning
             }
             catch (Exception ex)
             {
-                MelonLogger.Warning($"[AlpineInternalTransport] Unregister skipped on {side}: {ex.GetType().Name}: {ex.Message}");
+                MelonLogger.Warning($"[AlpineInternalTransport] Unregister skipped on {side}: {ex.GetType().Name}");
             }
 
             registered = false;
@@ -381,7 +376,7 @@ namespace AlpineTuning
                     json = AddChunk(transportSenderId, sequence, index, count, totalBytes, payload);
                     if (json == null)
                     {
-                        LastReceiveStatus = $"chunk {index + 1}/{count} received from {transportSenderId}";
+                        LastReceiveStatus = $"chunk {index + 1}/{count} received";
                         return;
                     }
                 }
@@ -395,8 +390,8 @@ namespace AlpineTuning
             }
             catch (Exception ex)
             {
-                LastReceiveStatus = "receive failed: " + ex.GetType().Name + ": " + ex.Message;
-                MelonLogger.Warning("[AlpineInternalTransport] " + LastReceiveStatus);
+                LastReceiveStatus = "receive failed: " + ex.GetType().Name;
+                MelonLogger.Warning($"[AlpineInternalTransport] Receive failed: {ex.GetType().Name}");
             }
         }
 
@@ -475,7 +470,7 @@ namespace AlpineTuning
             }
 
             LastReceiveStatus =
-                $"received {(serverSide ? "server" : "client")} packet from transport={transportSenderId}, sender={logicalSender}, bytes={Encoding.UTF8.GetByteCount(json)}";
+                $"received {(serverSide ? "server" : "client")} packet, bytes={Encoding.UTF8.GetByteCount(json)}";
 
             _onPayload?.Invoke(logicalSender, json, serverSide ? "server" : "client");
 
@@ -526,35 +521,6 @@ namespace AlpineTuning
             return targets.ToList();
         }
 
-        private bool SendJsonToHost(string json, ulong targetClientId, bool broadcast)
-        {
-            if (_clientInterface == null || _clientSendMethod == null || _clientNewWriterMethod == null)
-            {
-                LastSendStatus = "blocked: client internal send method missing";
-                return false;
-            }
-
-            try
-            {
-                int packetCount = 0;
-                foreach (DataStreamWriter writer in BuildWriters(_clientInterface, _clientNewWriterMethod, json))
-                {
-                    _clientSendMethod.Invoke(_clientInterface, new[] { _deliveryReliableFragmented, (object)writer });
-                    packetCount++;
-                }
-
-                LastSendStatus =
-                    $"sent {packetCount} internal packet(s) client-to-host target={(broadcast ? "broadcast" : targetClientId.ToString())}";
-                return packetCount > 0;
-            }
-            catch (Exception ex)
-            {
-                LastSendStatus = "client send failed: " + ex.GetType().Name + ": " + ex.Message;
-                MelonLogger.Warning("[AlpineInternalTransport] " + LastSendStatus);
-                return false;
-            }
-        }
-
         private bool SendJsonFromServer(string json, List<ulong> targets)
         {
             if (_serverInterface == null ||
@@ -592,14 +558,13 @@ namespace AlpineTuning
                     }
                 }
 
-                LastSendStatus =
-                    $"sent {packetCount} internal packet(s) server-to-clients targets=[{string.Join(",", targets.Select(t => t.ToString()).ToArray())}]";
+                LastSendStatus = $"sent {packetCount} internal packet(s) server-to-clients";
                 return packetCount > 0;
             }
             catch (Exception ex)
             {
-                LastSendStatus = "server send failed: " + ex.GetType().Name + ": " + ex.Message;
-                MelonLogger.Warning("[AlpineInternalTransport] " + LastSendStatus);
+                LastSendStatus = "server send failed: " + ex.GetType().Name;
+                MelonLogger.Warning($"[AlpineInternalTransport] Server send failed: {ex.GetType().Name}");
                 return false;
             }
         }
@@ -684,7 +649,7 @@ namespace AlpineTuning
             }
             catch (Exception ex)
             {
-                LastSendStatus = "serialize failed: " + ex.GetType().Name + ": " + ex.Message;
+                LastSendStatus = "serialize failed: " + ex.GetType().Name;
                 return null;
             }
             finally
@@ -746,20 +711,6 @@ namespace AlpineTuning
         private MethodInfo FindNoArgMethod(Type type, string name)
         {
             return FindMethodInHierarchy(type, m => m.Name == name && m.GetParameters().Length == 0);
-        }
-
-        private MethodInfo FindSendMethod(Type type)
-        {
-            return FindMethodInHierarchy(type, m =>
-            {
-                if (m.Name != "FGFICFGOCDL" || _deliveryType == null)
-                    return false;
-
-                var parameters = m.GetParameters();
-                return parameters.Length == 2 &&
-                       parameters[0].ParameterType == _deliveryType &&
-                       parameters[1].ParameterType == typeof(DataStreamWriter);
-            });
         }
 
         private MethodInfo FindServerSendMethod(Type type)

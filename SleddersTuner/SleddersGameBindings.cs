@@ -24,6 +24,7 @@ namespace AlpineTuning
         private static bool _initialized;
         private static AlpineCompatibilityReport _compatibilityReport;
         private static FieldInfo _vehicleIdField;
+        private static PropertyInfo _vehicleIdProperty;
         private static FieldInfo _vehicleEngineAudioTypeField;
         private static PropertyInfo _vehicleListSelectableVehiclesProp;
         private static FieldInfo _vehicleListVehiclesField;
@@ -31,6 +32,7 @@ namespace AlpineTuning
         private static FieldInfo _snowmobileVehicleField;
         private static Type _controllerType;
         private static PropertyInfo _controllerInstanceProp;
+        private static MethodInfo _reCreateSnowmobileMethod;
         private static MethodInfo _trySpawnPlayerMethod;
         private static Type _engineAudioControllerType;
         private static Type _engineAudioEnumType;
@@ -47,6 +49,20 @@ namespace AlpineTuning
         private static FieldInfo _headLightLightField;
         private static bool _headLightReflectionResolved;
         private static bool _headLightReflectionReady;
+        private static Type _meshInterpretterType;
+        private static Type _suspensionControllerType;
+        private static Type _snowmobileControllerBaseType;
+        private static Type _ski2Type;
+        private static Type _skiHardSurfaceContactType;
+        private static Type _trackHardSurfaceContactType;
+        private static Type _hardSurfaceContactBaseType;
+        private static bool _nativePhysicsReflectionResolved;
+        private static bool _nativePhysicsReflectionReady;
+        private static bool _nativeDrivetrainReflectionReady;
+        private static bool _nativeSuspensionReflectionReady;
+        private static bool _nativeBrakeReflectionReady;
+        private static bool _nativeSteeringReflectionReady;
+        private static bool _nativeGripReflectionReady;
         private static Type _netClientType;
         private static PropertyInfo _netClientInstanceProp;
         private static PropertyInfo _netClientLocalClientIdProp;
@@ -65,7 +81,7 @@ namespace AlpineTuning
             get
             {
                 Initialize();
-                return _vehicleIdField != null;
+                return _vehicleIdField != null || _vehicleIdProperty != null;
             }
         }
 
@@ -92,7 +108,9 @@ namespace AlpineTuning
             get
             {
                 Initialize();
-                return _controllerType != null && _controllerInstanceProp != null;
+                return _controllerType != null &&
+                       _controllerInstanceProp != null &&
+                       _reCreateSnowmobileMethod != null;
             }
         }
 
@@ -116,6 +134,36 @@ namespace AlpineTuning
             get { return ResolveHeadlightReflection(); }
         }
 
+        public static bool NativePhysicsRuntimeBindingAvailable
+        {
+            get { return ResolveNativePhysicsReflection(); }
+        }
+
+        public static bool NativeDrivetrainRuntimeBindingAvailable
+        {
+            get { ResolveNativePhysicsReflection(); return _nativeDrivetrainReflectionReady; }
+        }
+
+        public static bool NativeSuspensionRuntimeBindingAvailable
+        {
+            get { ResolveNativePhysicsReflection(); return _nativeSuspensionReflectionReady; }
+        }
+
+        public static bool NativeBrakeRuntimeBindingAvailable
+        {
+            get { ResolveNativePhysicsReflection(); return _nativeBrakeReflectionReady; }
+        }
+
+        public static bool NativeSteeringRuntimeBindingAvailable
+        {
+            get { ResolveNativePhysicsReflection(); return _nativeSteeringReflectionReady; }
+        }
+
+        public static bool NativeSurfaceGripRuntimeBindingAvailable
+        {
+            get { ResolveNativePhysicsReflection(); return _nativeGripReflectionReady; }
+        }
+
         public static string CapabilitySummary
         {
             get
@@ -135,6 +183,7 @@ namespace AlpineTuning
             ResolveHeadlightReflection();
             ResolvePeerDiscoveryBindings();
             ResolveAccessoryReflection();
+            ResolveNativePhysicsReflection();
 
             var report = new AlpineCompatibilityReport();
             PopulateAssemblyFingerprint(report);
@@ -143,9 +192,12 @@ namespace AlpineTuning
                 report,
                 "vehicleData",
                 "Vehicle Data",
-                _vehicleIdField != null && (_vehicleListSelectableVehiclesProp != null || _vehicleListVehiclesField != null),
+                (_vehicleIdField != null || _vehicleIdProperty != null) &&
+                (_vehicleListSelectableVehiclesProp != null || _vehicleListVehiclesField != null),
                 true,
-                $"vehicleId={Status(_vehicleIdField != null)}, list={Status(_vehicleListSelectableVehiclesProp != null || _vehicleListVehiclesField != null)}");
+                $"vehicleId={Status(_vehicleIdField != null || _vehicleIdProperty != null)} " +
+                $"({NameOrNull((MemberInfo)_vehicleIdField ?? _vehicleIdProperty)}), " +
+                $"list={Status(_vehicleListSelectableVehiclesProp != null || _vehicleListVehiclesField != null)}");
 
             AddCapability(
                 report,
@@ -155,13 +207,63 @@ namespace AlpineTuning
                 true,
                 $"vehicle property={NameOrNull(_snowmobileVehicleProp)}, vehicle field={NameOrNull(_snowmobileVehicleField)}");
 
+            bool runtimeControlsReady = RuntimeTuningControlsReady(out var runtimeControlsDetail);
+            AddCapability(
+                report,
+                "runtimeTuning",
+                "Runtime Tuning Controls",
+                runtimeControlsReady,
+                false,
+                runtimeControlsDetail);
+
             AddCapability(
                 report,
                 "reload",
                 "Ride Reload",
-                _controllerType != null && _controllerInstanceProp != null,
+                _controllerType != null && _controllerInstanceProp != null && _reCreateSnowmobileMethod != null,
                 false,
-                $"controller={NameOrNull(_controllerType)}, instance={NameOrNull(_controllerInstanceProp)}");
+                $"controller={NameOrNull(_controllerType)}, instance={NameOrNull(_controllerInstanceProp)}, " +
+                $"recreate={NameOrNull(_reCreateSnowmobileMethod)}");
+
+            AddCapability(
+                report,
+                "nativeDrivetrain",
+                "Native Drivetrain",
+                _nativeDrivetrainReflectionReady,
+                false,
+                NativeDrivetrainCompatibilityDetail());
+
+            AddCapability(
+                report,
+                "nativeSuspension",
+                "Native Suspension",
+                _nativeSuspensionReflectionReady,
+                false,
+                NativeSuspensionCompatibilityDetail());
+
+            AddCapability(
+                report,
+                "nativeBrake",
+                "Native Brake",
+                _nativeBrakeReflectionReady,
+                false,
+                $"mesh={NameOrNull(_meshInterpretterType)}, breakForce={Status(CountFields(_meshInterpretterType, "breakForce") == 1)}");
+
+            AddCapability(
+                report,
+                "nativeSteering",
+                "Native Steering Geometry",
+                _nativeSteeringReflectionReady,
+                false,
+                NativeSteeringCompatibilityDetail());
+
+            AddCapability(
+                report,
+                "nativeSurfaceGrip",
+                "Native Surface Grip",
+                _nativeGripReflectionReady,
+                false,
+                NativeGripCompatibilityDetail());
 
             AddCapability(
                 report,
@@ -262,7 +364,9 @@ namespace AlpineTuning
             try
             {
                 string path = typeof(SnowmobileController).Assembly.Location;
-                report.assemblyPath = path;
+                report.assemblyFileName = string.IsNullOrWhiteSpace(path)
+                    ? null
+                    : Path.GetFileName(path);
 
                 if (string.IsNullOrWhiteSpace(path) || !File.Exists(path))
                 {
@@ -335,6 +439,7 @@ namespace AlpineTuning
             _initialized = true;
 
             _vehicleIdField = GetField(typeof(VehicleScriptableObject), "vehicleId");
+            _vehicleIdProperty = GetProperty(typeof(VehicleScriptableObject), "Id");
             _vehicleEngineAudioTypeField = GetField(typeof(VehicleScriptableObject), "engineAudioType");
             _vehicleListSelectableVehiclesProp = GetProperty(typeof(VehicleListScriptableObject), "SelectableVehicles");
             _vehicleListVehiclesField = GetField(typeof(VehicleListScriptableObject), "vehicles");
@@ -342,18 +447,265 @@ namespace AlpineTuning
             _snowmobileVehicleField = GetField(typeof(SnowmobileController), "KJFNKMCOKLL");
             _controllerType = typeof(Controller);
             _controllerInstanceProp = GetProperty(_controllerType, "PKMPAOKMHCB");
+            _reCreateSnowmobileMethod = GetMethod(_controllerType, "ReCreateSnowmobile", Type.EmptyTypes);
+        }
+
+        private static bool RuntimeTuningControlsReady(out string detail)
+        {
+            FieldInfo stabilizerField =
+                GetField(typeof(SnowmobileController), "BFJKIBCBFHJ") ??
+                GetField(typeof(SnowmobileController), "BFJKIBCBFH");
+            Type stabilizerType = stabilizerField != null ? stabilizerField.FieldType : null;
+
+            string[] controllerFields =
+            {
+                "throttleExponent",
+                "rpmSensitivity",
+                "rpmSensitivityDown",
+                "clutchRpmMin",
+                "clutchRpmMax",
+                "minThrottleOnClutchEngagement"
+            };
+            string[] stabilizerFields =
+            {
+                "damping",
+                "trackSpeedDamping",
+                "trackSpeedGyroMultiplier"
+            };
+
+            int controllerReady = controllerFields.Count(name => GetField(typeof(SnowmobileController), name) != null);
+            int stabilizerReady = stabilizerType != null
+                ? stabilizerFields.Count(name => GetField(stabilizerType, name) != null)
+                : 0;
+
+            detail =
+                $"controller fields={controllerReady}/{controllerFields.Length}, " +
+                $"stabilizer={NameOrNull(stabilizerField)}, " +
+                $"stabilizer fields={stabilizerReady}/{stabilizerFields.Length}";
+            return controllerReady == controllerFields.Length &&
+                   stabilizerField != null &&
+                   stabilizerReady == stabilizerFields.Length;
+        }
+
+        private static bool ResolveNativePhysicsReflection()
+        {
+            if (_nativePhysicsReflectionResolved)
+                return _nativePhysicsReflectionReady;
+
+            _nativePhysicsReflectionResolved = true;
+            try
+            {
+                Assembly gameAssembly = typeof(SnowmobileController).Assembly;
+                _meshInterpretterType = gameAssembly.GetType("MeshInterpretter") ?? Type.GetType("MeshInterpretter, Assembly-CSharp");
+                _suspensionControllerType = gameAssembly.GetType("SuspensionController") ?? Type.GetType("SuspensionController, Assembly-CSharp");
+                _snowmobileControllerBaseType = gameAssembly.GetType("SnowmobileControllerBase") ?? typeof(SnowmobileControllerBase);
+                _ski2Type = gameAssembly.GetType("Ski2") ?? typeof(Ski2);
+                _skiHardSurfaceContactType = gameAssembly.GetType("SkiHardSurfaceContact");
+                _trackHardSurfaceContactType = gameAssembly.GetType("TrackHardSurfaceContact");
+                _hardSurfaceContactBaseType = gameAssembly.GetType("HardSurfaceContactBase");
+
+                _nativeDrivetrainReflectionReady = ProbeNativeSubsystem(() =>
+                    IsComponentType(_meshInterpretterType) &&
+                    GetField(_meshInterpretterType, "powerEfficiency") != null &&
+                    GetField(_meshInterpretterType, "drivetrainMinSpeed") != null &&
+                    GetField(_meshInterpretterType, "drivetrainMaxSpeed1") != null &&
+                    GetField(_meshInterpretterType, "drivetrainMaxSpeed2") != null &&
+                    GetField(_meshInterpretterType, "trackMass") != null);
+
+                _nativeBrakeReflectionReady = ProbeNativeSubsystem(() =>
+                    IsComponentType(_meshInterpretterType) &&
+                    GetField(_meshInterpretterType, "breakForce") != null);
+
+                _nativeSuspensionReflectionReady = ProbeNativeSubsystem(() =>
+                {
+                    FieldInfo frontShockField = GetField(_suspensionControllerType, "frontSuspension");
+                    FieldInfo rearShockField = GetField(_suspensionControllerType, "rearSuspension");
+                    Type shockType = frontShockField != null
+                        ? frontShockField.FieldType
+                        : rearShockField?.FieldType;
+                    FieldInfo softSettingsField = GetField(shockType, "soft");
+                    FieldInfo hardSettingsField = GetField(shockType, "hard");
+                    Type settingsType = softSettingsField != null
+                        ? softSettingsField.FieldType
+                        : hardSettingsField?.FieldType;
+                    return IsComponentType(_suspensionControllerType) &&
+                           frontShockField != null && rearShockField != null &&
+                           GetField(_suspensionControllerType, "antiRollBarFactor") != null &&
+                           GetField(_suspensionControllerType, "trackRigidityFront") != null &&
+                           GetField(_suspensionControllerType, "trackRigidityRear") != null &&
+                           softSettingsField != null && hardSettingsField != null &&
+                           GetField(settingsType, "springFactor") != null &&
+                           GetField(settingsType, "damperFactor") != null &&
+                           GetField(settingsType, "compressionRatio") != null &&
+                           GetField(settingsType, "compressionFastRatio") != null &&
+                           GetField(settingsType, "reboundRatio") != null &&
+                           GetField(settingsType, "reboundFastRatio") != null;
+                });
+
+                _nativeSteeringReflectionReady = ProbeNativeSubsystem(() =>
+                    IsComponentType(_snowmobileControllerBaseType) &&
+                    IsComponentType(_ski2Type) &&
+                    GetField(_snowmobileControllerBaseType, "skisMaxAngle") != null &&
+                    GetField(_snowmobileControllerBaseType, "toeAngle") != null &&
+                    GetField(_snowmobileControllerBaseType, "leftSki") != null &&
+                    GetField(_snowmobileControllerBaseType, "rightSki") != null &&
+                    GetField(_ski2Type, "camberFactor") != null);
+
+                _nativeGripReflectionReady = ProbeNativeSubsystem(() =>
+                {
+                    FieldInfo skiContactBaseField = GetField(_skiHardSurfaceContactType, "contactBase");
+                    FieldInfo trackContactBaseField = GetField(_trackHardSurfaceContactType, "contactBase");
+                    return IsComponentType(_skiHardSurfaceContactType) &&
+                           IsComponentType(_trackHardSurfaceContactType) &&
+                           IsComponentType(_hardSurfaceContactBaseType) &&
+                           skiContactBaseField != null && trackContactBaseField != null &&
+                           _hardSurfaceContactBaseType.IsAssignableFrom(skiContactBaseField.FieldType) &&
+                           _hardSurfaceContactBaseType.IsAssignableFrom(trackContactBaseField.FieldType) &&
+                           GetField(_hardSurfaceContactBaseType, "grip") != null;
+                });
+
+                // A missing optional subsystem must not disable unrelated native
+                // tuning. Callers capture and apply only fields that are present.
+                _nativePhysicsReflectionReady =
+                    _nativeDrivetrainReflectionReady ||
+                    _nativeSuspensionReflectionReady ||
+                    _nativeBrakeReflectionReady ||
+                    _nativeSteeringReflectionReady ||
+                    _nativeGripReflectionReady;
+            }
+            catch
+            {
+                _meshInterpretterType = null;
+                _suspensionControllerType = null;
+                _snowmobileControllerBaseType = null;
+                _ski2Type = null;
+                _skiHardSurfaceContactType = null;
+                _trackHardSurfaceContactType = null;
+                _hardSurfaceContactBaseType = null;
+                _nativePhysicsReflectionReady = false;
+                _nativeDrivetrainReflectionReady = false;
+                _nativeSuspensionReflectionReady = false;
+                _nativeBrakeReflectionReady = false;
+                _nativeSteeringReflectionReady = false;
+                _nativeGripReflectionReady = false;
+            }
+
+            return _nativePhysicsReflectionReady;
+        }
+
+        private static bool ProbeNativeSubsystem(Func<bool> probe)
+        {
+            try
+            {
+                return probe != null && probe();
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        private static string NativeDrivetrainCompatibilityDetail()
+        {
+            int drivetrainFields = CountFields(
+                _meshInterpretterType,
+                "powerEfficiency",
+                "drivetrainMinSpeed",
+                "drivetrainMaxSpeed1",
+                "drivetrainMaxSpeed2",
+                "trackMass");
+            return $"mesh={NameOrNull(_meshInterpretterType)} fields={drivetrainFields}/5";
+        }
+
+        private static string NativeSuspensionCompatibilityDetail()
+        {
+            int suspensionFields = CountFields(
+                _suspensionControllerType,
+                "frontSuspension",
+                "rearSuspension",
+                "antiRollBarFactor",
+                "trackRigidityFront",
+                "trackRigidityRear");
+
+            FieldInfo shockField =
+                GetField(_suspensionControllerType, "rearSuspension") ??
+                GetField(_suspensionControllerType, "frontSuspension");
+            Type shockType = shockField != null ? shockField.FieldType : null;
+            FieldInfo settingsField = GetField(shockType, "soft") ?? GetField(shockType, "hard");
+            Type settingsType = settingsField != null ? settingsField.FieldType : null;
+            int shockSettingsFields = CountFields(
+                settingsType,
+                "springFactor",
+                "damperFactor",
+                "compressionRatio",
+                "compressionFastRatio",
+                "reboundRatio",
+                "reboundFastRatio");
+
+            return
+                $"suspension={NameOrNull(_suspensionControllerType)} fields={suspensionFields}/5, " +
+                $"shock settings={NameOrNull(settingsType)} fields={shockSettingsFields}/6";
+        }
+
+        private static string NativeSteeringCompatibilityDetail()
+        {
+            int baseFields = CountFields(
+                _snowmobileControllerBaseType,
+                "skisMaxAngle",
+                "toeAngle",
+                "leftSki",
+                "rightSki");
+            int skiFields = CountFields(_ski2Type, "camberFactor");
+            return
+                $"controllerBase={NameOrNull(_snowmobileControllerBaseType)} fields={baseFields}/4, " +
+                $"ski={NameOrNull(_ski2Type)} fields={skiFields}/1";
+        }
+
+        private static string NativeGripCompatibilityDetail()
+        {
+            int skiWrapperFields = CountFields(_skiHardSurfaceContactType, "contactBase");
+            int trackWrapperFields = CountFields(_trackHardSurfaceContactType, "contactBase");
+            int gripFields = CountFields(_hardSurfaceContactBaseType, "grip");
+            return
+                $"base={NameOrNull(_hardSurfaceContactBaseType)} fields={gripFields}/1, " +
+                $"ski={NameOrNull(_skiHardSurfaceContactType)} fields={skiWrapperFields}/1, " +
+                $"track={NameOrNull(_trackHardSurfaceContactType)} fields={trackWrapperFields}/1";
+        }
+
+        private static bool IsComponentType(Type type)
+        {
+            return type != null && typeof(Component).IsAssignableFrom(type);
+        }
+
+        private static int CountFields(Type type, params string[] names)
+        {
+            return type == null || names == null
+                ? 0
+                : names.Count(name => GetField(type, name) != null);
         }
 
         public static string GetVehicleId(VehicleScriptableObject sled, string fallback)
         {
             Initialize();
-            if (sled == null || _vehicleIdField == null)
+            if (sled == null)
                 return fallback;
 
             try
             {
-                var value = _vehicleIdField.GetValue(sled) as string;
-                return !string.IsNullOrWhiteSpace(value) ? value : fallback;
+                if (_vehicleIdField != null)
+                {
+                    var legacyValue = _vehicleIdField.GetValue(sled) as string;
+                    if (!string.IsNullOrWhiteSpace(legacyValue))
+                        return legacyValue;
+                }
+
+                // Current Sledders builds moved identity to
+                // IdentifiableScriptableObject.Id (an ItemIdentifier value type).
+                // Keep this reflection based so older game builds that still expose
+                // the legacy string field remain supported by the same mod binary.
+                object identifier = _vehicleIdProperty?.GetValue(sled, null);
+                string value = identifier != null ? identifier.ToString() : null;
+                return !string.IsNullOrWhiteSpace(value) && value != "0" ? value : fallback;
             }
             catch
             {
@@ -385,7 +737,9 @@ namespace AlpineTuning
 
         public static SnowmobileController GetPauseController(PauseUIController pause)
         {
-            return GetFieldValue<SnowmobileController>(pause, "CHJANEKOEDG");
+            // Sledders 1.1.6 no longer stores a SnowmobileController on PauseUI.
+            // The caller deliberately falls back to Alpine's current runtime sled.
+            return null;
         }
 
         public static VehicleScriptableObject TryGetVehicleSelectionSled(object menu)
@@ -402,9 +756,10 @@ namespace AlpineTuning
 
             try
             {
-                object selection =
-                    GetFieldValue<object>(menu, "IHKCPAEBKID") ??
-                    GetFieldValue<object>(menu, "DICGGOJLMJP");
+                // IHKCPAEBKID is the live selected-sled envelope. DICGGOJLMJP is
+                // only the value captured when the garage opened and must never
+                // become a tuning target when the live selection is temporarily null.
+                object selection = GetFieldValue<object>(menu, "IHKCPAEBKID");
 
                 if (TryExtractVehicleScriptableObject(selection, 1, new HashSet<object>(), out var selectedVehicle, out var selectedSource))
                 {
@@ -412,11 +767,6 @@ namespace AlpineTuning
                     return selectedVehicle;
                 }
 
-                if (TryExtractVehicleScriptableObject(menu, 2, new HashSet<object>(), out var menuVehicle, out var menuSource))
-                {
-                    source = "garage controller " + menuSource;
-                    return menuVehicle;
-                }
             }
             catch
             {
@@ -632,7 +982,7 @@ namespace AlpineTuning
             }
             catch (Exception ex)
             {
-                reason = ex.Message;
+                reason = ex.GetType().Name;
                 return false;
             }
 
@@ -676,7 +1026,71 @@ namespace AlpineTuning
             }
             catch (Exception ex)
             {
-                reason = ex.Message;
+                reason = ex.GetType().Name;
+                return false;
+            }
+        }
+
+        public static bool TryReCreateSnowmobile(
+            SnowmobileController expectedController,
+            out string reason)
+        {
+            reason = null;
+            Initialize();
+
+            object controllerInstance;
+            try
+            {
+                controllerInstance = _controllerInstanceProp?.GetValue(null);
+            }
+            catch (Exception ex)
+            {
+                reason = ex.GetType().Name;
+                return false;
+            }
+
+            if (controllerInstance == null)
+            {
+                reason = "Controller singleton not found";
+                return false;
+            }
+
+            SnowmobileController currentController =
+                GetPropertyValue<SnowmobileController>(controllerInstance, "JFIFAJLPMIE") ??
+                GetFieldValue<SnowmobileController>(controllerInstance, "FPHGKGPJDPG");
+            if (currentController == null)
+            {
+                reason = "Controller has no current local sled";
+                return false;
+            }
+
+            if (expectedController != null && currentController != expectedController)
+            {
+                reason = "Controller current sled does not match Alpine's live sled";
+                return false;
+            }
+
+            MethodInfo recreate = _reCreateSnowmobileMethod;
+            if (recreate == null || recreate.DeclaringType != controllerInstance.GetType())
+            {
+                recreate = GetMethod(controllerInstance.GetType(), "ReCreateSnowmobile", Type.EmptyTypes);
+                _reCreateSnowmobileMethod = recreate;
+            }
+
+            if (recreate == null)
+            {
+                reason = "Controller.ReCreateSnowmobile binding not found";
+                return false;
+            }
+
+            try
+            {
+                recreate.Invoke(controllerInstance, null);
+                return true;
+            }
+            catch (Exception ex)
+            {
+                reason = ex.InnerException?.GetType().Name ?? ex.GetType().Name;
                 return false;
             }
         }
@@ -685,6 +1099,99 @@ namespace AlpineTuning
         {
             return GetFieldValue<object>(controller, "BFJKIBCBFHJ") ??
                    GetFieldValue<object>(controller, "BFJKIBCBFH");
+        }
+
+        public static Component[] GetMeshInterpreters(Component root)
+        {
+            ResolveNativePhysicsReflection();
+            return GetComponentsInChildren(root, _meshInterpretterType);
+        }
+
+        public static Component[] GetSuspensionControllers(Component root)
+        {
+            ResolveNativePhysicsReflection();
+            return GetComponentsInChildren(root, _suspensionControllerType);
+        }
+
+        public static Component GetSnowmobileControllerBase(SnowmobileController controller)
+        {
+            if (controller == null)
+                return null;
+
+            ResolveNativePhysicsReflection();
+            object direct = GetFieldValue<object>(controller, "controllerBase");
+            if (direct is Component directComponent)
+                return directComponent;
+
+            return GetComponentsInChildren(controller, _snowmobileControllerBaseType).FirstOrDefault();
+        }
+
+        public static Component GetControllerBaseSki(Component controllerBase, bool left)
+        {
+            if (controllerBase == null)
+                return null;
+
+            object value = GetFieldValue<object>(controllerBase, left ? "leftSki" : "rightSki");
+            return value as Component;
+        }
+
+        public static Component[] GetSkiHardSurfaceContactBases(Component root)
+        {
+            ResolveNativePhysicsReflection();
+            return GetHardSurfaceContactBases(root, _skiHardSurfaceContactType);
+        }
+
+        public static Component[] GetTrackHardSurfaceContactBases(Component root)
+        {
+            ResolveNativePhysicsReflection();
+            return GetHardSurfaceContactBases(root, _trackHardSurfaceContactType);
+        }
+
+        private static Component[] GetHardSurfaceContactBases(Component root, Type wrapperType)
+        {
+            if (root == null ||
+                !IsComponentType(wrapperType) ||
+                !IsComponentType(_hardSurfaceContactBaseType))
+            {
+                return Array.Empty<Component>();
+            }
+
+            var result = new List<Component>();
+            var capturedIds = new HashSet<int>();
+            foreach (Component wrapper in GetComponentsInChildren(root, wrapperType))
+            {
+                object linkedBase = GetFieldValue<object>(wrapper, "contactBase");
+                if (!(linkedBase is Component contactBase) ||
+                    !_hardSurfaceContactBaseType.IsInstanceOfType(contactBase))
+                {
+                    continue;
+                }
+
+                // contactBase is a per-object MonoBehaviour linked by the native
+                // wrapper. Capture that instance, never a shared friction asset or
+                // an unrelated component found by a broad hierarchy search.
+                if (capturedIds.Add(contactBase.GetInstanceID()))
+                    result.Add(contactBase);
+            }
+
+            return result.ToArray();
+        }
+
+        private static Component[] GetComponentsInChildren(Component root, Type componentType)
+        {
+            if (root == null || !IsComponentType(componentType))
+                return Array.Empty<Component>();
+
+            try
+            {
+                return root.GetComponentsInChildren(componentType, true)
+                    .OfType<Component>()
+                    .ToArray();
+            }
+            catch
+            {
+                return Array.Empty<Component>();
+            }
         }
 
         public static void CaptureFloat(object target, string fieldName, Action<float> capture)
@@ -714,6 +1221,32 @@ namespace AlpineTuning
             }
             catch
             {
+                return false;
+            }
+        }
+
+        public static bool TryGetNumericField(object target, string fieldName, out double value)
+        {
+            value = 0d;
+            if (target == null)
+                return false;
+
+            try
+            {
+                FieldInfo field = GetField(target.GetType(), fieldName);
+                if (field == null)
+                    return false;
+
+                object raw = field.GetValue(target);
+                if (raw == null || raw is bool || raw is char || raw is Enum)
+                    return false;
+
+                value = Convert.ToDouble(raw, System.Globalization.CultureInfo.InvariantCulture);
+                return !double.IsNaN(value) && !double.IsInfinity(value);
+            }
+            catch
+            {
+                value = 0d;
                 return false;
             }
         }
@@ -776,6 +1309,30 @@ namespace AlpineTuning
                     return false;
 
                 field.SetValue(target, value);
+                return true;
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        public static bool SetNumericField(object target, string fieldName, double value)
+        {
+            if (target == null || double.IsNaN(value) || double.IsInfinity(value))
+                return false;
+
+            try
+            {
+                FieldInfo field = GetField(target.GetType(), fieldName);
+                if (field == null || field.IsInitOnly || field.IsLiteral)
+                    return false;
+
+                object converted = Convert.ChangeType(
+                    value,
+                    field.FieldType,
+                    System.Globalization.CultureInfo.InvariantCulture);
+                field.SetValue(target, converted);
                 return true;
             }
             catch
@@ -1006,7 +1563,7 @@ namespace AlpineTuning
             }
             catch (Exception ex)
             {
-                reason = ex.Message;
+                reason = ex.GetType().Name;
                 return false;
             }
 
@@ -1175,7 +1732,7 @@ namespace AlpineTuning
             }
             catch (Exception ex)
             {
-                reason = ex.Message;
+                reason = ex.GetType().Name;
                 return false;
             }
         }
@@ -1222,7 +1779,7 @@ namespace AlpineTuning
             }
             catch (Exception ex)
             {
-                reason = ex.Message;
+                reason = ex.GetType().Name;
                 return false;
             }
         }
@@ -1287,7 +1844,7 @@ namespace AlpineTuning
             }
             catch (Exception ex)
             {
-                reason = ex.Message;
+                reason = ex.GetType().Name;
                 return false;
             }
         }
@@ -1333,58 +1890,6 @@ namespace AlpineTuning
             return null;
         }
 
-        public static bool TryRegisterNativeTab(
-            object nativeTabManager,
-            VisualElement tabPanel,
-            Button tabButton,
-            int insertIndex,
-            Action selected,
-            out int nativeIndex)
-        {
-            nativeIndex = -1;
-
-            if (nativeTabManager == null || tabPanel == null || tabButton == null)
-                return false;
-
-            var tabPanels = GetFieldValue<List<VisualElement>>(
-                nativeTabManager,
-                AlpineNativeUiConfig.NativeTabPanelsFieldName);
-
-            var tabButtons = GetFieldValue<List<Button>>(
-                nativeTabManager,
-                AlpineNativeUiConfig.NativeTabButtonsFieldName);
-
-            if (tabPanels == null || tabButtons == null || tabPanels.Count != tabButtons.Count)
-                return false;
-
-            nativeIndex = Mathf.Clamp(insertIndex, 0, tabPanels.Count);
-
-            tabPanels.Insert(nativeIndex, tabPanel);
-            tabButtons.Insert(nativeIndex, tabButton);
-
-            var callbacks = GetFieldValue<Dictionary<int, Action>>(
-                nativeTabManager,
-                AlpineNativeUiConfig.NativeTabCallbacksFieldName);
-
-            if (callbacks != null)
-                callbacks[nativeIndex] = selected;
-
-            return true;
-        }
-
-        public static void SelectNativeTab(object nativeTabManager, int index)
-        {
-            if (nativeTabManager == null || index < 0)
-                return;
-
-            MethodInfo select = GetMethod(
-                nativeTabManager.GetType(),
-                AlpineNativeUiConfig.NativeSelectTabMethodName,
-                new[] { typeof(int) });
-
-            select?.Invoke(nativeTabManager, new object[] { index });
-        }
-
         public static IEnumerable<ulong> DiscoverPeerIds(ulong localSteamId)
         {
             return DiscoverPeers(localSteamId, false)
@@ -1399,66 +1904,31 @@ namespace AlpineTuning
         {
             var peers = new Dictionary<ulong, AlpineDiscoveredPeer>();
 
-            if (log)
-            {
-                MelonLogger.Msg("========== ALPINE PEER DISCOVERY DIAG ==========");
-                MelonLogger.Msg($"[AlpinePeerDiag] localSteamId={localSteamId}");
-                MelonLogger.Msg($"[AlpinePeerDiag] localSleddersClientId={GetLocalSleddersClientId()}");
-            }
-
             try
             {
-                object netClient = GetNetClientInstance(log);
+                object netClient = GetNetClientInstance(false);
                 if (netClient == null)
-                {
-                    if (log)
-                    {
-                        MelonLogger.Warning("[AlpinePeerDiag] No NetClient singleton instance. You are probably not fully in a multiplayer session yet, or the singleton property name changed.");
-                        MelonLogger.Msg("========== ALPINE PEER DISCOVERY END ==========");
-                    }
-
                     return peers.Values.ToArray();
-                }
 
                 MethodInfo getIds = ResolveNetClientGetIdsMethod(netClient);
                 if (getIds == null)
-                {
-                    if (log)
-                    {
-                        MelonLogger.Warning("[AlpinePeerDiag] NetClient.GetAllClientIdsIncludingLocalPlayer method not found.");
-                        LogLikelyIdMethods(netClient.GetType());
-                        MelonLogger.Msg("========== ALPINE PEER DISCOVERY END ==========");
-                    }
-
                     return peers.Values.ToArray();
-                }
 
                 object raw = null;
                 try
                 {
                     raw = getIds.Invoke(netClient, Array.Empty<object>());
                 }
-                catch (Exception ex)
+                catch
                 {
-                    if (log)
-                        MelonLogger.Warning($"[AlpinePeerDiag] getIdsMethod invoke failed: {ex.GetType().Name}: {ex.Message}");
                     return peers.Values.ToArray();
                 }
 
                 var result = raw as ulong[];
                 if (result == null)
-                {
-                    if (log)
-                        MelonLogger.Warning("[AlpinePeerDiag] GetAllClientIdsIncludingLocalPlayer did not return ulong[].");
                     return peers.Values.ToArray();
-                }
 
                 ulong localSleddersId = GetLocalSleddersClientId(netClient);
-                if (log)
-                {
-                    MelonLogger.Msg($"[AlpinePeerDiag] rawClientIds=[{string.Join(", ", result.Select(x => x.ToString()).ToArray())}]");
-                    MelonLogger.Msg("[AlpinePeerDiag] rawClientIds are Sledders internal client IDs unless they pass Steam64 range validation.");
-                }
 
                 foreach (ulong id in result)
                 {
@@ -1489,27 +1959,8 @@ namespace AlpineTuning
                     }
                 }
             }
-            catch (Exception ex)
+            catch
             {
-                if (log)
-                {
-                    MelonLogger.Warning($"[AlpinePeerDiag] DiscoverPeers crashed: {ex.GetType().Name}: {ex.Message}");
-                    MelonLogger.Warning(ex.ToString());
-                }
-            }
-
-            if (log)
-            {
-                foreach (var peer in peers.Values)
-                {
-                    MelonLogger.Msg(
-                        $"[AlpinePeerDiag] discoveredPeer sleddersClientId={(peer.hasInternalClientId ? peer.sleddersClientId.ToString() : "none")}, " +
-                        $"steamId={(peer.hasSteamId ? peer.steamId.ToString() : "none")}, " +
-                        $"name={peer.name ?? "NULL"}, source={peer.source ?? "NULL"}");
-                }
-
-                MelonLogger.Msg($"[AlpinePeerDiag] filteredRemoteCount={peers.Count}");
-                MelonLogger.Msg("========== ALPINE PEER DISCOVERY END ==========");
             }
 
             return peers.Values.ToArray();
@@ -1584,7 +2035,7 @@ namespace AlpineTuning
             }
             catch (Exception ex)
             {
-                reason = ex.GetType().Name + ": " + ex.Message;
+                reason = ex.GetType().Name;
                 return false;
             }
         }
@@ -1608,7 +2059,7 @@ namespace AlpineTuning
             }
             catch (Exception ex)
             {
-                reason = ex.GetType().Name + ": " + ex.Message;
+                reason = ex.GetType().Name;
                 return false;
             }
         }
@@ -1642,7 +2093,7 @@ namespace AlpineTuning
             }
             catch (Exception ex)
             {
-                reason = ex.GetType().Name + ": " + ex.Message;
+                reason = ex.GetType().Name;
                 return false;
             }
         }
@@ -1654,24 +2105,11 @@ namespace AlpineTuning
                 Initialize();
                 ResolvePeerDiscoveryBindings();
 
-                if (log)
-                {
-                    MelonLogger.Msg($"[AlpinePeerDiag] PeerDiscoveryAvailable={PeerDiscoveryAvailable}");
-                    MelonLogger.Msg($"[AlpinePeerDiag] _netClientType={(_netClientType != null ? _netClientType.FullName : "NULL")}");
-                    MelonLogger.Msg($"[AlpinePeerDiag] _netClientInstanceProp={(_netClientInstanceProp != null ? _netClientInstanceProp.Name : "NULL")}");
-                }
-
                 object netClient = _netClientInstanceProp?.GetValue(null);
-
-                if (log)
-                    MelonLogger.Msg($"[AlpinePeerDiag] netClientInstance={(netClient != null ? netClient.GetType().FullName : "NULL")}");
-
                 return netClient;
             }
-            catch (Exception ex)
+            catch
             {
-                if (log)
-                    MelonLogger.Warning($"[AlpinePeerDiag] NetClient singleton read failed: {ex.GetType().Name}: {ex.Message}");
                 return null;
             }
         }
@@ -1682,25 +2120,13 @@ namespace AlpineTuning
             {
                 ResolveNetServerBindings();
 
-                if (log)
-                {
-                    MelonLogger.Msg($"[AlpinePeerDiag] _netServerType={(_netServerType != null ? _netServerType.FullName : "NULL")}");
-                    MelonLogger.Msg($"[AlpinePeerDiag] _netServerInstanceProp={(_netServerInstanceProp != null ? _netServerInstanceProp.Name : "NULL")}");
-                }
-
                 object netServer = _netServerInstanceProp?.GetValue(null);
                 if (netServer == null)
                     netServer = FindNetServerObjectFallback();
-
-                if (log)
-                    MelonLogger.Msg($"[AlpinePeerDiag] netServerInstance={(netServer != null ? netServer.GetType().FullName : "NULL")}");
-
                 return netServer;
             }
-            catch (Exception ex)
+            catch
             {
-                if (log)
-                    MelonLogger.Warning($"[AlpinePeerDiag] NetServer singleton read failed: {ex.GetType().Name}: {ex.Message}");
                 return null;
             }
         }
@@ -1779,38 +2205,6 @@ namespace AlpineTuning
             return 0;
         }
 
-        private static void LogLikelyIdMethods(Type type)
-        {
-            if (type == null)
-                return;
-
-            try
-            {
-                var methods = type.GetMethods(All)
-                    .Where(m =>
-                        m.GetParameters().Length == 0 &&
-                        (
-                            m.Name.IndexOf("id", StringComparison.OrdinalIgnoreCase) >= 0 ||
-                            m.Name.IndexOf("client", StringComparison.OrdinalIgnoreCase) >= 0 ||
-                            m.Name.IndexOf("player", StringComparison.OrdinalIgnoreCase) >= 0 ||
-                            m.Name.IndexOf("steam", StringComparison.OrdinalIgnoreCase) >= 0
-                        ))
-                    .Take(40)
-                    .ToArray();
-
-                MelonLogger.Msg($"[AlpinePeerDiag] Candidate no-arg ID/client/player methods on {type.FullName}: {methods.Length}");
-
-                foreach (var method in methods)
-                {
-                    MelonLogger.Msg(
-                        $"[AlpinePeerDiag] candidateMethod return={method.ReturnType.FullName} name={method.Name}");
-                }
-            }
-            catch (Exception ex)
-            {
-                MelonLogger.Warning($"[AlpinePeerDiag] Candidate method scan failed: {ex.Message}");
-            }
-        }
         private static bool ResolveEngineAudioReflection()
         {
             if (_engineAudioReflectionResolved)
@@ -1881,7 +2275,7 @@ namespace AlpineTuning
             }
             catch (Exception ex)
             {
-                MelonLogger.Warning($"Engine audio reflection failed: {ex.Message}");
+                MelonLogger.Warning($"Engine audio reflection failed: {ex.GetType().Name}");
                 _engineAudioReflectionReady = false;
             }
 
@@ -1916,7 +2310,7 @@ namespace AlpineTuning
             }
             catch (Exception ex)
             {
-                MelonLogger.Warning($"Headlight reflection failed: {ex.Message}");
+                MelonLogger.Warning($"Headlight reflection failed: {ex.GetType().Name}");
                 _headLightReflectionReady = false;
             }
 
@@ -1956,9 +2350,17 @@ namespace AlpineTuning
 
         private static MethodInfo FindMethodByNameAndParamCount(Type type, string name, int count)
         {
-            return type != null
-                ? type.GetMethods(All).FirstOrDefault(m => m.Name == name && m.GetParameters().Length == count)
-                : null;
+            for (Type current = type; current != null; current = current.BaseType)
+            {
+                MethodInfo method = current
+                    .GetMethods(All | BindingFlags.DeclaredOnly)
+                    .FirstOrDefault(candidate =>
+                        candidate.Name == name && candidate.GetParameters().Length == count);
+                if (method != null)
+                    return method;
+            }
+
+            return null;
         }
 
         private static FieldInfo GetField(Type type, string name)
@@ -1970,7 +2372,8 @@ namespace AlpineTuning
             if (FieldCache.TryGetValue(key, out var field))
                 return field;
 
-            field = type.GetField(name, All);
+            for (Type current = type; current != null && field == null; current = current.BaseType)
+                field = current.GetField(name, All | BindingFlags.DeclaredOnly);
             FieldCache[key] = field;
             return field;
         }
@@ -1984,7 +2387,8 @@ namespace AlpineTuning
             if (PropertyCache.TryGetValue(key, out var prop))
                 return prop;
 
-            prop = type.GetProperty(name, All);
+            for (Type current = type; current != null && prop == null; current = current.BaseType)
+                prop = current.GetProperty(name, All | BindingFlags.DeclaredOnly);
             PropertyCache[key] = prop;
             return prop;
         }
@@ -2002,315 +2406,33 @@ namespace AlpineTuning
             if (MethodCache.TryGetValue(key, out var method))
                 return method;
 
-            method = parameterTypes != null
-                ? type.GetMethod(name, All, null, parameterTypes, null)
-                : type.GetMethod(name, All);
+            for (Type current = type; current != null && method == null; current = current.BaseType)
+            {
+                if (parameterTypes != null)
+                {
+                    method = current.GetMethod(
+                        name,
+                        All | BindingFlags.DeclaredOnly,
+                        null,
+                        parameterTypes,
+                        null);
+                }
+                else
+                {
+                    method = current
+                        .GetMethods(All | BindingFlags.DeclaredOnly)
+                        .FirstOrDefault(candidate => candidate.Name == name);
+                }
+            }
 
             MethodCache[key] = method;
             return method;
         }
-        private static void ScanObjectForSteamIds(object obj, string path, int depth, HashSet<object> visited)
-        {
-            if (obj == null)
-                return;
-
-            if (depth > 3)
-                return;
-
-            Type type = obj.GetType();
-
-            if (IsUnsafeSteamIdScanType(type))
-                return;
-
-            if (!type.IsValueType)
-            {
-                try
-                {
-                    if (!visited.Add(obj))
-                        return;
-                }
-                catch
-                {
-                    return;
-                }
-            }
-
-            LogIfSteamIdLike(obj, path, type);
-
-            foreach (var field in type.GetFields(All))
-            {
-                object value = null;
-                try
-                {
-                    value = field.GetValue(obj);
-                }
-                catch
-                {
-                    continue;
-                }
-
-                string childPath = $"{path}.{field.Name}";
-                LogIfSteamIdLike(value, childPath, field.FieldType);
-
-                if (value == null)
-                    continue;
-
-                ScanEnumerableForSteamIds(value, childPath, depth, visited);
-
-                if (ShouldDeepScanSteamIdObject(field.FieldType))
-                    ScanObjectForSteamIds(value, childPath, depth + 1, visited);
-            }
-
-            foreach (var prop in type.GetProperties(All))
-            {
-                if (!prop.CanRead || prop.GetIndexParameters().Length != 0)
-                    continue;
-
-                object value = null;
-                try
-                {
-                    value = prop.GetValue(obj, null);
-                }
-                catch
-                {
-                    continue;
-                }
-
-                string childPath = $"{path}.{prop.Name}";
-                LogIfSteamIdLike(value, childPath, prop.PropertyType);
-
-                if (value == null)
-                    continue;
-
-                ScanEnumerableForSteamIds(value, childPath, depth, visited);
-
-                if (ShouldDeepScanSteamIdObject(prop.PropertyType))
-                    ScanObjectForSteamIds(value, childPath, depth + 1, visited);
-            }
-
-            foreach (var method in type.GetMethods(All))
-            {
-                if (method.GetParameters().Length != 0)
-                    continue;
-
-                string lower = method.Name.ToLowerInvariant();
-                if (!lower.Contains("steam") &&
-                    !lower.Contains("id") &&
-                    !lower.Contains("player") &&
-                    !lower.Contains("client") &&
-                    !lower.Contains("user") &&
-                    !lower.Contains("connection"))
-                {
-                    continue;
-                }
-
-                object value = null;
-                try
-                {
-                    value = method.Invoke(obj, Array.Empty<object>());
-                }
-                catch
-                {
-                    continue;
-                }
-
-                string methodPath = $"{path}.{method.Name}()";
-                LogIfSteamIdLike(value, methodPath, method.ReturnType);
-                ScanEnumerableForSteamIds(value, methodPath, depth, visited);
-
-                if (value != null && ShouldDeepScanSteamIdObject(method.ReturnType))
-                    ScanObjectForSteamIds(value, methodPath, depth + 1, visited);
-            }
-        }
-
-        private static void ScanEnumerableForSteamIds(object value, string path, int depth, HashSet<object> visited)
-        {
-            if (value == null || value is string)
-                return;
-
-            if (!(value is System.Collections.IEnumerable enumerable))
-                return;
-
-            int index = 0;
-
-            try
-            {
-                foreach (object item in enumerable)
-                {
-                    if (index >= 64)
-                    {
-                        MelonLogger.Msg($"[AlpineSteamIdScan] {path}: enumerable truncated at 64 items.");
-                        break;
-                    }
-
-                    string itemPath = $"{path}[{index}]";
-                    LogIfSteamIdLike(item, itemPath, item != null ? item.GetType() : typeof(object));
-
-                    if (item != null)
-                        ScanObjectForSteamIds(item, itemPath, depth + 1, visited);
-
-                    index++;
-                }
-            }
-            catch
-            {
-            }
-        }
-
-        private static void LogIfSteamIdLike(object value, string path, Type declaredType)
-        {
-            if (value == null)
-                return;
-
-            try
-            {
-                if (value is ulong u)
-                {
-                    if (LooksLikeSteam64(u))
-                        MelonLogger.Msg($"[AlpineSteamIdScan] STEAM64 ulong {path} = {u}");
-                    else if (u > 0)
-                        MelonLogger.Msg($"[AlpineSteamIdScan] nonSteam ulong {path} = {u}");
-                    return;
-                }
-
-                if (value is long l)
-                {
-                    if (l > 0 && LooksLikeSteam64((ulong)l))
-                        MelonLogger.Msg($"[AlpineSteamIdScan] STEAM64 long {path} = {l}");
-                    else if (l > 0)
-                        MelonLogger.Msg($"[AlpineSteamIdScan] nonSteam long {path} = {l}");
-                    return;
-                }
-
-                if (value is uint ui)
-                {
-                    if (ui > 0)
-                        MelonLogger.Msg($"[AlpineSteamIdScan] uint {path} = {ui}");
-                    return;
-                }
-
-                if (value is int i)
-                {
-                    if (i > 0)
-                        MelonLogger.Msg($"[AlpineSteamIdScan] int {path} = {i}");
-                    return;
-                }
-
-                string typeName = value.GetType().FullName ?? "";
-
-                if (typeName.IndexOf("Steam", StringComparison.OrdinalIgnoreCase) >= 0 ||
-                    typeName.IndexOf("Id", StringComparison.OrdinalIgnoreCase) >= 0)
-                {
-                    MelonLogger.Msg($"[AlpineSteamIdScan] interesting object {path}: declared={declaredType?.FullName ?? "NULL"}, runtime={typeName}, value={value}");
-                }
-            }
-            catch
-            {
-            }
-        }
-
         private static bool LooksLikeSteam64(ulong value)
         {
             // Public Steam individual account IDs are normally in this broad range.
             return value >= 76561190000000000UL && value <= 76561210000000000UL;
         }
 
-        private static bool ShouldDeepScanSteamIdObject(Type type)
-        {
-            if (type == null)
-                return false;
-
-            if (type.IsPrimitive || type.IsEnum || type == typeof(string))
-                return false;
-
-            if (typeof(UnityEngine.Object).IsAssignableFrom(type))
-                return false;
-
-            if (typeof(System.Collections.IEnumerable).IsAssignableFrom(type))
-                return false;
-
-            string fullName = type.FullName ?? "";
-
-            return
-                type.Assembly == typeof(SnowmobileController).Assembly ||
-                fullName.IndexOf("Net", StringComparison.OrdinalIgnoreCase) >= 0 ||
-                fullName.IndexOf("Client", StringComparison.OrdinalIgnoreCase) >= 0 ||
-                fullName.IndexOf("Player", StringComparison.OrdinalIgnoreCase) >= 0 ||
-                fullName.IndexOf("Steam", StringComparison.OrdinalIgnoreCase) >= 0 ||
-                fullName.IndexOf("Connection", StringComparison.OrdinalIgnoreCase) >= 0;
-        }
-
-        private static bool IsUnsafeSteamIdScanType(Type type)
-        {
-            if (type == null)
-                return true;
-
-            if (type.IsPrimitive || type.IsEnum || type == typeof(string))
-                return true;
-
-            if (typeof(UnityEngine.Object).IsAssignableFrom(type))
-                return true;
-
-            string fullName = type.FullName ?? "";
-
-            return
-                fullName.StartsWith("System.Reflection", StringComparison.OrdinalIgnoreCase) ||
-                fullName.StartsWith("System.Runtime", StringComparison.OrdinalIgnoreCase) ||
-                fullName.StartsWith("Microsoft.", StringComparison.OrdinalIgnoreCase);
-        }
-
-        public static bool LogNetClientSteamIdScan(bool diagnosticScanEnabled)
-        {
-            if (!diagnosticScanEnabled)
-            {
-                MelonLogger.Warning("[AlpineSteamIdScan] blocked; enable the Steam ID diagnostic scanner in Alpine Settings first.");
-                return false;
-            }
-
-            LogNetClientSteamIdScanUnsafe();
-            return true;
-        }
-
-        private static void LogNetClientSteamIdScanUnsafe()
-        {
-            MelonLogger.Msg("========== ALPINE NETCLIENT STEAMID SCAN ==========");
-
-            try
-            {
-                Initialize();
-                ResolvePeerDiscoveryBindings();
-
-                MelonLogger.Msg($"[AlpineSteamIdScan] _netClientType={(_netClientType != null ? _netClientType.FullName : "NULL")}");
-                MelonLogger.Msg($"[AlpineSteamIdScan] _netClientInstanceProp={(_netClientInstanceProp != null ? _netClientInstanceProp.Name : "NULL")}");
-
-                object netClient = null;
-                try
-                {
-                    netClient = _netClientInstanceProp?.GetValue(null);
-                }
-                catch (Exception ex)
-                {
-                    MelonLogger.Warning($"[AlpineSteamIdScan] NetClient singleton read failed: {ex.GetType().Name}: {ex.Message}");
-                }
-
-                if (netClient == null)
-                {
-                    MelonLogger.Warning("[AlpineSteamIdScan] NetClient instance is NULL.");
-                    MelonLogger.Msg("========== ALPINE NETCLIENT STEAMID SCAN END ==========");
-                    return;
-                }
-
-                Type type = netClient.GetType();
-                MelonLogger.Msg($"[AlpineSteamIdScan] netClientInstance={type.FullName}");
-
-                ScanObjectForSteamIds(netClient, "NetClient", 0, new HashSet<object>());
-
-                MelonLogger.Msg("========== ALPINE NETCLIENT STEAMID SCAN END ==========");
-            }
-            catch (Exception ex)
-            {
-                MelonLogger.Warning($"[AlpineSteamIdScan] scan failed: {ex}");
-            }
-        }
     }
 }
