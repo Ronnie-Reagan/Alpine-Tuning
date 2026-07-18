@@ -1,4 +1,4 @@
-# Alpine Tuning
+# Alpine Tuning — Northern-Built. Mountain-Proven
 
 Alpine Tuning adds mechanical tuning and setup options to the Sledders garage while matching the style of the game's existing menus.
 
