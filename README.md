@@ -2,7 +2,7 @@
 
 Alpine Tuning adds mechanical tuning and setup options to the Sledders garage while matching the style of the game's existing menus.
 
-Current public version: **2026.08.21**
+Current public version: **2026.08.22**
 Made for Sledders **1.1.6**
 
 ## Installation
