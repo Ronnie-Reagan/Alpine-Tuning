@@ -7,9 +7,9 @@ namespace AlpineTuning
 {
     internal static class AlpineConstants
     {
-        public const int SchemaVersion = 2;
-        public const string ModVersion = "2026.07.17";
-        public const string CatalogVersion = "2026.07.v2";
+        public const int SchemaVersion = 3;
+        public const string ModVersion = "2026.08.21";
+        public const string CatalogVersion = "2026.08.fuel-v1";
         public const string DefaultProfileAuthor = "Alpine Rider";
         public static readonly bool PeerSharingTemporarilyDisabled = true;
         public const string PeerSharingPausedNotice =
@@ -93,6 +93,12 @@ namespace AlpineTuning
 
         public int schemaVersion = AlpineConstants.SchemaVersion;
         public AlpineDisplayUnits units = AlpineDisplayUnits.Metric;
+
+        // Master runtime switch. The tuning UI and saved profiles remain available
+        // while disabled, but Alpine does not mutate sled runtime or VSO data.
+        public bool alpineTuningEnabled = true;
+        public bool idleFuelConsumptionEnabled = true;
+        public bool persistentFuelLevelsEnabled = true;
 
         public bool headlightToggleEnabled;
         public string headlightKeyboardKey;
@@ -225,6 +231,8 @@ namespace AlpineTuning
         public float lugHeight;
         public float friction;
         public float weight;
+        public float fuelCapacity;
+        public float fuelConsumption;
         public float skiStance;
         public float skisXDistanceOffset;
         public bool isTurboOn;
@@ -260,6 +268,8 @@ namespace AlpineTuning
                 lugHeight = so.lugHeight,
                 friction = so.coefficientOfFriction,
                 weight = so.weight,
+                fuelCapacity = Mathf.Max(0.01f, so.fuelCapacity),
+                fuelConsumption = Mathf.Max(0f, so.fuelConsumption),
                 skiStance = so.skiStance,
                 skisXDistanceOffset = so.skisXDistanceOffset,
                 isTurboOn = so.isTurboOn,
@@ -460,6 +470,11 @@ namespace AlpineTuning
         public float lugHeight;
         public float friction;
         public float weight;
+        public float fuelCapacity;
+        public float fuelConsumption;
+        public float backpackFuelCapacityLiters;
+        public float backpackPayloadMassKg;
+        public bool requiresCosmeticBackpack;
         public float skiStance;
         public float skisXDistanceOffset;
         public bool isTurboOn;
@@ -487,6 +502,11 @@ namespace AlpineTuning
         public float frictionMultiplier = 1f;
         public float weightMultiplier = 1f;
         public float weightOffset;
+        public float fuelCapacityMultiplier = 1f;
+        public float tankHardwareMassOffsetKg;
+        public float backpackFuelCapacityLiters;
+        public float backpackContainerMassKg;
+        public bool requiresCosmeticBackpack;
         public float skiStanceOffset;
         public float skisXDistanceOffset;
         public Vec3Data centerOfMassDelta = new Vec3Data();

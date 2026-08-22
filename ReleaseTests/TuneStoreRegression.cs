@@ -199,6 +199,8 @@ namespace AlpineTuning.ReleaseTests
                 Program.Require(migrated.GetPartId(PartCatalog.Skis) == "skis.wide", "tune-legacy-skis-preserved");
                 Program.Require(migrated.GetPartId(PartCatalog.BrakeCalibration) == "brake.stock", "tune-new-brake-normalized");
                 Program.Require(migrated.GetPartId(PartCatalog.SteeringGeometry) == "geometry.stock", "tune-new-geometry-normalized");
+                Program.Require(migrated.GetPartId(PartCatalog.FuelTank) == "fuel.tank.stock", "tune-new-fuel-tank-normalized");
+                Program.Require(migrated.GetPartId(PartCatalog.BackpackFuel) == "fuel.backpack.none", "tune-new-backpack-fuel-normalized");
                 Program.Require(PartCatalog.OrderedCategories.All(category => !string.IsNullOrWhiteSpace(migrated.GetPartId(category))), "tune-catalog-selection-completeness");
                 Program.Require(TuneStore.ChecksumMatches(migrated), "tune-legacy-checksum");
                 Program.Require(Directory.GetFiles(Path.Combine(root, "Recovery"), "*.json", SearchOption.AllDirectories).Length > 0, "tune-pre-migration-recovery");

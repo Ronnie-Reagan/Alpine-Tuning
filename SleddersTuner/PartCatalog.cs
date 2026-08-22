@@ -29,6 +29,8 @@ namespace AlpineTuning
         public const string HeadlightBeam = "headlightBeam";
         public const string HeadlightAim = "headlightAim";
         public const string Accessories = "accessories";
+        public const string FuelTank = "fuelTank";
+        public const string BackpackFuel = "backpackFuel";
 
         public static readonly string[] OrderedCategories =
         {
@@ -53,7 +55,9 @@ namespace AlpineTuning
             HeadlightBrightness,
             HeadlightBeam,
             HeadlightAim,
-            Accessories
+            Accessories,
+            FuelTank,
+            BackpackFuel
         };
 
         private readonly List<TunePart> _parts = new List<TunePart>();
@@ -128,6 +132,10 @@ namespace AlpineTuning
                     return "Headlight Alignment";
                 case Accessories:
                     return "Accessories";
+                case FuelTank:
+                    return "Fuel Tank";
+                case BackpackFuel:
+                    return "Backpack Fuel";
                 default:
                     return category;
             }
@@ -159,6 +167,8 @@ namespace AlpineTuning
                 case HeadlightBeam: return "light.beam.stock";
                 case HeadlightAim: return "light.aim.stock";
                 case Accessories: return "accessory.stock";
+                case FuelTank: return "fuel.tank.stock";
+                case BackpackFuel: return "fuel.backpack.none";
             }
 
             var part = PartsForCategory(category).FirstOrDefault();
@@ -585,6 +595,29 @@ namespace AlpineTuning
             Add("light.aim.high", HeadlightAim, "Aim Up", "Small upward runtime headlight pitch.", false,
                 e => { e.headlightPitchOffsetDegrees = -3f; });
 
+            // Fuel system. Tank shell-mass offsets are conservative HDPE/aluminium
+            // assembly estimates; gasoline payload itself is kept as actual liters
+            // so capacity changes do not magically create mass.
+            Add("fuel.tank.reduced", FuelTank, "Reduced Tank", "75% of the factory capacity. Retains existing liters; excess is discarded only after confirmation.", true,
+                e => { e.fuelCapacityMultiplier = 0.75f; e.tankHardwareMassOffsetKg = -0.8f; });
+            Add("fuel.tank.stock", FuelTank, "Stock Tank", "Factory fuel capacity and tank hardware mass.", true,
+                e => { });
+            Add("fuel.tank.increased", FuelTank, "Increased Tank", "125% of the factory capacity with a modest larger-tank mass penalty.", true,
+                e => { e.fuelCapacityMultiplier = 1.25f; e.tankHardwareMassOffsetKg = 0.9f; });
+            Add("fuel.tank.expedition", FuelTank, "Expedition Tank", "150% of the factory capacity for long-distance rides.", true,
+                e => { e.fuelCapacityMultiplier = 1.50f; e.tankHardwareMassOffsetKg = 1.7f; });
+
+            Add("fuel.backpack.none", BackpackFuel, "No Backpack Fuel", "Carry no reserve fuel in the rider backpack.", false,
+                e => { });
+            Add("fuel.backpack.bottles", BackpackFuel, "Water Bottles", "1 L reserve.", true,
+                e => { e.backpackFuelCapacityLiters = 1f; e.backpackContainerMassKg = 0.15f; e.requiresCosmeticBackpack = true; });
+            Add("fuel.backpack.jug", BackpackFuel, "Juice Jug", "4 L reserve.", true,
+                e => { e.backpackFuelCapacityLiters = 4f; e.backpackContainerMassKg = 0.25f; e.requiresCosmeticBackpack = true; });
+            Add("fuel.backpack.tinycan", BackpackFuel, "Tiny Gas Can", "6 L reserve.", true,
+                e => { e.backpackFuelCapacityLiters = 6f; e.backpackContainerMassKg = 0.65f; e.requiresCosmeticBackpack = true; });
+            Add("fuel.backpack.fillbag", BackpackFuel, "Just Fill the Bag", "22 L reserve. Ridiculous, heavy.", true,
+                e => { e.backpackFuelCapacityLiters = 22f; e.backpackContainerMassKg = 1.10f; e.requiresCosmeticBackpack = true; });
+
             // accessories: toggles existing in-game accessory objects only; no custom meshes are spawned here.
             Add("accessory.stock", Accessories, "Factory Accessories", "Keep current accessory state.", false,
                 e => { e.accessoryMode = "stock"; });
@@ -626,6 +659,9 @@ namespace AlpineTuning
                    !Mathf.Approximately(effect.frictionMultiplier, 1f) ||
                    !Mathf.Approximately(effect.weightMultiplier, 1f) ||
                    !Mathf.Approximately(effect.weightOffset, 0f) ||
+                   !Mathf.Approximately(effect.fuelCapacityMultiplier, 1f) ||
+                   !Mathf.Approximately(effect.tankHardwareMassOffsetKg, 0f) ||
+                   effect.backpackFuelCapacityLiters > 0.001f ||
                    !Mathf.Approximately(effect.skiStanceOffset, 0f) ||
                    !Mathf.Approximately(effect.skisXDistanceOffset, 0f) ||
                    center.sqrMagnitude > 0.0000001f ||

@@ -2,7 +2,7 @@
 
 Alpine Tuning adds mechanical tuning and setup options to the Sledders garage while matching the style of the game's existing menus.
 
-Current public version: **2026.07.17**
+Current public version: **2026.08.21**
 Made for Sledders **1.1.6**
 
 ## Installation
@@ -34,31 +34,31 @@ The normal **STYLE** option remains the game's cosmetic editor. Alpine Tuning is
 
 The main tuning categories are:
 
-* **Engine** — engines, internal parts, intake, exhaust, turbo, and engine swaps.
-* **Drivetrain** — clutch setup, clutch weights, gearing, and brake calibration.
-* **Suspension** — suspension parts, chassis setup, shocks, springs, balance, and weight transfer.
-* **Track** — track type, lug height, grip, and traction adjustments.
-* **Steering** — skis, ski stance, grip, and steering geometry.
-* **Lighting** — headlight colour, brightness, beam type, and aim.
-* **Settings** — display units and headlight hotkey settings.
-* **Setups** — save, load, rename, recover, and manage tunes.
+- **Engine** — engines, internal parts, intake, exhaust, turbo, and engine swaps.
+- **Drivetrain** — clutch setup, clutch weights, gearing, and brake calibration.
+- **Suspension** — suspension parts, chassis setup, shocks, springs, balance, and weight transfer.
+- **Track** — track type, lug height, grip, and traction adjustments.
+- **Steering** — skis, ski stance, grip, and steering geometry.
+- **Lighting** — headlight colour, brightness, beam type, and aim.
+- **Settings** — display units and headlight hotkey settings.
+- **Setups** — save, load, rename, recover, and manage tunes.
 
 Changes are added to your current working setup immediately.
 
 Use:
 
-* **Save** to keep the setup.
-* **Reset** to return the current sled to its factory setup.
-* **DYNO** to view estimated performance information.
-* **Back** to return to the previous menu.
+- **Save** to keep the setup.
+- **Reset** to return the current sled to its factory setup.
+- **DYNO** to view estimated performance information.
+- **Back** to return to the previous menu.
 
 Some changes require the sled to be rebuilt before they take effect. Alpine handles this automatically when the setup is saved.
 
 When leaving with unsaved changes, you can:
 
-* Save and exit.
-* Continue tuning.
-* Exit without saving.
+- Save and exit.
+- Continue tuning.
+- Exit without saving.
 
 ## Comparing Parts
 
@@ -68,10 +68,10 @@ When viewing another part or adjustment, it also previews how that choice would 
 
 Comparison bars use the following colours:
 
-* **Gray** — factory value.
-* **Lime** — an improvement.
-* **Orange** — a reduction.
-* **Blue** — a change that is not automatically better or worse, such as ski stance.
+- **Gray** — factory value.
+- **Lime** — an improvement.
+- **Orange** — a reduction.
+- **Blue** — a change that is not automatically better or worse, such as ski stance.
 
 Exact values are shown where Sledders provides enough information. Alpine avoids displaying made-up values when the game does not provide the required data.
 
@@ -97,8 +97,8 @@ Press Back or Escape to close it.
 
 Open **Settings** to change:
 
-* **Display Units** — Metric or Imperial.
-* **Headlight Hotkey** — enable, disable, change, or clear the binding.
+- **Display Units** — Metric or Imperial.
+- **Headlight Hotkey** — enable, disable, change, or clear the binding.
 
 While choosing a new hotkey, the menu will display **Waiting**.
 
@@ -112,20 +112,20 @@ Open **Setups** from the main tuning menu.
 
 The list includes:
 
-* **Current Draft** — the setup currently being edited.
-* Saved setups.
-* **Recovery** options when older or damaged setup data can be restored.
+- **Current Draft** — the setup currently being edited.
+- Saved setups.
+- **Recovery** options when older or damaged setup data can be restored.
 
 Saved setups include names and short summaries to help identify them.
 
 You can:
 
-* Save the current tune as a new setup.
-* Rename saved setups.
-* Choose a default setup.
-* Preview a setup before loading it.
-* Recover removed or damaged setups.
-* Restore older revisions.
+- Save the current tune as a new setup.
+- Rename saved setups.
+- Choose a default setup.
+- Preview a setup before loading it.
+- Recover removed or damaged setups.
+- Restore older revisions.
 
 Alpine keeps setups separated by sled. A setup created for one sled cannot accidentally overwrite a different sled.
 
@@ -135,13 +135,13 @@ Existing compatible setups from older versions are kept when possible.
 
 ## Units and Tuning Behaviour
 
-* Engine output is shown in **kW** with Metric units and **hp** with Imperial units.
-* Weight is shown in **kg** or **lb**.
-* Ski stance is shown in millimetres or inches.
-* The game's Power, Climbing, and Agility ratings remain on their normal 0–100 scale.
-* Brake settings are shown as a percentage of the factory brake strength.
-* Steering, suspension, grip, and drivetrain changes are applied from the sled's original factory values to prevent repeated setup changes from stacking incorrectly.
-* The Climbing Track Kit changes traction, rotating weight, overall weight, and balance. It does not replace the visible track model.
+- Engine output is shown in **kW** with Metric units and **hp** with Imperial units.
+- Weight is shown in **kg** or **lb**.
+- Ski stance is shown in millimetres or inches.
+- The game's Power, Climbing, and Agility ratings remain on their normal 0-100 scale.
+- Brake settings are shown as a percentage of the factory brake strength.
+- Steering, suspension, grip, and drivetrain changes are applied from the sled's original factory values to prevent repeated setup changes from stacking incorrectly.
+- The Climbing Track Kit changes traction, rotating weight, overall weight, and balance. It does not replace the visible track model.
 
 ## Updating
 

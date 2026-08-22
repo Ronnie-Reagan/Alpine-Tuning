@@ -15,17 +15,17 @@ namespace AlpineTuning.ReleaseTests
 {
     internal static class Program
     {
-        private const string PublicVersion = "2026.07.17";
-        private const string AssemblyVersion = "2026.7.17.0";
-        private const string CatalogVersion = "2026.07.v2";
-        private const int ExpectedGarageIconCount = 162;
+        private const string PublicVersion = "2026.08.21";
+        private const string AssemblyVersion = "2026.8.21.0";
+        private const string CatalogVersion = "2026.08.fuel-v1";
+        private const int ExpectedGarageIconCount = 182;
 
         private static readonly string[] RequiredGarageIconKeys =
         {
             "action.continue", "action.discard", "action.save", "action.settings",
-            "action.setups", "action.unavailable",
+            "action.setups", "action.unavailable", "action.current-draft", "action.recovery",
             "root.engine", "root.drivetrain", "root.suspension", "root.track",
-            "root.steering", "root.lighting",
+            "root.steering", "root.lighting", "root.fuel",
             "settings.display", "settings.hotkey", "settings.metric", "settings.imperial",
             "settings.enabled", "settings.disabled", "settings.keyboard",
             "settings.controller", "settings.clear", "settings.confirm-clear",
@@ -54,6 +54,7 @@ namespace AlpineTuning.ReleaseTests
             "build-release.bat",
             "SleddersTuner/SleddersTuner.csproj",
             "SleddersTuner/AlpineNativeUi.cs",
+            "SleddersTuner/AlpineFuelSystem.cs",
             "SleddersTuner/AlpinePeerSharing.cs",
             "SleddersTuner/AlpineRemoteReplication.cs",
             "SleddersTuner/AlpineSleddersTransport.cs",
@@ -265,6 +266,7 @@ namespace AlpineTuning.ReleaseTests
             Require(firstRule == "*", "gitignore-not-allowlist");
             Require(ignore.Contains("!/SleddersTuner/SleddersTuner.csproj") &&
                     ignore.Contains("!/SleddersTuner/AlpineNativeUi.cs") &&
+                    ignore.Contains("!/SleddersTuner/AlpineFuelSystem.cs") &&
                     ignore.Contains("!/SleddersTuner/Assets/GarageIcons/*.png") &&
                     ignore.Contains("!/ReleaseTests/ReleaseTests.csproj") &&
                     ignore.Contains("!/ReleaseTests/Program.cs") &&
@@ -304,7 +306,7 @@ namespace AlpineTuning.ReleaseTests
             string assemblyInfo = ReadRepoText("SleddersTuner/Properties/AssemblyInfo.cs");
             string build = ReadRepoText("build-release.bat");
 
-            Require(Regex.IsMatch(models, "SchemaVersion\\s*=\\s*2\\s*;"), "schema-version");
+            Require(Regex.IsMatch(models, "SchemaVersion\\s*=\\s*3\\s*;"), "schema-version");
             Require(models.Contains("ModVersion = \"" + PublicVersion + "\""), "mod-version");
             Require(models.Contains("CatalogVersion = \"" + CatalogVersion + "\""), "catalog-version");
             Require(assemblyInfo.Contains("AssemblyVersion(\"" + AssemblyVersion + "\")"), "assembly-version-source");
@@ -373,9 +375,22 @@ namespace AlpineTuning.ReleaseTests
                     RegexOptions.CultureInvariant) &&
                     Regex.Matches(ui, @"CancelHeadlightCaptureIfActive\(").Count >= 5,
                 "binding-capture-close-lifecycle");
+            Require(ui.IndexOf("((Button)nativeTuningButton).clicked += toggleSurface;", StringComparison.Ordinal) >= 0 &&
+                    ui.IndexOf("nativeTuningButton.clicked +=", StringComparison.Ordinal) < 0,
+                "controller-tertiary-single-click-channel");
+            Require(ui.IndexOf("public static void UpdateGarageTuningShortcut()", StringComparison.Ordinal) >= 0 &&
+                    ui.IndexOf("GarageTertiaryPressed()", StringComparison.Ordinal) >= 0 &&
+                    ui.IndexOf("KeyCode.JoystickButton3", StringComparison.Ordinal) >= 0 &&
+                    ui.IndexOf("GetButtonDown", StringComparison.Ordinal) >= 0 &&
+                    main.IndexOf("AlpineNativeUi.UpdateGarageTuningShortcut();", StringComparison.Ordinal) >= 0,
+                "controller-tertiary-global-shortcut");
+            Require(ui.IndexOf("\"fuel-overflow-prompt\"", StringComparison.Ordinal) >= 0 &&
+                    ui.IndexOf("\"exit-prompt\"", StringComparison.Ordinal) >= 0,
+                "prompt-transient-focus-state");
             Require(ui.IndexOf("\"action.setups\"", StringComparison.Ordinal) >= 0 &&
-                    ui.IndexOf("tertiaryLabel = \"Setups\"", StringComparison.Ordinal) < 0,
-                "setups-root-tile-not-context-action");
+                    ui.IndexOf("tertiaryLabel = \"Setups\"", StringComparison.Ordinal) >= 0 &&
+                    ui.IndexOf("AddGarageNavigationTile(rail, tileButtons, \"Setups\"", StringComparison.Ordinal) < 0,
+                "setups-context-action-not-root-tile");
             Require(Regex.IsMatch(ui,
                     @"captured\.name\s*\?\?\s*""\(unnamed setup\)""[\s\S]{0,220}isPreviewSelected,",
                     RegexOptions.CultureInvariant),
@@ -684,6 +699,8 @@ namespace AlpineTuning.ReleaseTests
                 lugHeight = 50f,
                 friction = 1.2f,
                 weight = 250f,
+                fuelCapacity = 40f,
+                fuelConsumption = 20f,
                 skiStance = 939.8f,
                 skisXDistanceOffset = 0.4f,
                 statsPower = 50f,
@@ -1033,7 +1050,7 @@ namespace AlpineTuning.ReleaseTests
             Require(resources.Contains("AlpineTuning.Brand.Mark.png"), "brand-resource");
 
             Dictionary<string, string> aliases = ReadGarageIconAliases();
-            Require(aliases.Count >= 16, "garage-icon-alias-count");
+            Require(aliases.Count >= 8, "garage-icon-alias-count");
             foreach (KeyValuePair<string, string> alias in aliases)
             {
                 Require(!string.Equals(alias.Key, alias.Value, StringComparison.OrdinalIgnoreCase),
@@ -1072,7 +1089,7 @@ namespace AlpineTuning.ReleaseTests
             Require(sectionCategories != null && partTypeIcon != null,
                 "garage-category-routing-helpers");
             var routedCategories = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-            foreach (string section in new[] { "engine", "drivetrain", "track", "steering", "suspension", "lighting" })
+            foreach (string section in new[] { "engine", "drivetrain", "track", "steering", "suspension", "lighting", "fuel" })
             {
                 var categories = ((IEnumerable<string>)sectionCategories.Invoke(null, new object[] { section })).ToArray();
                 Require(categories.Length > 0, "garage-root-category-empty");

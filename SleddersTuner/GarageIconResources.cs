@@ -31,15 +31,7 @@ namespace AlpineTuning
                 { "settings.keyboard", "settings.hotkey" },
                 { "settings.controller", "settings.hotkey" },
                 { "settings.clear", "settings.hotkey" },
-                { "settings.confirm-clear", "settings.hotkey" },
-                { "part.brake.stock", "type.brake-calibration" },
-                { "part.brake.progressive", "type.brake-calibration" },
-                { "part.brake.trail", "type.brake-calibration" },
-                { "part.brake.aggressive", "type.brake-calibration" },
-                { "part.geometry.stock", "type.steering-geometry" },
-                { "part.geometry.reduced_toe", "type.steering-geometry" },
-                { "part.geometry.increased_toe", "type.steering-geometry" },
-                { "part.geometry.responsive", "type.steering-geometry" }
+                { "settings.confirm-clear", "settings.hotkey" }
             };
         private static MethodInfo _loadImageMethod;
 
@@ -49,12 +41,21 @@ namespace AlpineTuning
                 return null;
 
             string requested = key.Trim();
-            string resourceKey = IconAliases.TryGetValue(requested, out string alias)
-                ? alias
-                : requested;
-            // Aliases intentionally share one decoded texture. Caching by the
-            // requested tile key decoded the same 400x320 PNG once per alias.
-            return Load(resourceKey, GaragePrefix + resourceKey + ".png");
+
+            // Prefer one-off artwork for every real tile. Settings aliases are
+            // fallback-only because those state labels intentionally share art.
+            string exactResourceName = GaragePrefix + key.Trim() + ".png";
+            Texture2D exact = Load(requested, exactResourceName, false);
+            if (exact != null)
+                return exact;
+
+            if (!IconAliases.TryGetValue(requested, out string alias))
+            {
+                LogMissingOnce(exactResourceName);
+                return null;
+            }
+
+            return Load(alias, GaragePrefix + alias + ".png");
         }
 
         public static Texture2D LoadBrandMark()
@@ -75,7 +76,7 @@ namespace AlpineTuning
             _loadImageMethod = null;
         }
 
-        private static Texture2D Load(string cacheKey, string resourceName)
+        private static Texture2D Load(string cacheKey, string resourceName, bool logMissing = true)
         {
             if (Cache.TryGetValue(cacheKey, out Texture2D cached) && cached != null)
                 return cached;
@@ -87,7 +88,8 @@ namespace AlpineTuning
                 {
                     if (stream == null)
                     {
-                        LogMissingOnce(resourceName);
+                        if (logMissing)
+                            LogMissingOnce(resourceName);
                         return null;
                     }
 

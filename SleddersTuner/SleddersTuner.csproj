@@ -117,6 +117,7 @@
   </ItemGroup>
   <ItemGroup>
     <Compile Include="AlpineSleddersTransport.cs" />
+    <Compile Include="AlpineFuelSystem.cs" />
     <Compile Include="AlpineTuneMath.cs" />
     <Compile Include="AlpineRemoteReplication.cs" />
     <Compile Include="AlpineNativeUi.cs" />

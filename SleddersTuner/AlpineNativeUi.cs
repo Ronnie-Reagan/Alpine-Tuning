@@ -208,6 +208,8 @@ namespace AlpineTuning
             public VisualElement DynoOverlay { get; set; }
             public ControlIndicatorButton EntryButton { get; set; }
             public ControlIndicatorButton StyleButton { get; set; }
+            public ControlIndicatorButton ReadyButton { get; set; }
+            public Action DirectTuningShortcut { get; set; }
             public string OriginalStyleText { get; set; }
             public bool IsOpen { get; private set; }
             public bool IsDisposed { get; private set; }
@@ -460,6 +462,7 @@ namespace AlpineTuning
                 DynoOverlay?.RemoveFromHierarchy();
                 DynoOverlay = null;
                 Surface?.RemoveFromHierarchy();
+                DirectTuningShortcut = null;
                 EntryButton?.RemoveFromHierarchy();
                 if (StyleButton != null && OriginalStyleText != null)
                     StyleButton.DisplayText = OriginalStyleText;
@@ -528,7 +531,8 @@ namespace AlpineTuning
                 }
                 button.clicked += () =>
                 {
-                    if (conflictButton != null && conflictButton.enabledInHierarchy)
+                    if (conflictButton != null && conflictButton.enabledInHierarchy &&
+                        IsActuallyDisplayed(conflictButton))
                         return;
                     clicked();
                 };
@@ -601,6 +605,9 @@ namespace AlpineTuning
         private static readonly Dictionary<int, Action> GarageRenderActions = new Dictionary<int, Action>();
         private static readonly Dictionary<int, GarageNativeSession> GarageSessions = new Dictionary<int, GarageNativeSession>();
         private static readonly Dictionary<int, Func<bool>> GarageNativeCloseRequests = new Dictionary<int, Func<bool>>();
+        private static object _rewiredGaragePlayer;
+        private static MethodInfo _rewiredGetButtonDownByName;
+        private static float _nextRewiredGarageResolveTime;
         public static bool HasAttachedMenus => HasAttachedNativeUiRoot();
         public static bool IsGarageTuningOpen =>
             GarageSessions.Values.Any(session => session != null && session.IsOpen && !session.IsDisposed);
@@ -815,6 +822,7 @@ namespace AlpineTuning
             {
                 EntryButton = nativeTuningButton,
                 StyleButton = styleButton,
+                ReadyButton = readyButton,
                 OriginalStyleText = originalStyleText
             };
 
@@ -905,8 +913,16 @@ namespace AlpineTuning
                     mod.ForgetGarageSelection(controller);
             });
 
+            int lastToggleFrame = -1;
             Action toggleSurface = () =>
             {
+                // A dynamically-created ControlIndicatorButton can receive both
+                // the native UI callback and Alpine's explicit Y/Triangle fallback
+                // in the same frame. Treat them as one activation.
+                if (lastToggleFrame == Time.frameCount)
+                    return;
+                lastToggleFrame = Time.frameCount;
+
                 bool open = !session.IsOpen;
                 if (open)
                 {
@@ -936,41 +952,119 @@ namespace AlpineTuning
                 }
             };
 
-            // ControlIndicatorButton hides Button.clicked. Pointer/focus-submit
-            // activates the base event, whose constructor delegate then forwards to
-            // the derived event; Tertiary activates only the derived event. Defer the
-            // latter for one UI tick so a base activation can mark the frame first.
-            // This distinguishes focus-submit from the global shortcut without
-            // relying on private game state, and lets Ready win Tertiary dynamically.
-            int lastBaseActivationFrame = -1;
-            int lastIndicatorActivationFrame = -1;
-            ((Button)nativeTuningButton).clicked += () =>
-            {
-                lastBaseActivationFrame = Time.frameCount;
-                toggleSurface();
-            };
-            nativeTuningButton.clicked += () =>
-            {
-                int activationFrame = Time.frameCount;
-                if (lastIndicatorActivationFrame == activationFrame)
-                    return;
-
-                lastIndicatorActivationFrame = activationFrame;
-                nativeTuningButton.schedule.Execute(() =>
-                {
-                    if (lastBaseActivationFrame == activationFrame)
-                        return;
-
-                    // ControlIndicator gates input on enabledInHierarchy, not visual
-                    // display. If Ready can consume Tertiary, Alpine must not do so.
-                    if (readyButton != null && readyButton.enabledInHierarchy)
-                        return;
-
-                    toggleSurface();
-                });
-            };
+            // Current Sledders ControlIndicatorButton inherits Button.clicked.
+            // Its ControlIndicator constructor forwards the configured native action
+            // (Tertiary = Y/Triangle) into that base click channel, so subscribing
+            // once handles pointer, focus-submit, and controller input without
+            // double-dispatching the same event.
+            ((Button)nativeTuningButton).clicked += toggleSurface;
+            session.DirectTuningShortcut = toggleSurface;
 
             return true;
+        }
+
+        /// <summary>
+        /// Handles the garage-global controller shortcut explicitly. Sledders'
+        /// dynamically-created ControlIndicatorButton shows the Tertiary glyph but
+        /// does not reliably receive the global Tertiary action on every controller
+        /// path. Unity's legacy joystick button 3 is Y on XInput and Triangle on
+        /// PlayStation mappings, matching the game's displayed Tertiary control.
+        /// Focused A/X submission still travels through Button.clicked normally.
+        /// </summary>
+        public static void UpdateGarageTuningShortcut()
+        {
+            GarageNativeSession target = null;
+            foreach (GarageNativeSession session in GarageSessions.Values.ToArray())
+            {
+                if (session == null || session.IsDisposed || session.IsOpen ||
+                    session.DirectTuningShortcut == null)
+                {
+                    continue;
+                }
+
+                ControlIndicatorButton entry = session.EntryButton;
+                if (entry == null || entry.panel == null || !entry.enabledInHierarchy ||
+                    !IsActuallyDisplayed(entry))
+                {
+                    continue;
+                }
+
+                // Multiplayer Ready also owns Tertiary when it is actually active.
+                // Do not steal that native action.
+                ControlIndicatorButton ready = session.ReadyButton;
+                if (ready != null && ready.enabledInHierarchy && IsActuallyDisplayed(ready))
+                    continue;
+
+                target = session;
+                break;
+            }
+
+            if (target == null || !GarageTertiaryPressed())
+                return;
+
+            target.DirectTuningShortcut();
+        }
+
+        private static bool GarageTertiaryPressed()
+        {
+            // Unity's generic joystick button 3 is the normal XInput Y /
+            // PlayStation Triangle position and covers the common path directly.
+            if (Input.GetKeyDown(KeyCode.JoystickButton3))
+                return true;
+
+            // Sledders routes its controller UI through Rewired. Dynamic UI
+            // controls do not always get registered into Rewired's action dispatch,
+            // so also ask the game's Player0 for the native Tertiary action. Keep
+            // this reflection-only so Alpine does not gain a hard Rewired assembly
+            // dependency and remains tolerant of loader/game packaging changes.
+            try
+            {
+                if (_rewiredGaragePlayer == null || _rewiredGetButtonDownByName == null)
+                {
+                    if (Time.unscaledTime < _nextRewiredGarageResolveTime)
+                        return false;
+
+                    _nextRewiredGarageResolveTime = Time.unscaledTime + 1f;
+                    Type reInputType = AppDomain.CurrentDomain.GetAssemblies()
+                        .Select(assembly => assembly.GetType("Rewired.ReInput", false))
+                        .FirstOrDefault(type => type != null);
+                    PropertyInfo playersProperty = reInputType?.GetProperty(
+                        "players",
+                        BindingFlags.Public | BindingFlags.Static);
+                    object players = playersProperty?.GetValue(null, null);
+                    MethodInfo getPlayer = players?.GetType().GetMethod(
+                        "GetPlayer",
+                        BindingFlags.Public | BindingFlags.Instance,
+                        null,
+                        new[] { typeof(int) },
+                        null);
+                    object player = getPlayer?.Invoke(players, new object[] { 0 });
+                    MethodInfo getButtonDown = player?.GetType().GetMethod(
+                        "GetButtonDown",
+                        BindingFlags.Public | BindingFlags.Instance,
+                        null,
+                        new[] { typeof(string) },
+                        null);
+
+                    if (player == null || getButtonDown == null || getButtonDown.ReturnType != typeof(bool))
+                        return false;
+
+                    _rewiredGaragePlayer = player;
+                    _rewiredGetButtonDownByName = getButtonDown;
+                }
+
+                object result = _rewiredGetButtonDownByName.Invoke(
+                    _rewiredGaragePlayer,
+                    new object[] { "Tertiary" });
+                return result is bool pressed && pressed;
+            }
+            catch
+            {
+                _rewiredGaragePlayer = null;
+                _rewiredGetButtonDownByName = null;
+                _nextRewiredGarageResolveTime = Time.unscaledTime + 1f;
+                return false;
+            }
         }
 
         private static VisualElement CreateGarageTuningSurface(
@@ -1000,6 +1094,9 @@ namespace AlpineTuning
             bool skipNavigationStateCapture = false;
             bool hasUnsavedChanges = working != null && working.setupEdited;
             bool exitPromptVisible = false;
+            bool fuelOverflowPromptVisible = false;
+            bool fuelOverflowAccepted = false;
+            string fuelOverflowWarning = null;
             bool saveInProgress = false;
             bool closeGarageAfterPrompt = false;
             bool clearBindingArmed = false;
@@ -1056,6 +1153,9 @@ namespace AlpineTuning
 
                 mod.PreviewProfile(working, target);
                 hasUnsavedChanges = true;
+                fuelOverflowAccepted = false;
+                fuelOverflowPromptVisible = false;
+                fuelOverflowWarning = null;
                 factoryResetArmed = false;
                 pendingDeleteProfileId = null;
                 pendingLoadProfileId = null;
@@ -1113,6 +1213,15 @@ namespace AlpineTuning
                     return true;
                 }
 
+                if (!fuelOverflowAccepted &&
+                    mod.TryGetFuelCapacityOverflowWarning(working, target, out string overflowWarning))
+                {
+                    fuelOverflowWarning = overflowWarning;
+                    fuelOverflowPromptVisible = true;
+                    setStatus("Confirm fuel overflow");
+                    return false;
+                }
+
                 saveInProgress = true;
                 try
                 {
@@ -1134,7 +1243,11 @@ namespace AlpineTuning
                     hasUnsavedChanges = false;
                     working.setupEdited = false;
                     installedReference = PreviewClone(mod, target, working);
-                    if (mod.HasRuntimeInstanceForSled(target))
+                    if (!mod.Settings.alpineTuningEnabled)
+                    {
+                        message = "Saved · Alpine disabled · Vanilla runtime unchanged";
+                    }
+                    else if (mod.HasRuntimeInstanceForSled(target))
                     {
                         string reloadStatus;
                         bool reloaded = mod.ReloadSled(out reloadStatus);
@@ -1151,6 +1264,9 @@ namespace AlpineTuning
 
                     if (string.IsNullOrWhiteSpace(message))
                         message = AlpineNativeUiConfig.ApplyFailedText;
+                    fuelOverflowAccepted = false;
+                    fuelOverflowPromptVisible = false;
+                    fuelOverflowWarning = null;
                     setStatus(message);
                     refreshChrome?.Invoke();
                     refreshDyno?.Invoke();
@@ -1183,7 +1299,11 @@ namespace AlpineTuning
                     hasUnsavedChanges = false;
                     working.setupEdited = false;
                     installedReference = PreviewClone(mod, target, working);
-                    if (mod.HasRuntimeInstanceForSled(target))
+                    if (!mod.Settings.alpineTuningEnabled)
+                    {
+                        message = "Saved as new · Alpine disabled · Vanilla runtime unchanged";
+                    }
+                    else if (mod.HasRuntimeInstanceForSled(target))
                     {
                         string reloadStatus;
                         if (!mod.ReloadSled(out reloadStatus) && !string.IsNullOrWhiteSpace(reloadStatus))
@@ -1376,6 +1496,16 @@ namespace AlpineTuning
                 pendingDeleteProfileId = null;
                 pendingLoadProfileId = null;
                 factoryResetArmed = false;
+                if (fuelOverflowPromptVisible)
+                {
+                    fuelOverflowPromptVisible = false;
+                    fuelOverflowAccepted = false;
+                    fuelOverflowWarning = null;
+                    setStatus("Capacity change cancelled");
+                    skipNavigationStateCapture = true;
+                    render?.Invoke();
+                    return;
+                }
                 if (exitPromptVisible)
                 {
                     exitPromptVisible = false;
@@ -1448,7 +1578,7 @@ namespace AlpineTuning
                 skipNavigationStateCapture = false;
 
                 refreshTarget();
-                if (exitPromptVisible || factoryResetArmed || clearBindingArmed ||
+                if (exitPromptVisible || fuelOverflowPromptVisible || factoryResetArmed || clearBindingArmed ||
                     !string.IsNullOrWhiteSpace(pendingDeleteProfileId) ||
                     !string.IsNullOrWhiteSpace(pendingLoadProfileId) ||
                     mod.IsCapturingHeadlightBinding)
@@ -1484,6 +1614,78 @@ namespace AlpineTuning
                 }
 
                 GarageNavigationNode current = navigation[navigation.Count - 1];
+                if (fuelOverflowPromptVisible)
+                {
+                    closeDyno?.Invoke();
+                    breadcrumb.text = "TUNING  >  FUEL CAPACITY WARNING";
+                    var promptButtons = new List<Button>();
+                    Action cancelOverflow = () =>
+                    {
+                        fuelOverflowPromptVisible = false;
+                        fuelOverflowAccepted = false;
+                        fuelOverflowWarning = null;
+                        setStatus("Capacity change cancelled");
+                        skipNavigationStateCapture = true;
+                        render?.Invoke();
+                    };
+                    Action confirmOverflow = () =>
+                    {
+                        fuelOverflowAccepted = true;
+                        fuelOverflowPromptVisible = false;
+                        bool saved = saveSetup();
+                        if (!saved)
+                        {
+                            fuelOverflowAccepted = false;
+                            render?.Invoke();
+                            return;
+                        }
+
+                        if (exitPromptVisible)
+                        {
+                            exitPromptVisible = false;
+                            bool closeNativeGarage = closeGarageAfterPrompt;
+                            closeGarageAfterPrompt = false;
+                            closeSurface?.Invoke();
+                            if (closeNativeGarage)
+                                controller.Close();
+                            return;
+                        }
+                        skipNavigationStateCapture = true;
+                        render?.Invoke();
+                    };
+
+                    Button confirmTile = GarageTile(
+                        "CONFIRM CAPACITY CHANGE",
+                        "Keep the litres that fit in the new tank and permanently lose overflow.",
+                        false, confirmOverflow, "action.save");
+                    Button cancelTile = GarageTile(
+                        "CANCEL",
+                        "Return without changing or losing fuel.",
+                        false, cancelOverflow, "action.continue");
+                    confirmTile.name = "AlpineFuelOverflow-Confirm";
+                    cancelTile.name = "AlpineFuelOverflow-Cancel";
+                    rail.Add(confirmTile);
+                    rail.Add(cancelTile);
+                    promptButtons.Add(confirmTile);
+                    promptButtons.Add(cancelTile);
+
+                    var prompt = Section("Fuel Overflow");
+                    prompt.Add(MutedLabel(fuelOverflowWarning ?? "The selected tank cannot hold all current fuel."));
+                    detailContent.Add(prompt);
+                    session.ShowDetails(true);
+                    session.SetContextActions(
+                        "Cancel", cancelOverflow,
+                        "Confirm", confirmOverflow,
+                        null, null,
+                        actionClassAnchor, readyButton);
+                    var promptNavigation = new GarageNavigationNode(
+                        NavigationPanel, "fuel-overflow-prompt", "Fuel Capacity Warning");
+                    RestoreNativeGarageNavigationState(
+                        controller, session, root, detailHost, rail, detailContent,
+                        promptNavigation, promptButtons);
+                    return;
+                }
+
                 if (exitPromptVisible)
                 {
                     closeDyno?.Invoke();
@@ -1556,7 +1758,7 @@ namespace AlpineTuning
                     Button continueTile = GarageTile(
                         "CONTINUE TUNING",
                         "Return to the setup without saving or discarding it.",
-                        true,
+                        false,
                         continueTuning,
                         "action.continue");
                     continueTile.name = "AlpineExit-Continue";
@@ -1582,9 +1784,11 @@ namespace AlpineTuning
                         "Save & Exit", saveAndExit,
                         "Exit Without Saving", exitWithoutSaving,
                         actionClassAnchor, readyButton);
+                    var promptNavigation = new GarageNavigationNode(
+                        NavigationPanel, "exit-prompt", "Unsaved Changes");
                     RestoreNativeGarageNavigationState(
                         controller, session, root, detailHost, rail, detailContent,
-                        current, promptButtons);
+                        promptNavigation, promptButtons);
                     return;
                 }
 
@@ -1702,6 +1906,7 @@ namespace AlpineTuning
                         requestBack,
                         saveSetup,
                         setupChanged,
+                        () => navigate(NavigationPanel, "setups", "Setups"),
                         render,
                         setStatus,
                         actionClassAnchor,
@@ -1916,6 +2121,7 @@ namespace AlpineTuning
             Action goBack,
             Func<bool> saveSetup,
             Action setupChanged,
+            Action openSetups,
             Action render,
             Action<string> setStatus,
             ControlIndicatorButton classAnchor,
@@ -1950,7 +2156,12 @@ namespace AlpineTuning
 
             string tertiaryLabel = null;
             Action tertiary = null;
-            if (CanResetGarageNode(current))
+            if (depth <= 1)
+            {
+                tertiaryLabel = "Setups";
+                tertiary = openSetups;
+            }
+            else if (CanResetGarageNode(current))
             {
                 tertiaryLabel = "Reset";
                 tertiary = () =>
@@ -2147,9 +2358,9 @@ namespace AlpineTuning
                 NavigationCategory, "steering", "Steering", navigate, "root.steering");
             AddGarageNavigationTile(rail, tileButtons, "Lighting", "Color, output, beam, aim and operating mode.",
                 NavigationCategory, "lighting", "Lighting", navigate, "root.lighting");
-            AddGarageNavigationTile(rail, tileButtons, "Setups", "Current draft, saved setups, and recovery.",
-                NavigationPanel, "setups", "Setups", navigate, "action.setups");
-            AddGarageNavigationTile(rail, tileButtons, "Settings", "Display units and headlight hotkey.",
+            AddGarageNavigationTile(rail, tileButtons, "Fuel", "Tank capacity, backpack reserve and expedition range.",
+                NavigationCategory, "fuel", "Fuel", navigate, "root.fuel");
+            AddGarageNavigationTile(rail, tileButtons, "Settings", "Runtime, fuel, display and headlight options.",
                 NavigationPanel, "settings", "Settings", navigate, "action.settings", null, false);
         }
 
@@ -3306,6 +3517,21 @@ namespace AlpineTuning
                     true, GarageMetricDirection.Preference, metres, null, null);
             }
 
+            if (normalizedSection == "fuel" || normalizedSection == "dyno")
+            {
+                Func<float, string> liters = value => value.ToString("F1", System.Globalization.CultureInfo.InvariantCulture) + " L";
+                Func<float, string> lPer100 = value => value.ToString("F1", System.Globalization.CultureInfo.InvariantCulture) + " L/100 km";
+                add("Tank capacity", "Physical main-tank capacity. Engine swaps do not change the recipient chassis tank.",
+                    factory.fuelCapacity, current.fuelCapacity, candidate?.fuelCapacity ?? 0f,
+                    true, GarageMetricDirection.Preference, liters, 0f, 100f);
+                add("Nominal consumption", "Native engine fuel-consumption calibration. Engine swaps inherit the donor engine value.",
+                    factory.fuelConsumption, current.fuelConsumption, candidate?.fuelConsumption ?? 0f,
+                    true, GarageMetricDirection.LowerIsBetter, lPer100, 0f, null);
+                add("Backpack reserve", "Additional transferable fuel carried by the rider.",
+                    factory.backpackFuelCapacityLiters, current.backpackFuelCapacityLiters, candidate?.backpackFuelCapacityLiters ?? 0f,
+                    true, GarageMetricDirection.Preference, liters, 0f, 22f);
+            }
+
             if (normalizedSection == "lighting")
             {
                 AddEffectPercentMetric(metrics, "Intensity", "Headlight intensity relative to factory.",
@@ -4176,6 +4402,8 @@ namespace AlpineTuning
                 case PartCatalog.HeadlightBrightness: return "type.headlight-output";
                 case PartCatalog.HeadlightBeam: return "type.headlight-beam";
                 case PartCatalog.HeadlightAim: return "type.headlight-aim";
+                case PartCatalog.FuelTank: return "part.fuel.tank.stock";
+                case PartCatalog.BackpackFuel: return "part.fuel.backpack.none";
                 default: return null;
             }
         }
@@ -4207,7 +4435,20 @@ namespace AlpineTuning
             return element != null &&
                    element.focusable &&
                    element.canGrabFocus &&
-                   element.enabledInHierarchy;
+                   element.enabledInHierarchy &&
+                   IsActuallyDisplayed(element);
+        }
+
+        private static bool IsActuallyDisplayed(VisualElement element)
+        {
+            if (element == null)
+                return false;
+            for (VisualElement current = element; current != null; current = current.parent)
+            {
+                if (current.resolvedStyle.display == DisplayStyle.None)
+                    return false;
+            }
+            return true;
         }
 
         private static bool IsDescendantOf(VisualElement element, VisualElement ancestor)
@@ -4297,6 +4538,10 @@ namespace AlpineTuning
                     AddGarageEngineReferences(mod, detail, target, snapshot, !installedInDraft);
                 if (string.Equals(garageSection, "lighting", StringComparison.OrdinalIgnoreCase))
                     AddGarageLightingReferences(detail, snapshot, !installedInDraft);
+                if (part.effect != null && part.effect.requiresCosmeticBackpack)
+                    detail.Add(Badge(mod.FuelSystem != null && mod.FuelSystem.HasWornCosmeticBackpack()
+                        ? "RIDER FUEL OK"
+                        : "REQUIRES WORN BACKPACK"));
                 if (part.requiresReload)
                     detail.Add(Badge("REBUILD"));
                 detailContent.Add(detail);
@@ -4312,11 +4557,22 @@ namespace AlpineTuning
                 string subtitle = captured.description ?? string.Empty;
                 if (captured.requiresReload)
                     subtitle += "  Native spawn component.";
+                bool backpackRequired = captured.effect != null && captured.effect.requiresCosmeticBackpack;
+                bool backpackAvailable = !backpackRequired ||
+                    (mod.FuelSystem != null && mod.FuelSystem.HasWornCosmeticBackpack());
+                if (backpackRequired && !backpackAvailable)
+                    subtitle += "  Requires a worn cosmetic backpack.";
 
                 Button tile = GarageTile(captured.name, subtitle, selected, () =>
                 {
+                    if (!backpackAvailable)
+                    {
+                        setStatus?.Invoke("Wear a cosmetic backpack first");
+                        return;
+                    }
                     selectPart?.Invoke(partCategory, captured.id);
                 }, "part." + captured.id);
+                tile.SetEnabled(backpackAvailable || selected);
                 tile.name = "AlpinePart-" + SafeElementName(captured.id);
                 tile.RegisterCallback<FocusInEvent>(_ => showPartDetails(captured));
                 tile.RegisterCallback<PointerEnterEvent>(_ => showPartDetails(captured));
@@ -4847,9 +5103,10 @@ namespace AlpineTuning
             }
             return string.Format(
                 System.Globalization.CultureInfo.InvariantCulture,
-                "{0}|HP:{1}|{2}|{3}",
+                "{0}|HP:{1}|PF:{2}|{3}|{4}",
                 string.IsNullOrWhiteSpace(nativeName) ? "UNNAMED" : nativeName.ToUpperInvariant(),
                 ExactFloatBits(defaults.horsePower),
+                ExactFloatBits(defaults.powerFactor),
                 defaults.isTurboOn ? "T" : "N",
                 audioSignature);
         }
@@ -4903,6 +5160,18 @@ namespace AlpineTuning
                 return;
             }
 
+            if (string.Equals(panelId, "settings.runtime", StringComparison.OrdinalIgnoreCase))
+            {
+                BuildGarageRuntimeSettings(mod, content, tileContent, tileButtons, render, setStatus);
+                return;
+            }
+
+            if (string.Equals(panelId, "settings.fuel", StringComparison.OrdinalIgnoreCase))
+            {
+                BuildGarageFuelSettings(mod, content, tileContent, tileButtons, render, setStatus);
+                return;
+            }
+
             if (string.Equals(panelId, "settings.display", StringComparison.OrdinalIgnoreCase))
             {
                 BuildGarageDisplaySettings(mod, content, tileContent, tileButtons, render, setStatus);
@@ -4944,6 +5213,14 @@ namespace AlpineTuning
             var detail = Section("Settings");
             detail.Add(MutedLabel("Choose a settings group."));
             content.Add(detail);
+            AddGarageNavigationTile(
+                rail, tileButtons, "Runtime", "Enable or disable all Alpine runtime tuning without removing the mod.",
+                NavigationPanel, "settings.runtime", "Runtime", navigate,
+                "settings.runtime", "action.settings", false);
+            AddGarageNavigationTile(
+                rail, tileButtons, "Fuel", "Idle consumption and per-sled fuel persistence.",
+                NavigationPanel, "settings.fuel", "Fuel", navigate,
+                "settings.fuel", "action.settings", false);
             AddGarageNavigationTile(
                 rail, tileButtons, "Display", "Metric or Imperial values.",
                 NavigationPanel, "settings.display", "Display", navigate,
@@ -5015,6 +5292,106 @@ namespace AlpineTuning
             imperial.name = "AlpineSettings-Imperial";
             rail.Add(imperial);
             tileButtons.Add(imperial);
+        }
+
+        private static void BuildGarageRuntimeSettings(
+            AlpineTuningMod mod,
+            VisualElement content,
+            SUIManagedList rail,
+            List<Button> tileButtons,
+            Action render,
+            Action<string> setStatus)
+        {
+            AlpineUserSettings settings = mod.Settings;
+            var detail = Section("Alpine Runtime");
+            detail.Add(MutedLabel(settings.alpineTuningEnabled
+                ? "STATUS  ENABLED · saved Alpine setup affects the live sled."
+                : "STATUS  DISABLED · vanilla sled values remain active; saved tunes are retained."));
+            detail.Add(MutedLabel("Disabling does not delete or reset any saved setup."));
+            content.Add(detail);
+
+            Action<bool> setEnabled = enabled =>
+            {
+                string message;
+                if (!mod.SetAlpineTuningEnabled(enabled, out message))
+                    setStatus?.Invoke(string.IsNullOrWhiteSpace(message) ? "Save failed" : message);
+                else
+                    setStatus?.Invoke(message);
+                render?.Invoke();
+            };
+
+            Button enabledTile = GarageTile(
+                "ENABLED",
+                "Apply saved Alpine tuning to sled runtime.",
+                settings.alpineTuningEnabled,
+                () => setEnabled(true),
+                "settings.runtime.enabled", "settings.runtime", false);
+            Button disabledTile = GarageTile(
+                "DISABLED / VANILLA",
+                "Keep the mod and tune library loaded, but stop Alpine from changing sled runtime values.",
+                !settings.alpineTuningEnabled,
+                () => setEnabled(false),
+                "settings.runtime.disabled", "settings.runtime", false);
+            rail.Add(enabledTile);
+            rail.Add(disabledTile);
+            tileButtons.Add(enabledTile);
+            tileButtons.Add(disabledTile);
+        }
+
+        private static void BuildGarageFuelSettings(
+            AlpineTuningMod mod,
+            VisualElement content,
+            SUIManagedList rail,
+            List<Button> tileButtons,
+            Action render,
+            Action<string> setStatus)
+        {
+            AlpineUserSettings settings = mod.Settings;
+            var detail = Section("Fuel");
+            detail.Add(MutedLabel("IDLE BURN  " + (settings.idleFuelConsumptionEnabled ? "ON" : "OFF")));
+            detail.Add(MutedLabel("PER-SLED PERSISTENCE  " + (settings.persistentFuelLevelsEnabled ? "ON" : "OFF")));
+            detail.Add(MutedLabel("Reverse fuel correction remains active whenever Alpine runtime tuning is enabled."));
+            content.Add(detail);
+
+            Action<Action, string> saveToggle = (change, label) =>
+            {
+                change();
+                if (!mod.SaveSettings())
+                {
+                    change();
+                    setStatus?.Invoke("Save failed");
+                }
+                else
+                    setStatus?.Invoke(label);
+                render?.Invoke();
+            };
+
+            Button idleOn = GarageTile(
+                "IDLE BURN ON", "Engine-on idle consumes a small fuel floor.",
+                settings.idleFuelConsumptionEnabled,
+                () => { if (!settings.idleFuelConsumptionEnabled) saveToggle(() => settings.idleFuelConsumptionEnabled = !settings.idleFuelConsumptionEnabled, "Idle burn on"); },
+                "settings.fuel.idle-on", "settings.fuel", false);
+            Button idleOff = GarageTile(
+                "IDLE BURN OFF", "Leave native zero-load fuel behavior unchanged.",
+                !settings.idleFuelConsumptionEnabled,
+                () => { if (settings.idleFuelConsumptionEnabled) saveToggle(() => settings.idleFuelConsumptionEnabled = !settings.idleFuelConsumptionEnabled, "Idle burn off"); },
+                "settings.fuel.idle-off", "settings.fuel", false);
+            Button persistOn = GarageTile(
+                "PERSIST FUEL ON", "Remember remaining tank and backpack fuel for each sled between sessions.",
+                settings.persistentFuelLevelsEnabled,
+                () => { if (!settings.persistentFuelLevelsEnabled) saveToggle(() => settings.persistentFuelLevelsEnabled = !settings.persistentFuelLevelsEnabled, "Fuel persistence on"); },
+                "settings.fuel.persist-on", "settings.fuel", false);
+            Button persistOff = GarageTile(
+                "PERSIST FUEL OFF", "Do not restore saved per-sled fuel on later sessions. Capacity-change litre retention still applies during rebuilds.",
+                !settings.persistentFuelLevelsEnabled,
+                () => { if (settings.persistentFuelLevelsEnabled) saveToggle(() => settings.persistentFuelLevelsEnabled = !settings.persistentFuelLevelsEnabled, "Fuel persistence off"); },
+                "settings.fuel.persist-off", "settings.fuel", false);
+
+            foreach (Button tile in new[] { idleOn, idleOff, persistOn, persistOff })
+            {
+                rail.Add(tile);
+                tileButtons.Add(tile);
+            }
         }
 
         private static void BuildGarageHotkeySettings(
@@ -5557,6 +5934,8 @@ namespace AlpineTuning
                     };
                 case "lighting":
                     return new[] { PartCatalog.HeadlightColor, PartCatalog.HeadlightBrightness, PartCatalog.HeadlightBeam, PartCatalog.HeadlightAim };
+                case "fuel":
+                    return new[] { PartCatalog.FuelTank, PartCatalog.BackpackFuel };
                 default:
                     return Array.Empty<string>();
             }
@@ -5587,6 +5966,9 @@ namespace AlpineTuning
                 string.Equals(category, PartCatalog.RearSpring, StringComparison.OrdinalIgnoreCase) ||
                 string.Equals(category, PartCatalog.Accessories, StringComparison.OrdinalIgnoreCase))
                 return "suspension";
+            if (string.Equals(category, PartCatalog.FuelTank, StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(category, PartCatalog.BackpackFuel, StringComparison.OrdinalIgnoreCase))
+                return "fuel";
             if (string.Equals(category, PartCatalog.HeadlightColor, StringComparison.OrdinalIgnoreCase) ||
                 string.Equals(category, PartCatalog.HeadlightBrightness, StringComparison.OrdinalIgnoreCase) ||
                 string.Equals(category, PartCatalog.HeadlightBeam, StringComparison.OrdinalIgnoreCase) ||
@@ -5826,6 +6208,13 @@ namespace AlpineTuning
             }
             detail.Add(MutedLabel(mod.Store.BuildProfilePartSummary(selectedSlot)));
             detail.Add(StatsPreview(mod, target, preview.resolvedStats, preview.requiresReload));
+            string loadOverflowWarning;
+            bool loadWouldOverflow = mod.TryGetFuelCapacityOverflowWarning(selectedSlot, target, out loadOverflowWarning);
+            if (loadWouldOverflow)
+            {
+                detail.Add(Badge("FUEL OVERFLOW"));
+                detail.Add(MutedLabel(loadOverflowWarning));
+            }
             detail.Add(MutedLabel("UPDATED " + FormatUnixTime(selectedSlot.updatedUnixTime)));
 
             var renameField = new TextField("Tune Name") { value = selectedSlot.name ?? string.Empty };
@@ -5877,17 +6266,20 @@ namespace AlpineTuning
             detail.Add(renameField);
 
             bool loadWouldDiscardDraft = draftHasChanges;
-            bool alreadyLoaded = isCurrent && !loadWouldDiscardDraft;
+            bool loadNeedsConfirmation = loadWouldDiscardDraft || loadWouldOverflow;
+            bool alreadyLoaded = isCurrent && !loadNeedsConfirmation;
             string loadLabel = alreadyLoaded
                 ? "Loaded"
                 : pendingLoad ? "Confirm Load" : "Load";
             Button equipButton = PrimaryButton(loadLabel, () =>
             {
                 setPendingDeleteProfileId?.Invoke(null);
-                if (loadWouldDiscardDraft && !pendingLoad)
+                if (loadNeedsConfirmation && !pendingLoad)
                 {
                     setPendingLoadProfileId?.Invoke(loadActionKey);
-                    setStatus("Load again to discard draft");
+                    setStatus(loadWouldOverflow
+                        ? "Confirm load · fuel overflow will be lost"
+                        : "Load again to discard draft");
                     render();
                     return;
                 }
@@ -5900,17 +6292,19 @@ namespace AlpineTuning
             equipButton.name = "AlpinePresetLoad-" + SafeElementName(selectedSlot.profileId);
             equipButton.SetEnabled(!alreadyLoaded);
 
-            bool alreadyDefault = isCurrent && isDefaultSetup && !loadWouldDiscardDraft;
+            bool alreadyDefault = isCurrent && isDefaultSetup && !loadNeedsConfirmation;
             string defaultLabel = alreadyDefault
                 ? "Default"
                 : pendingDefault ? "Confirm Default" : isDefaultSetup ? "Load Default" : "Set Default";
             Button defaultButton = SmallButton(defaultLabel, () =>
             {
                 setPendingDeleteProfileId?.Invoke(null);
-                if (loadWouldDiscardDraft && !pendingDefault)
+                if (loadNeedsConfirmation && !pendingDefault)
                 {
                     setPendingLoadProfileId?.Invoke(defaultActionKey);
-                    setStatus("Set again to discard draft");
+                    setStatus(loadWouldOverflow
+                        ? "Confirm default · fuel overflow will be lost"
+                        : "Set again to discard draft");
                     render();
                     return;
                 }
@@ -6287,6 +6681,10 @@ namespace AlpineTuning
                 AddStatChip(row, "Paddle", TrackSpecResolver.FormatPaddleHeight(stats.lugHeight));
                 AddStatChip(row, "Track Bite", FormatPercentDelta(stats.friction, defaults != null ? defaults.friction : stats.friction));
                 AddStatChip(row, "Weight", UnitConversion.FormatWeight(stats.weight, settings.units));
+                AddStatChip(row, "Tank", stats.fuelCapacity.ToString("F1", System.Globalization.CultureInfo.InvariantCulture) + " L");
+                AddStatChip(row, "Consumption", stats.fuelConsumption.ToString("F1", System.Globalization.CultureInfo.InvariantCulture) + " L/100 km");
+                if (stats.backpackFuelCapacityLiters > 0.001f)
+                    AddStatChip(row, "Backpack Reserve", stats.backpackFuelCapacityLiters.ToString("F1", System.Globalization.CultureInfo.InvariantCulture) + " L");
                 AddStatChip(row, "Ski Stance", settings.units == AlpineDisplayUnits.Imperial
                     ? UnitConversion.MillimetersToInches(stats.skiStance).ToString("F1") + " in"
                     : stats.skiStance.ToString("F0") + " mm");

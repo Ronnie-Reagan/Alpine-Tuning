@@ -1,7 +1,7 @@
 {
-  "schemaVersion": 2,
-  "modVersion": "2026.07.17",
-  "catalogVersion": "2026.07.v2",
+  "schemaVersion": 3,
+  "modVersion": "2026.08.21",
+  "catalogVersion": "2026.08.fuel-v1",
   "profileId": "fixture-modified",
   "name": "Summit Deep Snow",
   "usesAutomaticName": false,
@@ -9,28 +9,102 @@
   "targetSledKey": "fixture_sled_alpha",
   "targetVehicleId": "1001",
   "selectedParts": [
-    { "category": "engineCore", "partId": "engine.stage2" },
-    { "category": "enginePiston", "partId": "piston.race" },
-    { "category": "engineCrank", "partId": "crank.race" },
-    { "category": "turbo", "partId": "turbo.mountain" },
-    { "category": "intakeExhaust", "partId": "intake.flow" },
-    { "category": "clutchGearing", "partId": "clutch.race" },
-    { "category": "clutchWeights", "partId": "weights.race" },
-    { "category": "ratioFeel", "partId": "ratio.highspeed" },
-    { "category": "brakeCalibration", "partId": "brake.aggressive" },
-    { "category": "track", "partId": "track.ice" },
-    { "category": "trackLimiter", "partId": "limiter.tight" },
-    { "category": "rearShock", "partId": "shock.race" },
-    { "category": "rearSpring", "partId": "spring.race" },
-    { "category": "suspension", "partId": "suspension.precision" },
-    { "category": "chassis", "partId": "chassis.light" },
-    { "category": "skis", "partId": "skis.aggressive" },
-    { "category": "steeringGeometry", "partId": "geometry.responsive" },
-    { "category": "headlightColor", "partId": "light.color.ice" },
-    { "category": "headlightBrightness", "partId": "light.brightness.baja" },
-    { "category": "headlightBeam", "partId": "light.beam.spot" },
-    { "category": "headlightAim", "partId": "light.aim.high" },
-    { "category": "accessories", "partId": "accessory.race_trim" }
+    {
+      "category": "engineCore",
+      "partId": "engine.stage2"
+    },
+    {
+      "category": "enginePiston",
+      "partId": "piston.race"
+    },
+    {
+      "category": "engineCrank",
+      "partId": "crank.race"
+    },
+    {
+      "category": "turbo",
+      "partId": "turbo.mountain"
+    },
+    {
+      "category": "intakeExhaust",
+      "partId": "intake.flow"
+    },
+    {
+      "category": "clutchGearing",
+      "partId": "clutch.race"
+    },
+    {
+      "category": "clutchWeights",
+      "partId": "weights.race"
+    },
+    {
+      "category": "ratioFeel",
+      "partId": "ratio.highspeed"
+    },
+    {
+      "category": "brakeCalibration",
+      "partId": "brake.aggressive"
+    },
+    {
+      "category": "track",
+      "partId": "track.ice"
+    },
+    {
+      "category": "trackLimiter",
+      "partId": "limiter.tight"
+    },
+    {
+      "category": "rearShock",
+      "partId": "shock.race"
+    },
+    {
+      "category": "rearSpring",
+      "partId": "spring.race"
+    },
+    {
+      "category": "suspension",
+      "partId": "suspension.precision"
+    },
+    {
+      "category": "chassis",
+      "partId": "chassis.light"
+    },
+    {
+      "category": "skis",
+      "partId": "skis.aggressive"
+    },
+    {
+      "category": "steeringGeometry",
+      "partId": "geometry.responsive"
+    },
+    {
+      "category": "headlightColor",
+      "partId": "light.color.ice"
+    },
+    {
+      "category": "headlightBrightness",
+      "partId": "light.brightness.baja"
+    },
+    {
+      "category": "headlightBeam",
+      "partId": "light.beam.spot"
+    },
+    {
+      "category": "headlightAim",
+      "partId": "light.aim.high"
+    },
+    {
+      "category": "accessories",
+      "partId": "accessory.race_trim"
+    },
+    {
+      "category": "fuelTank",
+      "partId": "fuel.tank.expedition"
+    },
+    {
+      "category": "backpackFuel",
+      "partId": "fuel.backpack.fillbag"
+    }
   ],
   "fineTune": {
     "powerTrimPercent": 4.0,
@@ -51,8 +125,13 @@
     "skisXDistanceOffset": 0.0,
     "isTurboOn": true,
     "engineText": "Synthetic Turbo",
-    "centerOfMassOffset": { "y": -0.02, "z": 0.04 },
-    "driverCenterOfMassOffset": {}
+    "centerOfMassOffset": {
+      "y": -0.02,
+      "z": 0.04
+    },
+    "driverCenterOfMassOffset": {},
+    "fuelCapacity": 60.0,
+    "fuelConsumption": 20.0
   },
   "headlightEnabled": true,
   "requiresReload": true,

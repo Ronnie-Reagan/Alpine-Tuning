@@ -78,7 +78,29 @@ namespace AlpineTuning
             bool resolvedTurbo = engineDefaults.isTurboOn || effect.isTurbo;
             float lug = TrackSpecResolver.ResolveLugHeightMillimeters(baseDefaults, effect);
             float friction = baseDefaults.friction * effect.frictionMultiplier * tractionTrim;
-            float weight = (baseDefaults.weight * effect.weightMultiplier + effect.weightOffset) * weightTrim;
+
+            // Fuel capacity belongs to the recipient chassis/tank. Engine swaps
+            // intentionally inherit only the donor engine's nominal consumption.
+            float fuelCapacity = Mathf.Max(0.01f, baseDefaults.fuelCapacity) *
+                                 SanitizePositive(effect.fuelCapacityMultiplier, 1f);
+            fuelCapacity = ClampRelative(
+                fuelCapacity,
+                Mathf.Max(0.01f, baseDefaults.fuelCapacity),
+                0.50f, 1.75f, 1f, 100f);
+            float fuelConsumption = Mathf.Max(0f, engineDefaults.fuelConsumption);
+
+            const float GasolineDensityKgPerLiter = 0.74f;
+            float backpackFuelCapacity = Mathf.Max(0f, effect.backpackFuelCapacityLiters);
+            float backpackPayloadMass = backpackFuelCapacity > 0.001f
+                ? Mathf.Max(0f, effect.backpackContainerMassKg) +
+                  backpackFuelCapacity * GasolineDensityKgPerLiter
+                : 0f;
+            // Tank shell mass is part of the installed sled. Backpack fuel is a
+            // live rider payload and is applied by AlpineFuelSystem using the
+            // actual remaining reserve, so it is not baked into the VSO weight.
+            float weight = (baseDefaults.weight * effect.weightMultiplier +
+                            effect.weightOffset +
+                            effect.tankHardwareMassOffsetKg) * weightTrim;
 
             Vector3 baseCom = ToVector3(baseDefaults.centerOfMassOffset);
             Vector3 baseDriverCom = ToVector3(baseDefaults.driverCenterOfMassOffset);
@@ -134,6 +156,11 @@ namespace AlpineTuning
                 lugHeight = lug,
                 friction = friction,
                 weight = weight,
+                fuelCapacity = fuelCapacity,
+                fuelConsumption = fuelConsumption,
+                backpackFuelCapacityLiters = backpackFuelCapacity,
+                backpackPayloadMassKg = backpackPayloadMass,
+                requiresCosmeticBackpack = effect.requiresCosmeticBackpack,
                 skiStance = skiStance,
                 skisXDistanceOffset = skisXDistanceOffset,
                 isTurboOn = resolvedTurbo,
@@ -374,6 +401,14 @@ namespace AlpineTuning
             target.frictionMultiplier *= source.frictionMultiplier;
             target.weightMultiplier *= source.weightMultiplier;
             target.weightOffset += source.weightOffset;
+            target.fuelCapacityMultiplier *= SanitizePositive(source.fuelCapacityMultiplier, 1f);
+            target.tankHardwareMassOffsetKg += source.tankHardwareMassOffsetKg;
+            if (source.backpackFuelCapacityLiters > 0.001f)
+            {
+                target.backpackFuelCapacityLiters = source.backpackFuelCapacityLiters;
+                target.backpackContainerMassKg = source.backpackContainerMassKg;
+            }
+            target.requiresCosmeticBackpack |= source.requiresCosmeticBackpack;
             target.skiStanceOffset += source.skiStanceOffset;
             target.skisXDistanceOffset += source.skisXDistanceOffset;
             target.centerOfMassDelta = Vec3Data.From(ToVector3(target.centerOfMassDelta) + ToVector3(source.centerOfMassDelta));

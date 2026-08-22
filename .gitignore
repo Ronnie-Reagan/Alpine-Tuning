@@ -6,6 +6,7 @@
 !/SleddersTuner/
 !/SleddersTuner/SleddersTuner.csproj
 !/SleddersTuner/AlpineNativeUi.cs
+!/SleddersTuner/AlpineFuelSystem.cs
 !/SleddersTuner/AlpinePeerSharing.cs
 !/SleddersTuner/AlpineRemoteReplication.cs
 !/SleddersTuner/AlpineSleddersTransport.cs

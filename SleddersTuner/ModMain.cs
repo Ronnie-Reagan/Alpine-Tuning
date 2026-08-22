@@ -4,6 +4,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
+using System.Reflection.Emit;
 using UnityEngine;
 using UnityEngine.UIElements;
 
@@ -35,6 +36,7 @@ namespace AlpineTuning
         internal TuneStore Store { get; private set; }
         internal AlpinePeerSharing Sharing { get; private set; }
         internal AlpineRemoteReplication RemoteReplication { get; private set; }
+        internal AlpineFuelSystem FuelSystem { get; private set; }
 
         private readonly List<VehicleScriptableObject> _selectableSleds = new List<VehicleScriptableObject>();
         private readonly HashSet<string> _sledsModifiedByAlpineThisSession = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -148,6 +150,8 @@ namespace AlpineTuning
             public float lugHeight;
             public float friction;
             public float weight;
+            public float fuelCapacity;
+            public float fuelConsumption;
             public float skiStance;
             public float skisXDistanceOffset;
             public bool isTurboOn;
@@ -168,6 +172,8 @@ namespace AlpineTuning
                     lugHeight = sled.lugHeight,
                     friction = sled.coefficientOfFriction,
                     weight = sled.weight,
+                    fuelCapacity = sled.fuelCapacity,
+                    fuelConsumption = sled.fuelConsumption,
                     skiStance = sled.skiStance,
                     skisXDistanceOffset = sled.skisXDistanceOffset,
                     isTurboOn = sled.isTurboOn,
@@ -234,6 +240,8 @@ namespace AlpineTuning
             Catalog = new PartCatalog();
             Store = new TuneStore(Catalog);
             Store.Initialize();
+            FuelSystem = new AlpineFuelSystem(this);
+            FuelSystem.Initialize();
             if (!AlpineConstants.PeerSharingTemporarilyDisabled)
             {
                 RemoteReplication = new AlpineRemoteReplication();
@@ -256,11 +264,20 @@ namespace AlpineTuning
                 _nextNativeUiScanTime = Time.unscaledTime + (attached || AlpineNativeUi.HasAttachedMenus ? 3f : 0.20f);
             }
 
+            AlpineNativeUi.UpdateGarageTuningShortcut();
             Sharing?.Update();
             FlushPendingCurrentSetups(false);
             UpdateHeadlightInputBinding();
-            PrepareHeadlightOverride();
+            FuelSystem?.Update();
 
+            if (!Settings.alpineTuningEnabled)
+            {
+                _activeHeadlightOverride = null;
+                _pendingEngineAudioApply = false;
+                return;
+            }
+
+            PrepareHeadlightOverride();
             if (ActiveSO == null)
                 return;
 
@@ -315,7 +332,8 @@ namespace AlpineTuning
 
         public override void OnLateUpdate()
         {
-            EnforceHeadlightOverride();
+            if (Settings.alpineTuningEnabled)
+                EnforceHeadlightOverride();
         }
 
         public override void OnDeinitializeMelon()
@@ -356,6 +374,7 @@ namespace AlpineTuning
 
             try
             {
+                FuelSystem?.Shutdown();
                 RestoreAlpineMutationsBeforeShutdown();
             }
             catch (Exception ex)
@@ -471,6 +490,73 @@ namespace AlpineTuning
         internal bool SaveSettings()
         {
             return Store != null && Store.SaveSettings();
+        }
+
+        internal bool SetAlpineTuningEnabled(bool enabled, out string status)
+        {
+            status = null;
+            AlpineUserSettings settings = Settings;
+            bool previous = settings.alpineTuningEnabled;
+            if (previous == enabled)
+            {
+                status = enabled ? "Alpine Tuning is already enabled." : "Alpine Tuning is already disabled.";
+                return true;
+            }
+
+            settings.alpineTuningEnabled = enabled;
+            if (!SaveSettings())
+            {
+                settings.alpineTuningEnabled = previous;
+                status = "Settings save failed.";
+                return false;
+            }
+
+            try
+            {
+                if (!enabled)
+                {
+                    FuelSystem?.RestoreRuntimePayloadMass();
+                    RestoreAlpineMutationsBeforeShutdown();
+                    status = "Alpine Tuning disabled; vanilla sled values restored. Saved tunes were retained.";
+                }
+                else
+                {
+                    bool applied = TryApplyActiveProfileForCurrentSled();
+                    if (applied && ActiveController != null && ActiveSO != null)
+                    {
+                        string reloadStatus;
+                        if (ReloadSled(out reloadStatus))
+                            status = "Alpine Tuning enabled; saved setup restored.";
+                        else
+                            status = string.IsNullOrWhiteSpace(reloadStatus)
+                                ? "Alpine Tuning enabled; reload the sled to finish restoring the setup."
+                                : "Alpine Tuning enabled. " + reloadStatus;
+                    }
+                    else
+                    {
+                        status = "Alpine Tuning enabled.";
+                    }
+                }
+                return true;
+            }
+            catch (Exception ex)
+            {
+                MelonLogger.Warning($"Alpine runtime toggle had a partial failure: {ex.GetType().Name}");
+                status = enabled
+                    ? "Alpine Tuning enabled; reload the sled if the saved setup is not yet visible."
+                    : "Alpine Tuning disabled; reload the sled if any tuned runtime value remains.";
+                return true;
+            }
+        }
+
+        internal bool TryGetFuelCapacityOverflowWarning(TuneProfile profile, VehicleScriptableObject sled, out string warning)
+        {
+            warning = null;
+            if (FuelSystem == null || profile == null || sled == null)
+                return false;
+            TuneComputation computation = ComputeProfile(profile, sled);
+            return computation != null && computation.stats != null &&
+                   FuelSystem.TryGetCapacityOverflowWarning(sled, computation.stats, out warning);
         }
 
         internal bool IsCapturingHeadlightBinding =>
@@ -763,6 +849,19 @@ namespace AlpineTuning
                 }
                 persisted = persist;
 
+                // A disabled Alpine installation remains a tune editor/library, but
+                // must not alter any live VehicleScriptableObject or runtime graph.
+                if (!Settings.alpineTuningEnabled)
+                {
+                    if (persist && notifyActive)
+                        NotifyActiveTuneChanged(profile, sled);
+                    status = persist
+                        ? "Setup saved; Alpine Tuning is disabled, so vanilla runtime values remain active."
+                        : "Alpine Tuning is disabled; setup retained without runtime changes.";
+                    return true;
+                }
+
+                FuelSystem?.PrepareProfileInstall(sled, computation);
                 ApplyDefaultsToSled(sled, computation.baseDefaults);
                 if (sled == ActiveSO)
                 {
@@ -777,6 +876,7 @@ namespace AlpineTuning
                     ApplyRuntimeController(computation, profile);
                     ApplyHeadlightRuntime(computation.mergedEffect, profile);
                     ApplyAccessoryMode(computation.mergedEffect.accessoryMode, computation.baseDefaults);
+                    FuelSystem?.OnProfileApplied(ActiveController, sled, computation);
                 }
 
                 MarkSledModifiedByAlpine(sled);
@@ -2083,6 +2183,16 @@ namespace AlpineTuning
                 TryPopulateDefaultAudioToken(defaults, sled, false);
                 Store.PutDefaults(defaults);
             }
+            else if (defaults.fuelCapacity <= 0.01f)
+            {
+                // Schema 2 defaults files predate Sledders' fuel fields. Capture
+                // them once from the native VSO so existing users do not migrate
+                // into a 1 L tank / zero-consumption setup. Old Alpine builds never
+                // touched these members, so the live value is safe migration data.
+                defaults.fuelCapacity = Mathf.Max(0.01f, sled.fuelCapacity);
+                defaults.fuelConsumption = Mathf.Max(0f, sled.fuelConsumption);
+                Store.PutDefaults(defaults);
+            }
 
             if (sled == ActiveSO && ActiveController != null)
             {
@@ -2196,7 +2306,7 @@ namespace AlpineTuning
 
         private bool TryApplyActiveProfileForCurrentSled()
         {
-            if (ActiveSO == null)
+            if (!Settings.alpineTuningEnabled || ActiveSO == null)
                 return false;
 
             var profile =
@@ -2325,6 +2435,8 @@ namespace AlpineTuning
                    Differs(defaults.lugHeight, stats.lugHeight, 0.01f) ||
                    Differs(defaults.friction, stats.friction, 0.001f) ||
                    Differs(defaults.weight, stats.weight, 0.01f) ||
+                   Differs(Mathf.Max(0.01f, defaults.fuelCapacity), stats.fuelCapacity, 0.001f) ||
+                   Differs(Mathf.Max(0f, defaults.fuelConsumption), stats.fuelConsumption, 0.001f) ||
                    Differs(defaults.skiStance, stats.skiStance, 0.1f) ||
                    Differs(defaults.skisXDistanceOffset, stats.skisXDistanceOffset, 0.0001f) ||
                    Differs(defaults.centerOfMassOffset.ToVector3(), stats.centerOfMassOffset.ToVector3(), 0.0001f) ||
@@ -2364,6 +2476,8 @@ namespace AlpineTuning
                    Differs(_activeSpawnValues.lugHeight, stats.lugHeight, 0.01f) ||
                    Differs(_activeSpawnValues.friction, stats.friction, 0.001f) ||
                    Differs(_activeSpawnValues.weight, stats.weight, 0.01f) ||
+                   Differs(_activeSpawnValues.fuelCapacity, stats.fuelCapacity, 0.001f) ||
+                   Differs(_activeSpawnValues.fuelConsumption, stats.fuelConsumption, 0.001f) ||
                    Differs(_activeSpawnValues.skiStance, stats.skiStance, 0.1f) ||
                    Differs(_activeSpawnValues.skisXDistanceOffset, stats.skisXDistanceOffset, 0.0001f) ||
                    Differs(_activeSpawnValues.centerOfMassOffset, stats.centerOfMassOffset.ToVector3(), 0.0001f) ||
@@ -2431,6 +2545,8 @@ namespace AlpineTuning
             sled.lugHeight = stats.lugHeight;
             sled.coefficientOfFriction = stats.friction;
             sled.weight = stats.weight;
+            sled.fuelCapacity = stats.fuelCapacity;
+            sled.fuelConsumption = stats.fuelConsumption;
             sled.skiStance = stats.skiStance;
             sled.skisXDistanceOffset = stats.skisXDistanceOffset;
             sled.isTurboOn = stats.isTurboOn;
@@ -2483,6 +2599,8 @@ namespace AlpineTuning
             sled.lugHeight = defaults.lugHeight;
             sled.coefficientOfFriction = defaults.friction;
             sled.weight = defaults.weight;
+            sled.fuelCapacity = defaults.fuelCapacity;
+            sled.fuelConsumption = defaults.fuelConsumption;
             sled.skiStance = defaults.skiStance;
             sled.skisXDistanceOffset = defaults.skisXDistanceOffset;
             sled.isTurboOn = defaults.isTurboOn;
@@ -3847,10 +3965,14 @@ namespace AlpineTuning
             if (_shutdownComplete || sled == null || Store == null || Catalog == null)
                 return;
 
+            FuelSystem?.OnControllerInitializing(controller, sled);
             RegisterSelectableSled(sled, "local sled pre-initialization");
             TryBuildDefaults();
             RefreshStatDefaultsFromCleanLoad(sled);
             EnsureDefaultsForSled(sled);
+
+            if (!Settings.alpineTuningEnabled)
+                return;
 
             TuneProfile preserved =
                 Store.GetCurrentSetupForSled(GetSledKey(sled), GetVehicleId(sled)) ??
@@ -3871,6 +3993,7 @@ namespace AlpineTuning
                                     "Preserved Alpine setup could not be resolved before native initialization.");
                 return;
             }
+            FuelSystem?.PrepareProfileInstall(sled, computation);
             ApplyDefaultsToSled(sled, computation.baseDefaults);
             ApplyStatsToSled(sled, computation);
             ApplyEngineAudioToSled(sled, computation.audioDefaults, computation.audioSource);
@@ -3899,6 +4022,7 @@ namespace AlpineTuning
             _activeHeadlightOverride = null;
             ActiveController = controller;
             ActiveSO = GetVehicleFromController(controller);
+            FuelSystem?.OnControllerInitialized(controller, ActiveSO);
             _activeSpawnValues = SpawnValueSignature.FromSled(ActiveSO);
             _spawnValuesControllerId = controller != null
                 ? controller.GetInstanceID()
@@ -4264,6 +4388,62 @@ namespace AlpineTuning
                 {
                     MelonLogger.Warning($"Garage customization hook skipped: {ex.GetType().Name}");
                 }
+            }
+        }
+
+        [HarmonyPatch(typeof(SnowmobileController), "UpdateSimulation")]
+        private static class PatchFuelSimulation
+        {
+            // Hanki's current fuel path subtracts MeshInterpretter.PAADEMIBEJN
+            // directly. That value is signed in reverse, so reverse adds fuel.
+            // Patch the final read in UpdateSimulation to a magnitude before the
+            // native fuel arithmetic. This fixes reverse even at a completely full
+            // tank, where a post-step correction cannot observe the clamped gain.
+            public static IEnumerable<CodeInstruction> Transpiler(IEnumerable<CodeInstruction> instructions)
+            {
+                var code = new List<CodeInstruction>(instructions);
+                Type meshType = AccessTools.TypeByName("MeshInterpretter");
+                FieldInfo drivetrainPower = meshType != null
+                    ? AccessTools.Field(meshType, "PAADEMIBEJN")
+                    : null;
+                MethodInfo abs = typeof(Mathf).GetMethod(nameof(Mathf.Abs), new[] { typeof(float) });
+
+                if (drivetrainPower == null || drivetrainPower.FieldType != typeof(float) || abs == null)
+                {
+                    MelonLogger.Warning("Alpine could not locate the native drivetrain-power fuel operand; reverse fuel fallback remains active.");
+                    return code;
+                }
+
+                var matches = new List<int>();
+                for (int i = 0; i < code.Count; i++)
+                {
+                    CodeInstruction instruction = code[i];
+                    if (instruction.opcode == OpCodes.Ldfld && Equals(instruction.operand, drivetrainPower))
+                        matches.Add(i);
+                }
+
+                if (matches.Count == 0)
+                {
+                    MelonLogger.Warning("Alpine found no drivetrain-power read in SnowmobileController.UpdateSimulation; reverse fuel fallback remains active.");
+                    return code;
+                }
+
+                int targetIndex = matches[matches.Count - 1];
+                code.Insert(targetIndex + 1, new CodeInstruction(OpCodes.Call, abs));
+                MelonLogger.Msg($"Alpine fuel correction patched native drivetrain power to absolute magnitude ({matches.Count} candidate read(s)).");
+                return code;
+            }
+
+            public static void Prefix(SnowmobileController __instance)
+            {
+                try { Instance?.FuelSystem?.BeforeFuelSimulation(__instance); }
+                catch (Exception ex) { MelonLogger.Warning($"Alpine fuel pre-step skipped: {ex.GetType().Name}"); }
+            }
+
+            public static void Postfix(SnowmobileController __instance)
+            {
+                try { Instance?.FuelSystem?.AfterFuelSimulation(__instance); }
+                catch (Exception ex) { MelonLogger.Warning($"Alpine fuel post-step skipped: {ex.GetType().Name}"); }
             }
         }
 
