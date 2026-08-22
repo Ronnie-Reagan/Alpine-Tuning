@@ -3527,7 +3527,7 @@ namespace AlpineTuning
                 add("Nominal consumption", "Native engine fuel-consumption calibration. Engine swaps inherit the donor engine value.",
                     factory.fuelConsumption, current.fuelConsumption, candidate?.fuelConsumption ?? 0f,
                     true, GarageMetricDirection.LowerIsBetter, lPer100, 0f, null);
-                add("Backpack reserve", "Additional transferable fuel carried by the rider.",
+                add("Backpack reserve", "Additional transferable fuel carried by the rider. Requires a worn cosmetic backpack.",
                     factory.backpackFuelCapacityLiters, current.backpackFuelCapacityLiters, candidate?.backpackFuelCapacityLiters ?? 0f,
                     true, GarageMetricDirection.Preference, liters, 0f, 22f);
             }
@@ -4538,10 +4538,8 @@ namespace AlpineTuning
                     AddGarageEngineReferences(mod, detail, target, snapshot, !installedInDraft);
                 if (string.Equals(garageSection, "lighting", StringComparison.OrdinalIgnoreCase))
                     AddGarageLightingReferences(detail, snapshot, !installedInDraft);
-                if (part.effect != null && part.effect.requiresCosmeticBackpack)
-                    detail.Add(Badge(mod.FuelSystem != null && mod.FuelSystem.HasWornCosmeticBackpack()
-                        ? "RIDER FUEL OK"
-                        : "REQUIRES WORN BACKPACK"));
+                if (part.effect != null && part.effect.backpackFuelCapacityLiters > 0.001f)
+                    detail.Add(Badge("RIDER RESERVE"));
                 if (part.requiresReload)
                     detail.Add(Badge("REBUILD"));
                 detailContent.Add(detail);
@@ -4557,22 +4555,10 @@ namespace AlpineTuning
                 string subtitle = captured.description ?? string.Empty;
                 if (captured.requiresReload)
                     subtitle += "  Native spawn component.";
-                bool backpackRequired = captured.effect != null && captured.effect.requiresCosmeticBackpack;
-                bool backpackAvailable = !backpackRequired ||
-                    (mod.FuelSystem != null && mod.FuelSystem.HasWornCosmeticBackpack());
-                if (backpackRequired && !backpackAvailable)
-                    subtitle += "  Requires a worn cosmetic backpack.";
-
                 Button tile = GarageTile(captured.name, subtitle, selected, () =>
                 {
-                    if (!backpackAvailable)
-                    {
-                        setStatus?.Invoke("Wear a cosmetic backpack first");
-                        return;
-                    }
                     selectPart?.Invoke(partCategory, captured.id);
                 }, "part." + captured.id);
-                tile.SetEnabled(backpackAvailable || selected);
                 tile.name = "AlpinePart-" + SafeElementName(captured.id);
                 tile.RegisterCallback<FocusInEvent>(_ => showPartDetails(captured));
                 tile.RegisterCallback<PointerEnterEvent>(_ => showPartDetails(captured));

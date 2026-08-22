@@ -71,6 +71,28 @@ namespace AlpineTuning
         private Label _consumptionLabel;
         private ControlIndicatorButton _stationaryRefuelButton;
         private ControlIndicatorButton _rescueRefuelButton;
+        private int _lastReserveRefuelInputFrame = -1;
+        private string _overlayStatus;
+        private float _overlayStatusUntil;
+        private GUIStyle _fuelHeaderStyle;
+        private GUIStyle _fuelTextStyle;
+        private GUIStyle _fuelPromptStyle;
+        private GUIStyle _fuelButtonStyle;
+        private object _rewiredPlayer;
+        private MethodInfo _rewiredGetButtonDownByName;
+
+        // Current Sledders builds preserve these named methods even when property
+        // metadata/backing fields are obfuscated. Bind the executable API directly
+        // instead of assuming reflection can discover a C# PropertyInfo named Fuel.
+        private Type _fuelBindingControllerType;
+        private MethodInfo _getFuelMethod;
+        private MethodInfo _setFuelMethod;
+        private MethodInfo _getFuelCapacityMethod;
+        private MethodInfo _getIsEngineOnMethod;
+        private bool _fuelBindingLogged;
+        private bool _fuelReadFailureLogged;
+        private Type _fuelManagerBindingType;
+        private MethodInfo _getFuelUsageEnabledEffectiveMethod;
 
         private struct FuelSample
         {
@@ -93,6 +115,8 @@ namespace AlpineTuning
                 LoadState();
             else
                 _state = new AlpineFuelStateFile();
+
+            MelonLogger.Msg("Alpine fuel subsystem initialized.");
         }
 
         internal void Shutdown()
@@ -198,6 +222,8 @@ namespace AlpineTuning
             if (controller == null || sled == null || !_mod.Settings.alpineTuningEnabled)
                 return;
 
+            ResolveFuelControllerBindings(controller, true);
+
             string key = Identity(sled);
             float capacity = GetFuelCapacity(controller, sled);
             float litersToRestore = -1f;
@@ -218,6 +244,15 @@ namespace AlpineTuning
 
             CaptureCurrentFuelState();
             ApplyRuntimePayloadMassAndCog(true);
+
+            AlpineFuelStateRecord activeRecord = CurrentRecord();
+            MelonLogger.Msg(string.Format(
+                System.Globalization.CultureInfo.InvariantCulture,
+                "Alpine fuel runtime ready: sled={0}, reserve={1:F1}/{2:F1}L, usageEnabled={3}.",
+                sled.name,
+                activeRecord != null ? Mathf.Max(0f, activeRecord.backpackLiters) : 0f,
+                activeRecord != null ? Mathf.Max(0f, activeRecord.backpackCapacityLiters) : 0f,
+                IsFuelUsageEnabled(controller)));
         }
 
         internal void Update()
@@ -244,12 +279,255 @@ namespace AlpineTuning
             }
             UpdateHudText();
             UpdateRefuelButtonAvailability();
+            UpdateReserveRefuelInput();
 
             if (_dirty && now >= _nextPersistenceSave)
             {
                 _nextPersistenceSave = now + SaveIntervalSeconds;
                 SaveState(false);
             }
+        }
+
+        internal void DrawOverlay()
+        {
+            if (_controller == null || _sled == null || !_mod.Settings.alpineTuningEnabled)
+                return;
+
+            float normalized;
+            float capacity = GetFuelCapacity(_controller, _sled);
+            bool fuelReadable = TryGetFuelNormalized(_controller, out normalized);
+            if (capacity <= 0.01f)
+                return;
+
+            EnsureOverlayStyles();
+            if (!fuelReadable)
+            {
+                int oldDepth = GUI.depth;
+                GUI.depth = -10000;
+                try
+                {
+                    Rect errorPanel = new Rect(Mathf.Max(8f, Screen.width - 338f), 18f, 320f, 58f);
+                    GUI.Box(errorPanel, GUIContent.none);
+                    GUI.Label(new Rect(errorPanel.x + 10f, errorPanel.y + 7f, 300f, 20f),
+                        "FUEL BINDING UNAVAILABLE", _fuelHeaderStyle);
+                    GUI.Label(new Rect(errorPanel.x + 10f, errorPanel.y + 29f, 300f, 20f),
+                        "Alpine cannot read the native fuel value - check Latest.log", _fuelTextStyle);
+                }
+                finally
+                {
+                    GUI.depth = oldDepth;
+                }
+                return;
+            }
+
+            int previousDepth = GUI.depth;
+            bool previousEnabled = GUI.enabled;
+            Color previousColor = GUI.color;
+            Color previousContent = GUI.contentColor;
+            Color previousBackground = GUI.backgroundColor;
+            GUI.depth = -10000;
+
+            try
+            {
+                float liters = Mathf.Clamp01(normalized) * capacity;
+                AlpineFuelStateRecord record = CurrentRecord();
+                float reserveLiters = record != null ? Mathf.Max(0f, record.backpackLiters) : 0f;
+                float reserveCapacity = record != null ? Mathf.Max(0f, record.backpackCapacityLiters) : 0f;
+                float hourlyRate = CurrentConsumptionLitersPerHour();
+                float per100Km;
+                bool hasPer100Km = TryCurrentConsumptionLitersPer100Km(out per100Km);
+                bool fuelUsageEnabled = IsFuelUsageEnabled(_controller);
+
+                const float panelWidth = 320f;
+                float panelHeight = reserveCapacity > 0.001f ? 82f : 64f;
+                Rect panel = new Rect(Mathf.Max(8f, Screen.width - panelWidth - 18f), 18f, panelWidth, panelHeight);
+                GUI.Box(panel, GUIContent.none);
+                GUI.Label(new Rect(panel.x + 10f, panel.y + 7f, panel.width - 20f, 20f),
+                    string.Format(System.Globalization.CultureInfo.InvariantCulture,
+                        "FUEL  {0:F1} / {1:F1} L  ({2:F0}%)",
+                        liters, capacity, Mathf.Clamp01(normalized) * 100f),
+                    _fuelHeaderStyle);
+
+                string consumption = fuelUsageEnabled
+                    ? (hasPer100Km
+                        ? string.Format(System.Globalization.CultureInfo.InvariantCulture,
+                            "2.5s  {0:F1} L/100 km   |   {1:F1} L/h", per100Km, hourlyRate)
+                        : string.Format(System.Globalization.CultureInfo.InvariantCulture,
+                            "2.5s  {0:F1} L/h", hourlyRate))
+                    : "Fuel usage disabled by Sledders";
+                GUI.Label(new Rect(panel.x + 10f, panel.y + 29f, panel.width - 20f, 20f), consumption, _fuelTextStyle);
+
+                if (reserveCapacity > 0.001f)
+                {
+                    GUI.Label(new Rect(panel.x + 10f, panel.y + 50f, panel.width - 20f, 20f),
+                        string.Format(System.Globalization.CultureInfo.InvariantCulture,
+                            "RESERVE  {0:F1} / {1:F1} L", reserveLiters, reserveCapacity),
+                        _fuelTextStyle);
+                }
+
+                bool canRefuel = CanRefuelFromBackpack();
+                bool outOfFuel = normalized <= 0.0001f;
+                bool hasReserve = reserveLiters > 0.01f;
+                if (outOfFuel && hasReserve)
+                {
+                    const float promptWidth = 390f;
+                    const float promptHeight = 148f;
+                    Rect prompt = new Rect(
+                        (Screen.width - promptWidth) * 0.5f,
+                        Mathf.Max(80f, Screen.height * 0.32f),
+                        promptWidth,
+                        promptHeight);
+                    GUI.Box(prompt, GUIContent.none);
+                    GUI.Label(new Rect(prompt.x + 15f, prompt.y + 12f, prompt.width - 30f, 26f),
+                        "OUT OF FUEL", _fuelHeaderStyle);
+                    GUI.Label(new Rect(prompt.x + 15f, prompt.y + 42f, prompt.width - 30f, 22f),
+                        string.Format(System.Globalization.CultureInfo.InvariantCulture,
+                            "Reserve fuel available: {0:F1} L", reserveLiters),
+                        _fuelPromptStyle);
+                    GUI.Label(new Rect(prompt.x + 15f, prompt.y + 66f, prompt.width - 30f, 20f),
+                        canRefuel ? "R / X / Square" : "STOP THE SLED TO REFUEL",
+                        _fuelTextStyle);
+                    GUI.enabled = canRefuel;
+                    if (GUI.Button(new Rect(prompt.x + 48f, prompt.y + 98f, prompt.width - 96f, 34f),
+                            "REFUEL FROM RESERVE", _fuelButtonStyle))
+                    {
+                        string ignored;
+                        TryRefuelFromBackpack(out ignored);
+                    }
+                    GUI.enabled = true;
+                }
+                else if (canRefuel)
+                {
+                    const float promptWidth = 430f;
+                    Rect prompt = new Rect(
+                        (Screen.width - promptWidth) * 0.5f,
+                        Mathf.Max(8f, Screen.height - 62f),
+                        promptWidth,
+                        42f);
+                    GUI.Box(prompt, GUIContent.none);
+                    GUI.Label(new Rect(prompt.x + 10f, prompt.y + 10f, prompt.width - 20f, 22f),
+                        string.Format(System.Globalization.CultureInfo.InvariantCulture,
+                            "R / X / Square   REFUEL FROM RESERVE"),
+                        _fuelPromptStyle);
+                }
+
+                if (!string.IsNullOrEmpty(_overlayStatus) && Time.unscaledTime < _overlayStatusUntil)
+                {
+                    const float statusWidth = 360f;
+                    Rect statusRect = new Rect((Screen.width - statusWidth) * 0.5f, 72f, statusWidth, 36f);
+                    GUI.Box(statusRect, GUIContent.none);
+                    GUI.Label(new Rect(statusRect.x + 10f, statusRect.y + 8f, statusRect.width - 20f, 20f),
+                        _overlayStatus, _fuelPromptStyle);
+                }
+            }
+            finally
+            {
+                GUI.depth = previousDepth;
+                GUI.enabled = previousEnabled;
+                GUI.color = previousColor;
+                GUI.contentColor = previousContent;
+                GUI.backgroundColor = previousBackground;
+            }
+        }
+
+        private void EnsureOverlayStyles()
+        {
+            if (_fuelHeaderStyle != null)
+                return;
+
+            _fuelHeaderStyle = new GUIStyle(GUI.skin.label)
+            {
+                fontSize = 14,
+                fontStyle = FontStyle.Bold,
+                alignment = TextAnchor.MiddleLeft
+            };
+            _fuelTextStyle = new GUIStyle(GUI.skin.label)
+            {
+                fontSize = 12,
+                alignment = TextAnchor.MiddleLeft
+            };
+            _fuelPromptStyle = new GUIStyle(GUI.skin.label)
+            {
+                fontSize = 13,
+                fontStyle = FontStyle.Bold,
+                alignment = TextAnchor.MiddleCenter
+            };
+            _fuelButtonStyle = new GUIStyle(GUI.skin.button)
+            {
+                fontSize = 13,
+                fontStyle = FontStyle.Bold,
+                alignment = TextAnchor.MiddleCenter
+            };
+        }
+
+        private void UpdateReserveRefuelInput()
+        {
+            if (!CanRefuelFromBackpack() || _lastReserveRefuelInputFrame == Time.frameCount)
+                return;
+
+            if (!ReserveRefuelInputPressed())
+                return;
+
+            _lastReserveRefuelInputFrame = Time.frameCount;
+            string status;
+            if (!TryRefuelFromBackpack(out status))
+                SetOverlayStatus(status);
+        }
+
+        private bool ReserveRefuelInputPressed()
+        {
+            if (Input.GetKeyDown(KeyCode.R) || Input.GetKeyDown(KeyCode.JoystickButton2))
+                return true;
+
+            try
+            {
+                if (_rewiredPlayer == null || _rewiredGetButtonDownByName == null)
+                {
+                    Type reInputType = AppDomain.CurrentDomain.GetAssemblies()
+                        .Select(assembly => assembly.GetType("Rewired.ReInput", false))
+                        .FirstOrDefault(type => type != null);
+                    PropertyInfo playersProperty = reInputType?.GetProperty(
+                        "players",
+                        BindingFlags.Public | BindingFlags.Static);
+                    object players = playersProperty?.GetValue(null, null);
+                    MethodInfo getPlayer = players?.GetType().GetMethod(
+                        "GetPlayer",
+                        BindingFlags.Public | BindingFlags.Instance,
+                        null,
+                        new[] { typeof(int) },
+                        null);
+                    object player = getPlayer?.Invoke(players, new object[] { 0 });
+                    MethodInfo getButtonDown = player?.GetType().GetMethod(
+                        "GetButtonDown",
+                        BindingFlags.Public | BindingFlags.Instance,
+                        null,
+                        new[] { typeof(string) },
+                        null);
+                    if (player == null || getButtonDown == null || getButtonDown.ReturnType != typeof(bool))
+                        return false;
+                    _rewiredPlayer = player;
+                    _rewiredGetButtonDownByName = getButtonDown;
+                }
+
+                object result = _rewiredGetButtonDownByName.Invoke(
+                    _rewiredPlayer,
+                    new object[] { "Secondary" });
+                return result is bool pressed && pressed;
+            }
+            catch
+            {
+                _rewiredPlayer = null;
+                _rewiredGetButtonDownByName = null;
+                return false;
+            }
+        }
+
+        private void SetOverlayStatus(string status)
+        {
+            if (string.IsNullOrEmpty(status))
+                return;
+            _overlayStatus = status;
+            _overlayStatusUntil = Time.unscaledTime + 2.5f;
         }
 
         internal void BeforeFuelSimulation(SnowmobileController controller)
@@ -351,6 +629,9 @@ namespace AlpineTuning
 
         internal bool HasWornCosmeticBackpack()
         {
+            // Sledders currently has no wearable backpack cosmetic. Keep this
+            // compatibility method permissive so older Alpine catalog data that
+            // marked reserve-fuel parts as backpack-dependent remains usable.
             return true;
         }
 
@@ -385,16 +666,10 @@ namespace AlpineTuning
                 status = "Stop the sled first.";
                 return false;
             }
-            if (!HasWornCosmeticBackpack())
-            {
-                status = "Wear a cosmetic backpack to use reserve fuel.";
-                return false;
-            }
-
             AlpineFuelStateRecord record = CurrentRecord();
             if (record == null || record.backpackLiters <= 0.001f)
             {
-                status = "Backpack reserve is empty.";
+                status = "Reserve fuel is empty.";
                 return false;
             }
 
@@ -426,8 +701,9 @@ namespace AlpineTuning
             ApplyRuntimePayloadMassAndCog(true);
             status = string.Format(
                 System.Globalization.CultureInfo.InvariantCulture,
-                "Transferred {0:F1} L from backpack.",
+                "Transferred {0:F1} L from reserve.",
                 transfer);
+            SetOverlayStatus(status);
             return true;
         }
 
@@ -645,12 +921,12 @@ namespace AlpineTuning
             _consumptionLabel.text = TryCurrentConsumptionLitersPer100Km(out per100Km)
                 ? string.Format(
                     System.Globalization.CultureInfo.InvariantCulture,
-                    "2.5s {0:F1} L/100 km  |  {1:F1} L/h{2}",
-                    per100Km, hourlyRate, reserve)
+                    "2.5s {0:F1} L/Kilometer  |  {1:F1} L/Minute{2}",
+                    per100Km / 100, hourlyRate / 60, reserve)
                 : string.Format(
                     System.Globalization.CultureInfo.InvariantCulture,
-                    "2.5s {0:F1} L/h{1}",
-                    hourlyRate, reserve);
+                    "2.5s {0:F1} L/Minute{1}",
+                    hourlyRate / 60, reserve);
             _consumptionLabel.style.display = DisplayStyle.Flex;
         }
 
@@ -671,7 +947,7 @@ namespace AlpineTuning
 
         private bool CanRefuelFromBackpack()
         {
-            if (_controller == null || _sled == null || !IsStationary(_controller) || !HasWornCosmeticBackpack())
+            if (_controller == null || _sled == null || !IsStationary(_controller))
                 return false;
             AlpineFuelStateRecord record = CurrentRecord();
             if (record == null || record.backpackLiters <= 0.01f)
@@ -747,7 +1023,7 @@ namespace AlpineTuning
             }
 
             Transform backpackAnchor;
-            if (backpackMass > 0.001f && TryFindWornBackpackAnchor(out backpackAnchor))
+            if (backpackMass > 0.001f && TryFindRiderCargoAnchor(out backpackAnchor))
             {
                 Vector3 local = _mainBody.transform.InverseTransformPoint(backpackAnchor.position);
                 com = MoveComTowardOrAway(com, local, backpackMass, targetMass);
@@ -825,7 +1101,7 @@ namespace AlpineTuning
             return false;
         }
 
-        private bool TryFindWornBackpackAnchor(out Transform anchor)
+        private bool TryFindRiderCargoAnchor(out Transform anchor)
         {
             anchor = null;
             if (_controller == null)
@@ -834,44 +1110,59 @@ namespace AlpineTuning
             try
             {
                 Transform root = _controller.transform.root;
+                Transform best = null;
+                int bestScore = int.MinValue;
+
+                // Do not depend on Animator/HumanBodyBones. Alpine intentionally
+                // keeps a lean Unity reference set, and Sledders rider rigs can be
+                // located well enough from their existing transform hierarchy.
                 foreach (Transform transform in root.GetComponentsInChildren<Transform>(true))
                 {
-                    if (IsActiveBackpackTransform(transform, out anchor))
-                        return true;
-                }
-
-                // Some driver rigs are outside the sled hierarchy. Only accept an
-                // active rendered backpack near the local sled to avoid treating
-                // another player's cosmetic as ours.
-                foreach (GameObject gameObject in Resources.FindObjectsOfTypeAll<GameObject>())
-                {
-                    if (gameObject == null || !gameObject.activeInHierarchy ||
-                        Vector3.Distance(gameObject.transform.position, _controller.transform.position) > 5f)
+                    if (transform == null || !transform.gameObject.activeInHierarchy)
                         continue;
-                    if (IsActiveBackpackTransform(gameObject.transform, out anchor))
-                        return true;
+
+                    string name = (transform.name ?? string.Empty).ToLowerInvariant();
+                    int score = 0;
+                    if (name.Contains("chest")) score += 100;
+                    if (name.Contains("upperchest") || name.Contains("upper_chest")) score += 120;
+                    if (name.Contains("spine")) score += 90;
+                    if (name.Contains("torso")) score += 80;
+                    if (name.Contains("rider")) score += 45;
+                    if (name.Contains("driver")) score += 45;
+                    if (name.Contains("hips") || name.Contains("pelvis")) score += 25;
+
+                    // Avoid obvious sled/chassis transforms if a broad name happens
+                    // to contain one of the rider terms.
+                    if (name.Contains("snowmobile") || name.Contains("chassis") ||
+                        name.Contains("track") || name.Contains("ski") ||
+                        name.Contains("engine"))
+                    {
+                        score -= 100;
+                    }
+
+                    if (score > bestScore && score > 0)
+                    {
+                        best = transform;
+                        bestScore = score;
+                    }
                 }
+
+                if (best != null)
+                {
+                    anchor = best;
+                    return true;
+                }
+
+                // Stable fallback keeps reserve-fuel mass accounting functional even
+                // for unusual/non-humanoid rider hierarchies.
+                anchor = _controller.transform;
+                return true;
             }
-            catch { }
-            return false;
-        }
-
-        private static bool IsActiveBackpackTransform(Transform transform, out Transform anchor)
-        {
-            anchor = null;
-            if (transform == null || !transform.gameObject.activeInHierarchy)
-                return false;
-            string name = (transform.name ?? string.Empty).ToLowerInvariant();
-            if (!name.Contains("backpack") && !name.Contains("back_pack"))
-                return false;
-
-            Renderer[] renderers = transform.GetComponentsInChildren<Renderer>(true);
-            Renderer visible = renderers.FirstOrDefault(renderer =>
-                renderer != null && renderer.enabled && renderer.gameObject.activeInHierarchy);
-            if (visible == null)
-                return false;
-            anchor = visible.transform;
-            return true;
+            catch
+            {
+                anchor = _controller != null ? _controller.transform : null;
+                return anchor != null;
+            }
         }
 
         private static Rigidbody FindMainBody(SnowmobileController controller)
@@ -896,6 +1187,11 @@ namespace AlpineTuning
 
         private bool IsFuelUsageEnabled(SnowmobileController controller)
         {
+            if (controller == null)
+                return false;
+
+            // Some builds expose this controller flag directly. Keep it as the
+            // cheapest path, but do not depend on it being reflected as a property.
             object value;
             if (TryReadMember(controller, out value, "enableFuelConsumption") && value is bool controllerEnabled)
                 return controllerEnabled;
@@ -906,23 +1202,64 @@ namespace AlpineTuning
                 _fuelManager = Resources.FindObjectsOfTypeAll<MonoBehaviour>()
                     .FirstOrDefault(item => item != null &&
                         string.Equals(item.GetType().Name, "FuelManager", StringComparison.OrdinalIgnoreCase));
+                ResolveFuelManagerBinding();
             }
-            if (_fuelManager != null &&
-                TryReadMember(_fuelManager, out value, "FuelUsageActive", "FuelUsageEnabledEffective") &&
-                value is bool managerEnabled)
-                return managerEnabled;
 
-            // If the new build exposes neither compatibility member, do not invent
-            // fuel usage in sessions where the host may have disabled it.
+            if (_fuelManager != null)
+            {
+                ResolveFuelManagerBinding();
+                if (_getFuelUsageEnabledEffectiveMethod != null)
+                {
+                    try
+                    {
+                        object raw = _getFuelUsageEnabledEffectiveMethod.Invoke(_fuelManager, null);
+                        if (raw is bool effective)
+                            return effective;
+                    }
+                    catch { }
+                }
+
+                if (TryReadMember(_fuelManager, out value,
+                        "FuelUsageEnabledEffective", "FuelUsageActive", "fuelUsageEnabled") &&
+                    value is bool managerEnabled)
+                    return managerEnabled;
+            }
+
             return false;
         }
 
-        private static bool IsEngineOn(SnowmobileController controller)
+        private void ResolveFuelManagerBinding()
         {
-            object value;
-            return controller != null &&
-                   TryReadMember(controller, out value, "IsEngineOn", "isEngineOn") &&
-                   value is bool enabled && enabled;
+            if (_fuelManager == null)
+                return;
+            Type type = _fuelManager.GetType();
+            if (_fuelManagerBindingType == type && _getFuelUsageEnabledEffectiveMethod != null)
+                return;
+
+            _fuelManagerBindingType = type;
+            _getFuelUsageEnabledEffectiveMethod = FindInstanceMethodInHierarchy(
+                type, "get_FuelUsageEnabledEffective", typeof(bool), Type.EmptyTypes);
+        }
+
+        private bool IsEngineOn(SnowmobileController controller)
+        {
+            if (controller == null)
+                return false;
+            ResolveFuelControllerBindings(controller, false);
+            if (_getIsEngineOnMethod != null)
+            {
+                try
+                {
+                    object raw = _getIsEngineOnMethod.Invoke(controller, null);
+                    if (raw is bool value)
+                        return value;
+                }
+                catch { }
+            }
+
+            object reflected;
+            return TryReadMember(controller, out reflected, "IsEngineOn", "isEngineOn") &&
+                   reflected is bool enabled && enabled;
         }
 
         private static void TrySetEngineOff(SnowmobileController controller)
@@ -931,13 +1268,12 @@ namespace AlpineTuning
                 return;
             try
             {
-                MethodInfo method = controller.GetType().GetMethod(
+                MethodInfo method = FindInstanceMethodInHierarchy(
+                    controller.GetType(),
                     "SetEngineOnOff",
-                    BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
-                if (method == null)
-                    return;
-                ParameterInfo[] parameters = method.GetParameters();
-                if (parameters.Length == 1 && parameters[0].ParameterType == typeof(bool))
+                    typeof(void),
+                    new[] { typeof(bool) });
+                if (method != null)
                     method.Invoke(controller, new object[] { false });
             }
             catch { }
@@ -953,7 +1289,7 @@ namespace AlpineTuning
             return Mathf.Clamp(rate, 0.55f, 1.8f);
         }
 
-        private static bool TryGetTankLiters(
+        private bool TryGetTankLiters(
             SnowmobileController controller,
             VehicleScriptableObject sled,
             out float liters)
@@ -969,54 +1305,88 @@ namespace AlpineTuning
             return true;
         }
 
-        private static float GetFuelCapacity(SnowmobileController controller, VehicleScriptableObject sled)
+        private float GetFuelCapacity(SnowmobileController controller, VehicleScriptableObject sled)
         {
-            object value;
-            if (controller != null && TryReadMember(controller, out value, "FuelCapacity") && value != null)
+            if (controller != null)
             {
-                try
+                ResolveFuelControllerBindings(controller, false);
+                if (_getFuelCapacityMethod != null)
                 {
-                    float parsed = Convert.ToSingle(value, System.Globalization.CultureInfo.InvariantCulture);
-                    if (parsed > 0.01f && !float.IsNaN(parsed) && !float.IsInfinity(parsed))
-                        return parsed;
+                    try
+                    {
+                        object raw = _getFuelCapacityMethod.Invoke(controller, null);
+                        float parsed = Convert.ToSingle(raw, System.Globalization.CultureInfo.InvariantCulture);
+                        if (parsed > 0.01f && !float.IsNaN(parsed) && !float.IsInfinity(parsed))
+                            return parsed;
+                    }
+                    catch { }
                 }
-                catch { }
+
+                object value;
+                if (TryReadMember(controller, out value, "FuelCapacity") && value != null)
+                {
+                    try
+                    {
+                        float parsed = Convert.ToSingle(value, System.Globalization.CultureInfo.InvariantCulture);
+                        if (parsed > 0.01f && !float.IsNaN(parsed) && !float.IsInfinity(parsed))
+                            return parsed;
+                    }
+                    catch { }
+                }
             }
             return sled != null ? Mathf.Max(0.01f, sled.fuelCapacity) : 0f;
         }
 
-        private static bool TryGetFuelNormalized(SnowmobileController controller, out float fuel)
+        private bool TryGetFuelNormalized(SnowmobileController controller, out float fuel)
         {
             fuel = 0f;
+            if (controller == null)
+                return false;
+
+            ResolveFuelControllerBindings(controller, false);
+            if (_getFuelMethod != null)
+            {
+                try
+                {
+                    object raw = _getFuelMethod.Invoke(controller, null);
+                    fuel = Convert.ToSingle(raw, System.Globalization.CultureInfo.InvariantCulture);
+                    if (!float.IsNaN(fuel) && !float.IsInfinity(fuel))
+                        return true;
+                }
+                catch { }
+            }
+
             object value;
-            if (controller == null || !TryReadMember(controller, out value, "Fuel") || value == null)
-                return false;
-            try
+            if (TryReadMember(controller, out value, "Fuel") && value != null)
             {
-                fuel = Convert.ToSingle(value, System.Globalization.CultureInfo.InvariantCulture);
-                return !float.IsNaN(fuel) && !float.IsInfinity(fuel);
+                try
+                {
+                    fuel = Convert.ToSingle(value, System.Globalization.CultureInfo.InvariantCulture);
+                    if (!float.IsNaN(fuel) && !float.IsInfinity(fuel))
+                        return true;
+                }
+                catch { }
             }
-            catch
+
+            if (!_fuelReadFailureLogged)
             {
-                return false;
+                _fuelReadFailureLogged = true;
+                MelonLogger.Warning(
+                    "Alpine fuel binding cannot read SnowmobileController fuel; HUD, reserve transfer and persistence are disabled until this binding is resolved.");
             }
+            return false;
         }
 
-        private static bool SetFuelNormalized(SnowmobileController controller, float fuel)
+        private bool SetFuelNormalized(SnowmobileController controller, float fuel)
         {
             if (controller == null)
                 return false;
+            ResolveFuelControllerBindings(controller, false);
+            if (_setFuelMethod == null)
+                return false;
             try
             {
-                MethodInfo method = controller.GetType().GetMethod(
-                    "SetFuel",
-                    BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic,
-                    null,
-                    new[] { typeof(float) },
-                    null);
-                if (method == null)
-                    return false;
-                method.Invoke(controller, new object[] { Mathf.Clamp01(fuel) });
+                _setFuelMethod.Invoke(controller, new object[] { Mathf.Clamp01(fuel) });
                 return true;
             }
             catch
@@ -1025,31 +1395,112 @@ namespace AlpineTuning
             }
         }
 
+        private void ResolveFuelControllerBindings(SnowmobileController controller, bool logStatus)
+        {
+            if (controller == null)
+                return;
+
+            Type type = controller.GetType();
+            if (_fuelBindingControllerType != type)
+            {
+                _fuelBindingControllerType = type;
+                _getFuelMethod = FindInstanceMethodInHierarchy(type, "get_Fuel", null, Type.EmptyTypes);
+                _setFuelMethod = FindInstanceMethodInHierarchy(type, "SetFuel", typeof(void), new[] { typeof(float) });
+                _getFuelCapacityMethod = FindInstanceMethodInHierarchy(type, "get_FuelCapacity", null, Type.EmptyTypes);
+                _getIsEngineOnMethod = FindInstanceMethodInHierarchy(type, "get_IsEngineOn", typeof(bool), Type.EmptyTypes);
+                _fuelBindingLogged = false;
+                _fuelReadFailureLogged = false;
+            }
+
+            if (!logStatus || _fuelBindingLogged)
+                return;
+
+            _fuelBindingLogged = true;
+            float normalized;
+            bool canRead = TryGetFuelNormalized(controller, out normalized);
+            float capacity = GetFuelCapacity(controller, _sled);
+            MelonLogger.Msg(string.Format(
+                System.Globalization.CultureInfo.InvariantCulture,
+                "Alpine fuel binding: controller={0}, get_Fuel={1}, SetFuel={2}, get_FuelCapacity={3}, get_IsEngineOn={4}, read={5}, fuel={6:F4}, capacity={7:F2}L.",
+                type.FullName,
+                _getFuelMethod != null,
+                _setFuelMethod != null,
+                _getFuelCapacityMethod != null,
+                _getIsEngineOnMethod != null,
+                canRead,
+                canRead ? normalized : -1f,
+                capacity));
+        }
+
+        private static MethodInfo FindInstanceMethodInHierarchy(
+            Type type,
+            string name,
+            Type returnType,
+            Type[] parameterTypes)
+        {
+            const BindingFlags flags = BindingFlags.Instance | BindingFlags.Public |
+                                       BindingFlags.NonPublic | BindingFlags.DeclaredOnly;
+            for (Type current = type; current != null; current = current.BaseType)
+            {
+                try
+                {
+                    foreach (MethodInfo method in current.GetMethods(flags))
+                    {
+                        if (!string.Equals(method.Name, name, StringComparison.Ordinal))
+                            continue;
+                        if (returnType != null && method.ReturnType != returnType)
+                            continue;
+                        ParameterInfo[] parameters = method.GetParameters();
+                        if (parameters.Length != parameterTypes.Length)
+                            continue;
+                        bool match = true;
+                        for (int i = 0; i < parameters.Length; i++)
+                        {
+                            if (parameters[i].ParameterType != parameterTypes[i])
+                            {
+                                match = false;
+                                break;
+                            }
+                        }
+                        if (match)
+                            return method;
+                    }
+                }
+                catch { }
+            }
+            return null;
+        }
+
         private static bool TryReadMember(object target, out object value, params string[] names)
         {
             value = null;
             if (target == null || names == null)
                 return false;
-            Type type = target.GetType();
-            const BindingFlags flags = BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.IgnoreCase;
-            foreach (string name in names)
+
+            const BindingFlags flags = BindingFlags.Instance | BindingFlags.Public |
+                                       BindingFlags.NonPublic | BindingFlags.IgnoreCase |
+                                       BindingFlags.DeclaredOnly;
+            for (Type current = target.GetType(); current != null; current = current.BaseType)
             {
-                try
+                foreach (string name in names)
                 {
-                    PropertyInfo property = type.GetProperty(name, flags);
-                    if (property != null && property.CanRead)
+                    try
                     {
-                        value = property.GetValue(target, null);
-                        return true;
+                        PropertyInfo property = current.GetProperty(name, flags);
+                        if (property != null && property.CanRead)
+                        {
+                            value = property.GetValue(target, null);
+                            return true;
+                        }
+                        FieldInfo field = current.GetField(name, flags);
+                        if (field != null)
+                        {
+                            value = field.GetValue(target);
+                            return true;
+                        }
                     }
-                    FieldInfo field = type.GetField(name, flags);
-                    if (field != null)
-                    {
-                        value = field.GetValue(target);
-                        return true;
-                    }
+                    catch { }
                 }
-                catch { }
             }
             return false;
         }

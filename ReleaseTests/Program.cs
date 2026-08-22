@@ -15,8 +15,8 @@ namespace AlpineTuning.ReleaseTests
 {
     internal static class Program
     {
-        private const string PublicVersion = "2026.08.21";
-        private const string AssemblyVersion = "2026.8.21.0";
+        private const string PublicVersion = "2026.08.22";
+        private const string AssemblyVersion = "2026.8.22.0";
         private const string CatalogVersion = "2026.08.fuel-v1";
         private const int ExpectedGarageIconCount = 182;
 
@@ -340,6 +340,8 @@ namespace AlpineTuning.ReleaseTests
             string project = ReadRepoText("SleddersTuner/SleddersTuner.csproj");
             string main = ReadRepoText("SleddersTuner/ModMain.cs");
             string math = ReadRepoText("SleddersTuner/AlpineTuneMath.cs");
+            string fuel = ReadRepoText("SleddersTuner/AlpineFuelSystem.cs");
+            string catalog = ReadRepoText("SleddersTuner/PartCatalog.cs");
 
             Require(!Regex.IsMatch(ui, @"KeyCode\s*\.\s*D\b|DYNO\s*\[D\]", RegexOptions.IgnoreCase), "source-d-shortcut");
             Require(ui.IndexOf("AttachInlineFallback", StringComparison.Ordinal) < 0 &&
@@ -387,6 +389,28 @@ namespace AlpineTuning.ReleaseTests
             Require(ui.IndexOf("\"fuel-overflow-prompt\"", StringComparison.Ordinal) >= 0 &&
                     ui.IndexOf("\"exit-prompt\"", StringComparison.Ordinal) >= 0,
                 "prompt-transient-focus-state");
+            Require(main.IndexOf("public override void OnGUI()", StringComparison.Ordinal) >= 0 &&
+                    main.IndexOf("FuelSystem?.DrawOverlay();", StringComparison.Ordinal) >= 0 &&
+                    fuel.IndexOf("internal void DrawOverlay()", StringComparison.Ordinal) >= 0 &&
+                    fuel.IndexOf("OUT OF FUEL", StringComparison.Ordinal) >= 0 &&
+                    fuel.IndexOf("REFUEL FROM RESERVE", StringComparison.Ordinal) >= 0,
+                "fuel-overlay-and-rescue-fallback");
+            Require(fuel.IndexOf("KeyCode.JoystickButton2", StringComparison.Ordinal) >= 0 &&
+                    fuel.IndexOf("new object[] { \"Secondary\" }", StringComparison.Ordinal) >= 0 &&
+                    fuel.IndexOf("KeyCode.R", StringComparison.Ordinal) >= 0,
+                "reserve-refuel-controller-input");
+            Require(fuel.IndexOf("FindInstanceMethodInHierarchy", StringComparison.Ordinal) >= 0 &&
+                    fuel.IndexOf("\"get_Fuel\"", StringComparison.Ordinal) >= 0 &&
+                    fuel.IndexOf("\"SetFuel\"", StringComparison.Ordinal) >= 0 &&
+                    fuel.IndexOf("\"get_FuelCapacity\"", StringComparison.Ordinal) >= 0 &&
+                    fuel.IndexOf("FUEL BINDING UNAVAILABLE", StringComparison.Ordinal) >= 0,
+                "fuel-live-method-binding-and-visible-failure");
+            Require(main.IndexOf("AccessTools.TypeByName(\"FLIADIKAFHD\")", StringComparison.Ordinal) >= 0 &&
+                    main.IndexOf("AccessTools.Field(drivetrainStateType, \"PAADEMIBEJN\")", StringComparison.Ordinal) >= 0,
+                "fuel-native-signed-power-owner");
+            Require(catalog.IndexOf("requiresCosmeticBackpack = true", StringComparison.Ordinal) < 0 &&
+                    fuel.IndexOf("Sledders currently has no wearable backpack cosmetic", StringComparison.Ordinal) >= 0,
+                "reserve-fuel-no-cosmetic-gate");
             Require(ui.IndexOf("\"action.setups\"", StringComparison.Ordinal) >= 0 &&
                     ui.IndexOf("tertiaryLabel = \"Setups\"", StringComparison.Ordinal) >= 0 &&
                     ui.IndexOf("AddGarageNavigationTile(rail, tileButtons, \"Setups\"", StringComparison.Ordinal) < 0,

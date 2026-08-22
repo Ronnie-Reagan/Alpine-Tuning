@@ -8,7 +8,7 @@ namespace AlpineTuning
     internal static class AlpineConstants
     {
         public const int SchemaVersion = 3;
-        public const string ModVersion = "2026.08.21";
+        public const string ModVersion = "2026.08.22";
         public const string CatalogVersion = "2026.08.fuel-v1";
         public const string DefaultProfileAuthor = "Alpine Rider";
         public static readonly bool PeerSharingTemporarilyDisabled = true;

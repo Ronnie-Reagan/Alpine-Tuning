@@ -610,13 +610,13 @@ namespace AlpineTuning
             Add("fuel.backpack.none", BackpackFuel, "No Backpack Fuel", "Carry no reserve fuel in the rider backpack.", false,
                 e => { });
             Add("fuel.backpack.bottles", BackpackFuel, "Water Bottles", "1 L reserve.", true,
-                e => { e.backpackFuelCapacityLiters = 1f; e.backpackContainerMassKg = 0.15f; e.requiresCosmeticBackpack = true; });
+                e => { e.backpackFuelCapacityLiters = 1f; e.backpackContainerMassKg = 0.15f; });
             Add("fuel.backpack.jug", BackpackFuel, "Juice Jug", "4 L reserve.", true,
-                e => { e.backpackFuelCapacityLiters = 4f; e.backpackContainerMassKg = 0.25f; e.requiresCosmeticBackpack = true; });
+                e => { e.backpackFuelCapacityLiters = 4f; e.backpackContainerMassKg = 0.25f; });
             Add("fuel.backpack.tinycan", BackpackFuel, "Tiny Gas Can", "6 L reserve.", true,
-                e => { e.backpackFuelCapacityLiters = 6f; e.backpackContainerMassKg = 0.65f; e.requiresCosmeticBackpack = true; });
-            Add("fuel.backpack.fillbag", BackpackFuel, "Just Fill the Bag", "22 L reserve. Ridiculous, heavy.", true,
-                e => { e.backpackFuelCapacityLiters = 22f; e.backpackContainerMassKg = 1.10f; e.requiresCosmeticBackpack = true; });
+                e => { e.backpackFuelCapacityLiters = 6f; e.backpackContainerMassKg = 0.65f; });
+            Add("fuel.backpack.fillbag", BackpackFuel, "Just Fill the Bag", "22 L reserve. Ridiculous, heavy", true,
+                e => { e.backpackFuelCapacityLiters = 22f; e.backpackContainerMassKg = 1.10f; });
 
             // accessories: toggles existing in-game accessory objects only; no custom meshes are spawned here.
             Add("accessory.stock", Accessories, "Factory Accessories", "Keep current accessory state.", false,

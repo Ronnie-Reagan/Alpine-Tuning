@@ -31,7 +31,15 @@ namespace AlpineTuning
                 { "settings.keyboard", "settings.hotkey" },
                 { "settings.controller", "settings.hotkey" },
                 { "settings.clear", "settings.hotkey" },
-                { "settings.confirm-clear", "settings.hotkey" }
+                { "settings.confirm-clear", "settings.hotkey" },
+                { "settings.runtime", "settings.hotkey" },
+                { "settings.runtime.enabled", "settings.hotkey" },
+                { "settings.runtime.disabled", "settings.hotkey" },
+                { "settings.fuel", "root.fuel" },
+                { "settings.fuel.idle-on", "root.fuel" },
+                { "settings.fuel.idle-off", "root.fuel" },
+                { "settings.fuel.persist-on", "root.fuel" },
+                { "settings.fuel.persist-off", "root.fuel" }
             };
         private static MethodInfo _loadImageMethod;
 

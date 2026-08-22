@@ -330,6 +330,11 @@ namespace AlpineTuning
             _lastAppliedEngineAudioEnumRawValue = 0;
         }
 
+        public override void OnGUI()
+        {
+            FuelSystem?.DrawOverlay();
+        }
+
         public override void OnLateUpdate()
         {
             if (Settings.alpineTuningEnabled)
@@ -4394,7 +4399,7 @@ namespace AlpineTuning
         [HarmonyPatch(typeof(SnowmobileController), "UpdateSimulation")]
         private static class PatchFuelSimulation
         {
-            // Hanki's current fuel path subtracts MeshInterpretter.PAADEMIBEJN
+            // Hanki's current fuel path subtracts the signed drivetrain-output operand
             // directly. That value is signed in reverse, so reverse adds fuel.
             // Patch the final read in UpdateSimulation to a magnitude before the
             // native fuel arithmetic. This fixes reverse even at a completely full
@@ -4402,15 +4407,18 @@ namespace AlpineTuning
             public static IEnumerable<CodeInstruction> Transpiler(IEnumerable<CodeInstruction> instructions)
             {
                 var code = new List<CodeInstruction>(instructions);
-                Type meshType = AccessTools.TypeByName("MeshInterpretter");
-                FieldInfo drivetrainPower = meshType != null
-                    ? AccessTools.Field(meshType, "PAADEMIBEJN")
+                // Current Sledders keeps the signed drivetrain output in the
+                // FLIADIKAFHD value stored by SnowmobileController.AMDAFCPDPBL.
+                // PAADEMIBEJN is no longer declared directly on MeshInterpretter.
+                Type drivetrainStateType = AccessTools.TypeByName("FLIADIKAFHD");
+                FieldInfo drivetrainPower = drivetrainStateType != null
+                    ? AccessTools.Field(drivetrainStateType, "PAADEMIBEJN")
                     : null;
                 MethodInfo abs = typeof(Mathf).GetMethod(nameof(Mathf.Abs), new[] { typeof(float) });
 
                 if (drivetrainPower == null || drivetrainPower.FieldType != typeof(float) || abs == null)
                 {
-                    MelonLogger.Warning("Alpine could not locate the native drivetrain-power fuel operand; reverse fuel fallback remains active.");
+                    MelonLogger.Warning("Alpine could not locate FLIADIKAFHD.PAADEMIBEJN; reverse fuel fallback remains active.");
                     return code;
                 }
 
