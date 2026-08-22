@@ -4,6 +4,8 @@
 !/.github/FUNDING.yml
 !/build-release.bat
 !/SleddersTuner/
+!/SleddersTuner/AlpineFuelSystem.cs
+!/SleddersTuner/
 !/SleddersTuner/SleddersTuner.csproj
 !/SleddersTuner/AlpineNativeUi.cs
 !/SleddersTuner/AlpineFuelSystem.cs
