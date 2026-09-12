@@ -1,4 +1,4 @@
-﻿using System.Reflection;
+using System.Reflection;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 
@@ -14,6 +14,6 @@ using System.Runtime.InteropServices;
 [assembly: InternalsVisibleTo("AlpineTuning.ReleaseTests")]
 [assembly: ComVisible(false)]
 [assembly: Guid("6d7bb93a-e432-464d-95c2-0cd46bf3db64")]
-[assembly: AssemblyVersion("2026.9.2.0")]
-[assembly: AssemblyFileVersion("2026.9.2.0")]
-[assembly: AssemblyInformationalVersion("2026.09.02")]
+[assembly: AssemblyVersion("2026.9.12.0")]
+[assembly: AssemblyFileVersion("2026.9.12.0")]
+[assembly: AssemblyInformationalVersion("2026.09.12")]

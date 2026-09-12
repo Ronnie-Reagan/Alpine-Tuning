@@ -1,8 +1,8 @@
 @echo off
 setlocal EnableExtensions DisableDelayedExpansion
 
-set "PUBLIC_VERSION=2026.09.02"
-set "ASSEMBLY_VERSION=2026.9.2.0"
+set "PUBLIC_VERSION=2026.09.12"
+set "ASSEMBLY_VERSION=2026.9.12.0"
 for %%I in ("%~dp0.") do set "ROOT=%%~fI"
 set "PROJECT=%ROOT%\SleddersTuner\SleddersTuner.csproj"
 set "TEST_PROJECT=%ROOT%\ReleaseTests\ReleaseTests.csproj"

@@ -9,7 +9,7 @@ namespace AlpineTuning
     internal static class AlpineConstants
     {
         public const int SchemaVersion = 5;
-        public const string ModVersion = "2026.09.02";
+        public const string ModVersion = "2026.09.12";
         public const string CatalogVersion = "2026.09.backlog-v5";
         public const string DefaultProfileAuthor = "Alpine Rider";
         // Build sharing is capability-gated at runtime. A peer that cannot prove

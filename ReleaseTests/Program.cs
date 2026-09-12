@@ -52,8 +52,8 @@ namespace AlpineTuning.ReleaseTests
 
     internal static class Program
     {
-        private const string PublicVersion = "2026.09.02";
-        private const string AssemblyVersion = "2026.9.2.0";
+        private const string PublicVersion = "2026.09.12";
+        private const string AssemblyVersion = "2026.9.12.0";
         private const string CatalogVersion = "2026.09.backlog-v5";
         private const int ExpectedGarageIconCount = 182;
 
