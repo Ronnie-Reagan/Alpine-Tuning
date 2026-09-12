@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using Newtonsoft.Json;
 using UnityEngine;
 
@@ -7,13 +8,15 @@ namespace AlpineTuning
 {
     internal static class AlpineConstants
     {
-        public const int SchemaVersion = 3;
-        public const string ModVersion = "2026.08.22";
-        public const string CatalogVersion = "2026.08.fuel-v1";
+        public const int SchemaVersion = 5;
+        public const string ModVersion = "2026.09.02";
+        public const string CatalogVersion = "2026.09.backlog-v5";
         public const string DefaultProfileAuthor = "Alpine Rider";
-        public static readonly bool PeerSharingTemporarilyDisabled = true;
+        // Build sharing is capability-gated at runtime. A peer that cannot prove
+        // compatible Alpine/Sledders metadata is always left on its native sled.
+        public static readonly bool PeerSharingTemporarilyDisabled = false;
         public const string PeerSharingPausedNotice =
-            "Networked setup sharing is paused for this build. It may return if new P2P sharing methods are found.";
+            "Networked build sharing is unavailable until the game transport is ready.";
         public const int SteamP2PChannel = 7264;
         public const byte SleddersInternalMessageId = 252;
         public const int SleddersInternalMaxChunkBytes = 5600;
@@ -22,12 +25,176 @@ namespace AlpineTuning
         public const int MaxProfileIdLength = 64;
         public const int MaxProfileNameLength = 96;
         public const int MaxSledIdentityLength = 128;
+        public const int BuildSyncProtocolVersion = 1;
     }
 
     internal enum AlpineDisplayUnits
     {
         Metric,
         Imperial
+    }
+
+    internal enum AlpineHeadTrackingSource
+    {
+        Auto,
+        TrackIr,
+        OpenTrack
+    }
+
+    internal enum AlpineNitrousActivationMode
+    {
+        Hold,
+        AutomaticWot
+    }
+
+    internal enum AlpineRefillTarget
+    {
+        Fuel,
+        Nitrous,
+        Both
+    }
+
+    [Serializable]
+    internal class HeadTrackingSettings
+    {
+        public Vec3Data translationSensitivity = new Vec3Data(1f, 1f, 1f);
+        public Vec3Data rotationSensitivity = new Vec3Data(1f, 1f, 1f);
+        public Vec3Data translationDeadzoneMeters = new Vec3Data(0.002f, 0.002f, 0.002f);
+        public Vec3Data rotationDeadzoneDegrees = new Vec3Data(0.5f, 0.5f, 0.5f);
+        public Vec3Data translationClampMeters = new Vec3Data(0.20f, 0.20f, 0.20f);
+        public Vec3Data rotationClampDegrees = new Vec3Data(45f, 60f, 30f);
+        public bool invertTranslationX;
+        public bool invertTranslationY;
+        public bool invertTranslationZ;
+        public bool invertPitch;
+        public bool invertYaw;
+        public bool invertRoll;
+        public float smoothingResponse = 18f;
+        public float motionCurve = 1f;
+        public bool firstPerson = true;
+        public bool thirdPersonNear = true;
+        public bool thirdPersonFar = true;
+        public bool droneMode;
+        public bool allowWhileWalking;
+        public TrackingLeanSettings lean = new TrackingLeanSettings();
+
+        public void Normalize()
+        {
+            translationSensitivity = NormalizeVector(translationSensitivity, 1f, 0f, 3f);
+            rotationSensitivity = NormalizeVector(rotationSensitivity, 1f, 0f, 3f);
+            translationDeadzoneMeters = NormalizeVector(translationDeadzoneMeters, 0.002f, 0f, 0.05f);
+            rotationDeadzoneDegrees = NormalizeVector(rotationDeadzoneDegrees, 0.5f, 0f, 15f);
+            translationClampMeters = NormalizeVector(translationClampMeters, 0.20f, 0.01f, 0.50f);
+            rotationClampDegrees = NormalizeVector(rotationClampDegrees, 30f, 1f, 90f);
+            smoothingResponse = ClampFinite(smoothingResponse, 18f, 1f, 40f);
+            motionCurve = ClampFinite(motionCurve, 1f, 0.5f, 3f);
+            if (lean == null) lean = new TrackingLeanSettings();
+            lean.Normalize();
+        }
+
+        private static Vec3Data NormalizeVector(Vec3Data value, float fallback, float min, float max)
+        {
+            value = value ?? new Vec3Data(fallback, fallback, fallback);
+            value.x = ClampFinite(value.x, fallback, min, max);
+            value.y = ClampFinite(value.y, fallback, min, max);
+            value.z = ClampFinite(value.z, fallback, min, max);
+            return value;
+        }
+
+        internal static float ClampFinite(float value, float fallback, float min, float max)
+        {
+            if (float.IsNaN(value) || float.IsInfinity(value)) value = fallback;
+            return Mathf.Clamp(value, min, max);
+        }
+    }
+
+    [Serializable]
+    internal class TrackingLeanSettings
+    {
+        public bool enabled;
+        public float lateralTranslationGain = 0.35f;
+        public float rollGain = 0.65f;
+        public float forwardTranslationGain = 0.35f;
+        public float pitchGain = 0.65f;
+        public float deadzone = 0.05f;
+        public float smoothingResponse = 10f;
+        public float maximumOutput = 0.65f;
+        public float airborneMultiplier = 0.5f;
+
+        public void Normalize()
+        {
+            lateralTranslationGain = HeadTrackingSettings.ClampFinite(lateralTranslationGain, 0.35f, -2f, 2f);
+            rollGain = HeadTrackingSettings.ClampFinite(rollGain, 0.65f, -2f, 2f);
+            forwardTranslationGain = HeadTrackingSettings.ClampFinite(forwardTranslationGain, 0.35f, -2f, 2f);
+            pitchGain = HeadTrackingSettings.ClampFinite(pitchGain, 0.65f, -2f, 2f);
+            deadzone = HeadTrackingSettings.ClampFinite(deadzone, 0.05f, 0f, 0.5f);
+            smoothingResponse = HeadTrackingSettings.ClampFinite(smoothingResponse, 10f, 1f, 40f);
+            maximumOutput = HeadTrackingSettings.ClampFinite(maximumOutput, 0.65f, 0f, 1f);
+            airborneMultiplier = HeadTrackingSettings.ClampFinite(airborneMultiplier, 0.5f, 0f, 1f);
+        }
+    }
+
+    internal enum AlpineSetupBaseline
+    {
+        RealisticStock,
+        SleddersDefault
+    }
+
+    internal enum SledForgeSlot
+    {
+        BodyShell,
+        Hood,
+        Seat,
+        Bumper,
+        Handlebars,
+        Skis,
+        RunningBoards,
+        FrontAssembly,
+        RearAssembly
+    }
+
+    [Serializable]
+    internal class SledForgePartSelection
+    {
+        public SledForgeSlot slot;
+        public string donorSledKey;
+        public string donorVehicleId;
+        public string donorDisplayName;
+        public int compatibilityScore;
+        public bool physicsValidated;
+    }
+
+    [Serializable]
+    internal class SledBuildSpec
+    {
+        public int revision;
+        public string sourceSledKey;
+        public string propAssetKey;
+        public Vec3Data propPosition = new Vec3Data();
+        public Vec3Data propRotation = new Vec3Data();
+        public Vec3Data propScale = new Vec3Data(1f, 1f, 1f);
+        public string compatibilityFingerprint;
+        public List<SledForgePartSelection> selections = new List<SledForgePartSelection>();
+
+        public void Normalize()
+        {
+            if (string.IsNullOrWhiteSpace(sourceSledKey)) sourceSledKey = null;
+            if (string.IsNullOrWhiteSpace(propAssetKey)) propAssetKey = null;
+            propPosition = propPosition ?? new Vec3Data();
+            propRotation = propRotation ?? new Vec3Data();
+            propScale = propScale ?? new Vec3Data(1f, 1f, 1f);
+            propScale.x = Mathf.Clamp(propScale.x, 0.1f, 5f);
+            propScale.y = Mathf.Clamp(propScale.y, 0.1f, 5f);
+            propScale.z = Mathf.Clamp(propScale.z, 0.1f, 5f);
+            if (selections == null) selections = new List<SledForgePartSelection>();
+            selections = selections
+                .Where(selection => selection != null &&
+                                    (!string.IsNullOrWhiteSpace(selection.donorSledKey) ||
+                                     !string.IsNullOrWhiteSpace(selection.donorVehicleId)))
+                .GroupBy(selection => selection.slot)
+                .Select(group => group.First())
+                .ToList();
+        }
     }
 
     [Serializable]
@@ -88,8 +255,7 @@ namespace AlpineTuning
     [Serializable]
     internal class AlpineUserSettings
     {
-        private const int CurrentHeadlightBindingRevision = 2;
-        private const string DefaultHeadlightControllerBinding = "JoystickButton9";
+        private const int CurrentHeadlightBindingRevision = 4;
 
         public int schemaVersion = AlpineConstants.SchemaVersion;
         public AlpineDisplayUnits units = AlpineDisplayUnits.Metric;
@@ -99,6 +265,32 @@ namespace AlpineTuning
         public bool alpineTuningEnabled = true;
         public bool idleFuelConsumptionEnabled = true;
         public bool persistentFuelLevelsEnabled = true;
+        public bool showFuelOverlay;
+
+        public bool headTrackingEnabled;
+        public AlpineHeadTrackingSource headTrackingSource = AlpineHeadTrackingSource.Auto;
+        public HeadTrackingSettings headTracking = new HeadTrackingSettings();
+
+        public AlpineNitrousActivationMode nitrousActivationMode = AlpineNitrousActivationMode.Hold;
+        public AlpineRefillTarget refillTarget = AlpineRefillTarget.Both;
+        public float nitrousWotThreshold = 0.95f;
+        public bool showNitrousOverlay = true;
+        public string nitrousKeyboardKey;
+        public string nitrousControllerButton;
+        public bool experimentalTrackCompatibility;
+        public bool experimentalHiddenVehicles;
+        public bool experimentalPropVehicles;
+        public bool experimentalWalking;
+        public bool experimentalWarningAcknowledged;
+        public string experimentalPropAssetKey;
+        public int experimentalPropPage;
+        public Vec3Data experimentalPropPosition = new Vec3Data();
+        public Vec3Data experimentalPropRotation = new Vec3Data();
+        public Vec3Data experimentalPropScale = new Vec3Data(1f, 1f, 1f);
+        public float experimentalPropMassKg = 250f;
+        public Vec3Data experimentalPropCenterOfMass = new Vec3Data();
+        public string walkingKeyboardKey = "G";
+        public string walkingControllerButton;
 
         public bool headlightToggleEnabled;
         public string headlightKeyboardKey;
@@ -106,15 +298,18 @@ namespace AlpineTuning
         public bool headlightBindingConfigured;
         public int headlightBindingRevision;
 
-        public bool shareMySetup = false;
-        public bool alwaysShareMySetup = false;
+        public bool shareMySetup = true;
+        public bool alwaysShareMySetup = true;
         public bool shareLighting = true;
         public bool shareAudio = true;
-        public bool shareVisualEquipment = false;
+        public bool shareVisualEquipment = true;
         public bool receivePeerSetups = true;
         public bool receivePeerLighting = true;
         public bool receivePeerAudio = true;
-        public bool receivePeerVisualEquipment;
+        public bool receivePeerVisualEquipment = true;
+        public bool shareBuildShowcase = true;
+        public bool receiveBuildShowcase = true;
+        public bool showNearbyBuildTags = true;
 
         public void Normalize()
         {
@@ -122,28 +317,49 @@ namespace AlpineTuning
             if (!Enum.IsDefined(typeof(AlpineDisplayUnits), units))
                 units = AlpineDisplayUnits.Metric;
 
+            if (!Enum.IsDefined(typeof(AlpineHeadTrackingSource), headTrackingSource))
+                headTrackingSource = AlpineHeadTrackingSource.Auto;
+            if (!Enum.IsDefined(typeof(AlpineNitrousActivationMode), nitrousActivationMode))
+                nitrousActivationMode = AlpineNitrousActivationMode.Hold;
+            if (!Enum.IsDefined(typeof(AlpineRefillTarget), refillTarget))
+                refillTarget = AlpineRefillTarget.Both;
+            nitrousWotThreshold = HeadTrackingSettings.ClampFinite(nitrousWotThreshold, 0.95f, 0.80f, 1f);
+            if (headTracking == null) headTracking = new HeadTrackingSettings();
+            headTracking.Normalize();
+            if (string.IsNullOrWhiteSpace(nitrousKeyboardKey)) nitrousKeyboardKey = null;
+            if (string.IsNullOrWhiteSpace(nitrousControllerButton)) nitrousControllerButton = null;
+            if (string.IsNullOrWhiteSpace(experimentalPropAssetKey)) experimentalPropAssetKey = null;
+            experimentalPropPage = Mathf.Clamp(experimentalPropPage, 0, 999);
+            experimentalPropPosition = NormalizeVector(experimentalPropPosition, 0f, -5f, 5f);
+            experimentalPropRotation = NormalizeVector(experimentalPropRotation, 0f, -180f, 180f);
+            experimentalPropScale = NormalizeVector(experimentalPropScale, 1f, 0.1f, 5f);
+            experimentalPropMassKg = HeadTrackingSettings.ClampFinite(experimentalPropMassKg, 250f, 50f, 1000f);
+            experimentalPropCenterOfMass = NormalizeVector(experimentalPropCenterOfMass, 0f, -2f, 2f);
+            if (string.IsNullOrWhiteSpace(walkingKeyboardKey)) walkingKeyboardKey = null;
+            if (string.IsNullOrWhiteSpace(walkingControllerButton)) walkingControllerButton = null;
+            // The released game has no stable public rider/camera detach contract.
+            // Retire the unsafe experiment instead of loading old settings into it.
+            experimentalWalking = false;
+
+            if (headlightBindingRevision < 3)
+            {
+                bool formerAutomaticControllerDefault =
+                    string.Equals(headlightControllerButton, "JoystickButton9", StringComparison.OrdinalIgnoreCase);
+                if (formerAutomaticControllerDefault)
+                    headlightControllerButton = null;
+            }
+
             if (headlightBindingRevision < CurrentHeadlightBindingRevision)
             {
-                bool noBinding = string.IsNullOrWhiteSpace(headlightKeyboardKey) &&
-                                 string.IsNullOrWhiteSpace(headlightControllerButton);
-                bool oldLeftStickDefault =
-                    string.Equals(headlightControllerButton, "JoystickButton7", StringComparison.OrdinalIgnoreCase) ||
-                    string.Equals(headlightControllerButton, "JoystickButton8", StringComparison.OrdinalIgnoreCase);
-                if (noBinding)
+                if (!string.IsNullOrWhiteSpace(headlightControllerButton) &&
+                    headlightControllerButton.StartsWith("rewired|", StringComparison.OrdinalIgnoreCase))
                 {
-                    headlightKeyboardKey = null;
-                    headlightControllerButton = DefaultHeadlightControllerBinding;
-                    headlightToggleEnabled = true;
-                    headlightBindingConfigured = true;
-                }
-                else if (oldLeftStickDefault)
-                {
-                    // Migrate only the superseded controller default. A rider may
-                    // also have an intentional keyboard binding, which must not be
-                    // erased as part of the right-stick default migration.
-                    headlightControllerButton = DefaultHeadlightControllerBinding;
-                    headlightToggleEnabled = true;
-                    headlightBindingConfigured = true;
+                    headlightControllerButton =
+                        AlpineControllerInput.TryMigrateRewiredBinding(
+                            headlightControllerButton,
+                            out string migratedControllerBinding)
+                            ? migratedControllerBinding
+                            : null;
                 }
                 headlightBindingRevision = CurrentHeadlightBindingRevision;
             }
@@ -178,14 +394,22 @@ namespace AlpineTuning
                 string.IsNullOrWhiteSpace(headlightControllerButton))
             {
                 headlightToggleEnabled = false;
+                headlightBindingConfigured = false;
             }
+        }
+
+        private static Vec3Data NormalizeVector(Vec3Data value, float fallback, float min, float max)
+        {
+            value = value ?? new Vec3Data(fallback, fallback, fallback);
+            value.x = HeadTrackingSettings.ClampFinite(value.x, fallback, min, max);
+            value.y = HeadTrackingSettings.ClampFinite(value.y, fallback, min, max);
+            value.z = HeadTrackingSettings.ClampFinite(value.z, fallback, min, max);
+            return value;
         }
 
         private static bool IsLegacyDefaultHeadlightBinding(string value)
         {
-            return string.Equals(value, "H", StringComparison.OrdinalIgnoreCase) ||
-                   string.Equals(value, "JoystickButton7", StringComparison.OrdinalIgnoreCase) ||
-                   string.Equals(value, "JoystickButton8", StringComparison.OrdinalIgnoreCase);
+            return string.Equals(value, "JoystickButton9", StringComparison.OrdinalIgnoreCase);
         }
     }
 
@@ -386,8 +610,10 @@ namespace AlpineTuning
         public string targetVehicleId;
         public string donorSledKey;
         public string donorVehicleId;
+        public AlpineSetupBaseline baseline = AlpineSetupBaseline.RealisticStock;
         public List<PartSelection> selectedParts = new List<PartSelection>();
         public FineTuneSettings fineTune = new FineTuneSettings();
+        public SledBuildSpec sledBuild = new SledBuildSpec();
         public ResolvedStats resolvedStats = new ResolvedStats();
         public bool? headlightEnabled;
         public bool requiresReload;
@@ -458,6 +684,7 @@ namespace AlpineTuning
         public float centerOfMassYTrim;
         public float centerOfMassZTrim;
         public float skiStanceTrim;
+        public float nitrousBoostPercent = 100f;
     }
 
     [Serializable]
@@ -490,6 +717,8 @@ namespace AlpineTuning
         public string name;
         public string description;
         public bool requiresReload;
+        public bool experimental;
+        public string unavailableReason;
         public PartEffect effect = new PartEffect();
     }
 
@@ -506,6 +735,8 @@ namespace AlpineTuning
         public float tankHardwareMassOffsetKg;
         public float backpackFuelCapacityLiters;
         public float backpackContainerMassKg;
+        public float nitrousCapacitySeconds;
+        public float nitrousSystemMassKg;
         public bool requiresCosmeticBackpack;
         public float skiStanceOffset;
         public float skisXDistanceOffset;
@@ -519,6 +750,7 @@ namespace AlpineTuning
         public float turboRpmResponseMultiplier = 1f;
         public float clutchRpmMinOffset;
         public float clutchRpmMaxOffset;
+        public float clutchEngagementTargetRpm;
         public float minThrottleOnClutchEngagementOffset;
         public float stabilizerDampingMultiplier = 1f;
         public float trackSpeedDampingMultiplier = 1f;
@@ -549,6 +781,9 @@ namespace AlpineTuning
         public float headlightRangeMultiplier = 1f;
         public float headlightSpotAngleMultiplier = 1f;
         public float headlightPitchOffsetDegrees;
+        public bool headlightDelete;
+        public string visualTrackVariantId;
+        public float visualTrackLengthInches;
         public string accessoryMode;
     }
 
@@ -592,6 +827,10 @@ namespace AlpineTuning
     {
         public string magic = "ALPINE_TUNE";
         public int schemaVersion = AlpineConstants.SchemaVersion;
+        public int buildProtocolVersion = AlpineConstants.BuildSyncProtocolVersion;
+        public string assemblyLightHash;
+        public bool supportsSledForge = true;
+        public bool supportsBuildShowcase = true;
         public string type;
         public ulong senderId;
         public ulong senderSteamId;
@@ -638,6 +877,10 @@ namespace AlpineTuning
         public bool shareLighting;
         public bool shareAudio;
         public bool shareVisualEquipment;
+        public bool shareBuildShowcase;
+        public bool supportsSledForge;
+        public bool supportsBuildShowcase;
+        public string assemblyLightHash;
         public long lastSeenUnixTime;
         public long lastAppliedUnixTime;
         public string applyStatus;

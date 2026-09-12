@@ -12,6 +12,7 @@ namespace AlpineTuning
         public const string EngineCrank = "engineCrank";
         public const string Turbo = "turbo";
         public const string Intake = "intakeExhaust";
+        public const string Nitrous = "nitrous";
         public const string Clutch = "clutchGearing";
         public const string ClutchWeights = "clutchWeights";
         public const string RatioFeel = "ratioFeel";
@@ -28,7 +29,7 @@ namespace AlpineTuning
         public const string HeadlightBrightness = "headlightBrightness";
         public const string HeadlightBeam = "headlightBeam";
         public const string HeadlightAim = "headlightAim";
-        public const string Accessories = "accessories";
+        public const string HeadlightDelete = "headlightDelete";
         public const string FuelTank = "fuelTank";
         public const string BackpackFuel = "backpackFuel";
 
@@ -39,6 +40,7 @@ namespace AlpineTuning
             EngineCrank,
             Turbo,
             Intake,
+            Nitrous,
             Clutch,
             ClutchWeights,
             RatioFeel,
@@ -55,7 +57,7 @@ namespace AlpineTuning
             HeadlightBrightness,
             HeadlightBeam,
             HeadlightAim,
-            Accessories,
+            HeadlightDelete,
             FuelTank,
             BackpackFuel
         };
@@ -98,6 +100,8 @@ namespace AlpineTuning
                     return "Turbo / Induction";
                 case Intake:
                     return "Intake";
+                case Nitrous:
+                    return "Nitrous System";
                 case Clutch:
                     return "Clutch Calibration";
                 case ClutchWeights:
@@ -130,8 +134,8 @@ namespace AlpineTuning
                     return "Headlight Beam";
                 case HeadlightAim:
                     return "Headlight Alignment";
-                case Accessories:
-                    return "Accessories";
+                case HeadlightDelete:
+                    return "Headlight Assembly";
                 case FuelTank:
                     return "Fuel Tank";
                 case BackpackFuel:
@@ -150,6 +154,7 @@ namespace AlpineTuning
                 case EngineCrank: return "crank.stock";
                 case Turbo: return "turbo.none";
                 case Intake: return "intake.stock";
+                case Nitrous: return "nitrous.none";
                 case Clutch: return "clutch.stock";
                 case ClutchWeights: return "weights.stock";
                 case RatioFeel: return "ratio.stock";
@@ -166,7 +171,7 @@ namespace AlpineTuning
                 case HeadlightBrightness: return "light.brightness.stock";
                 case HeadlightBeam: return "light.beam.stock";
                 case HeadlightAim: return "light.aim.stock";
-                case Accessories: return "accessory.stock";
+                case HeadlightDelete: return "light.delete.stock";
                 case FuelTank: return "fuel.tank.stock";
                 case BackpackFuel: return "fuel.backpack.none";
             }
@@ -221,10 +226,22 @@ namespace AlpineTuning
             if (profile == null)
                 return;
 
+            if (profile.sledBuild == null)
+                profile.sledBuild = new SledBuildSpec();
+            profile.sledBuild.Normalize();
+
             var sourceSelections = profile.selectedParts ?? new List<PartSelection>();
             var normalizedSelections = new List<PartSelection>(OrderedCategories.Length);
             foreach (string category in OrderedCategories)
             {
+                string rawPartId = sourceSelections
+                    .Where(selection => selection != null &&
+                                        string.Equals(
+                                            selection.category,
+                                            category,
+                                            StringComparison.OrdinalIgnoreCase))
+                    .Select(selection => selection.partId)
+                    .FirstOrDefault();
                 string partId = sourceSelections
                     .Where(selection => selection != null &&
                                         string.Equals(
@@ -239,15 +256,71 @@ namespace AlpineTuning
                                        StringComparison.OrdinalIgnoreCase))
                     .Select(part => part.id)
                     .FirstOrDefault();
+                if (partId == null &&
+                    string.Equals(category, Track, StringComparison.OrdinalIgnoreCase) &&
+                    IsDetectedTrackPartId(rawPartId))
+                {
+                    partId = ResolveDetectedTrackIdByLength(rawPartId);
+                }
 
                 normalizedSelections.Add(new PartSelection
                 {
                     category = category,
-                    partId = partId ?? DefaultPartId(category)
+                    partId = partId ??
+                        (string.Equals(category, Track, StringComparison.OrdinalIgnoreCase) &&
+                         IsDetectedTrackPartId(rawPartId)
+                            ? rawPartId
+                            : DefaultPartId(category))
                 });
             }
 
             profile.selectedParts = normalizedSelections;
+        }
+
+        internal static bool IsDetectedTrackPartId(string partId)
+        {
+            return !string.IsNullOrWhiteSpace(partId) &&
+                   partId.StartsWith("track.length.", StringComparison.OrdinalIgnoreCase);
+        }
+
+        internal void ClearDetectedTrackLengths()
+        {
+            TunePart[] detected = _parts
+                .Where(part => IsDetectedTrackPartId(part?.id))
+                .ToArray();
+            foreach (TunePart part in detected)
+            {
+                _parts.Remove(part);
+                _byId.Remove(part.id);
+            }
+        }
+
+        private string ResolveDetectedTrackIdByLength(string legacyPartId)
+        {
+            string suffix = (legacyPartId ?? string.Empty)
+                .Split('.')
+                .LastOrDefault();
+            if (!float.TryParse(
+                    suffix,
+                    System.Globalization.NumberStyles.Float,
+                    System.Globalization.CultureInfo.InvariantCulture,
+                    out float length))
+                return null;
+
+            // Early native-prefab builds persisted the donor suffix. Lynx donor
+            // IDs use the native millimetre token while Alpine physics stores
+            // canonical inches, so normalize that suffix before matching.
+            float canonicalInches = length >= 3000f && length <= 4500f
+                ? length / 25.4f
+                : length;
+
+            TunePart[] matches = _parts.Where(part =>
+                    part?.effect != null &&
+                    string.Equals(part.category, Track, StringComparison.OrdinalIgnoreCase) &&
+                    !string.IsNullOrWhiteSpace(part.effect.visualTrackVariantId) &&
+                    Mathf.Abs(part.effect.visualTrackLengthInches - canonicalInches) < 0.25f)
+                .ToArray();
+            return matches.Length == 1 ? matches[0].id : null;
         }
 
         private static string GetSledDisplayName(VehicleScriptableObject sled)
@@ -408,6 +481,15 @@ namespace AlpineTuning
             Add("intake.pipe", Intake, "Race Velocity Intake", "Short velocity stacks and reed runners for sharper response and lower weight.", false,
                 e => { e.horsePowerMultiplier = 1.05f; e.weightOffset = -2f; e.throttleExponentDelta = -0.03f; });
 
+            Add("nitrous.none", Nitrous, "No Nitrous", "No auxiliary power system installed.", false,
+                e => { });
+            Add("nitrous.compact.5lb", Nitrous, "5 lb Compact Nitrous", "Six seconds of charge at +100% boost. Refillable at fuel stations.", true,
+                e => { e.nitrousCapacitySeconds = 6f; e.nitrousSystemMassKg = 5f; e.weightOffset = 5f; });
+            Add("nitrous.race.10lb", Nitrous, "10 lb Race Nitrous", "Twelve seconds of charge at +100% boost. Refillable at fuel stations.", true,
+                e => { e.nitrousCapacitySeconds = 12f; e.nitrousSystemMassKg = 8f; e.weightOffset = 8f; });
+            Add("nitrous.drag.20lb", Nitrous, "20 lb Drag Nitrous", "Twenty-four seconds of charge at +100% boost. Refillable at fuel stations.", true,
+                e => { e.nitrousCapacitySeconds = 24f; e.nitrousSystemMassKg = 14f; e.weightOffset = 14f; });
+
             // Clutch / gearing: runtime controller feel. Tune RPM offsets and throttleExponentDelta here.
             Add("clutch.stock", Clutch, "Stock Calibration", "Factory clutch calibration.", false,
                 e => { });
@@ -417,6 +499,9 @@ namespace AlpineTuning
                 e => { e.clutchRpmMinOffset = 180f; e.clutchRpmMaxOffset = 320f; e.minThrottleOnClutchEngagementOffset = 0.015f; e.rpmSensitivityMultiplier = 1.13f; e.rpmSensitivityDownMultiplier = 0.93f; });
             Add("clutch.race", Clutch, "IceRacer Aggressive", "Quick engagement and sharp throttle response.", false,
                 e => { e.clutchRpmMinOffset = 320f; e.clutchRpmMaxOffset = 460f; e.minThrottleOnClutchEngagementOffset = 0.035f; e.rpmSensitivityMultiplier = 1.20f; e.rpmSensitivityDownMultiplier = 0.90f; e.throttleExponentDelta = -0.08f; });
+            AddRacingClutch("clutch.race.6000", 6000f);
+            AddRacingClutch("clutch.race.6500", 6500f);
+            AddRacingClutch("clutch.race.7000", 7000f);
 
             Add("weights.stock", ClutchWeights, "Stock Weights", "Factory clutch weight feel.", false,
                 e => { });
@@ -511,7 +596,7 @@ namespace AlpineTuning
                 e => { e.centerOfMassDelta = new Vec3Data(0f, -0.065f, 0.055f); e.trackSpeedDampingMultiplier = 1.10f; e.stabilizerDampingMultiplier = 1.08f; e.nativeAntiRollBarMultiplier = 1.10f; e.nativeTrackRigidityFrontMultiplier = 1.07f; e.nativeTrackRigidityRearMultiplier = 1.05f; e.nativeFrontSpringMultiplier = 1.03f; e.nativeRearSpringMultiplier = 1.03f; e.nativeFrontDamperMultiplier = 1.05f; e.nativeRearDamperMultiplier = 1.05f; e.nativeFrontCompressionDampingMultiplier = 1.03f; e.nativeFrontReboundDampingMultiplier = 1.03f; e.nativeRearCompressionDampingMultiplier = 1.03f; e.nativeRearReboundDampingMultiplier = 1.03f; });
 
             // Chassis: global weight and center-of-mass personality.
-            Add("chassis.stock", Chassis, "Stock Chassis", "Factory chassis.", false,
+            Add("chassis.stock", Chassis, "Default Chassis", "Factory tunnel, frame, running boards, and cooling package.", false,
                 e => { });
             Add("chassis.light", Chassis, "Lightweight Chassis", "Quicker handling with less planted feel.", true,
                 e => { e.weightMultiplier = 0.94f; e.centerOfMassDelta = new Vec3Data(0f, 0.01f, 0.01f); });
@@ -521,6 +606,10 @@ namespace AlpineTuning
                 e => { e.weightMultiplier = 1.01f; e.centerOfMassDelta = new Vec3Data(0f, -0.08f, 0f); });
             Add("chassis.rear", Chassis, "Rear Bias Chassis", "Playful lift and easier hop timing.", true,
                 e => { e.centerOfMassDelta = new Vec3Data(0f, -0.02f, -0.09f); });
+            Add("chassis.runningboards.light", Chassis, "Lightweight Running Boards", "Lightweight board package; removes 10 kg and shifts mass slightly upward and forward.", true,
+                e => { e.weightOffset = -10f; e.centerOfMassDelta = new Vec3Data(0f, 0.008f, 0.008f); });
+            Add("chassis.cooling.light", Chassis, "Lightweight Cooling", "Reduced-mass cooling package; removes 3 kg.", true,
+                e => { e.weightOffset = -3f; });
 
             // Skis / stance: ski width and front-end grip personality.
             Add("skis.stock", Skis, "Stock Skis", "Factory ski stance.", false,
@@ -595,12 +684,17 @@ namespace AlpineTuning
             Add("light.aim.high", HeadlightAim, "Aim Up", "Small upward runtime headlight pitch.", false,
                 e => { e.headlightPitchOffsetDegrees = -3f; });
 
+            Add("light.delete.stock", HeadlightDelete, "Factory Headlight", "Keep the native headlight assembly.", false,
+                e => { });
+            Add("light.delete.carbon", HeadlightDelete, "Carbon Headlight Delete", "Remove a compatible native headlight assembly, force the light off, and save 2 kg.", true,
+                e => { e.headlightDelete = true; e.weightOffset = -2f; e.centerOfMassDelta = new Vec3Data(0f, -0.005f, -0.005f); });
+
             // Fuel system. Tank shell-mass offsets are conservative HDPE/aluminium
             // assembly estimates; gasoline payload itself is kept as actual liters
             // so capacity changes do not magically create mass.
-            Add("fuel.tank.reduced", FuelTank, "Reduced Tank", "75% of the factory capacity. Retains existing liters; excess is discarded only after confirmation.", true,
+            Add("fuel.tank.reduced", FuelTank, "Light Tank", "75% of the factory capacity. Retains existing liters; excess is discarded only after confirmation.", true,
                 e => { e.fuelCapacityMultiplier = 0.75f; e.tankHardwareMassOffsetKg = -0.8f; });
-            Add("fuel.tank.stock", FuelTank, "Stock Tank", "Factory fuel capacity and tank hardware mass.", true,
+            Add("fuel.tank.stock", FuelTank, "Default Tank", "Factory fuel capacity and tank hardware mass.", true,
                 e => { });
             Add("fuel.tank.increased", FuelTank, "Increased Tank", "125% of the factory capacity with a modest larger-tank mass penalty.", true,
                 e => { e.fuelCapacityMultiplier = 1.25f; e.tankHardwareMassOffsetKg = 0.9f; });
@@ -615,16 +709,9 @@ namespace AlpineTuning
                 e => { e.backpackFuelCapacityLiters = 4f; e.backpackContainerMassKg = 0.25f; });
             Add("fuel.backpack.tinycan", BackpackFuel, "Tiny Gas Can", "6 L reserve.", true,
                 e => { e.backpackFuelCapacityLiters = 6f; e.backpackContainerMassKg = 0.65f; });
-            Add("fuel.backpack.fillbag", BackpackFuel, "Just Fill the Bag", "22 L reserve. Ridiculous, heavy", true,
+            Add("fuel.backpack.fillbag", BackpackFuel, "Backpack-o-fuel", "22 L reserve paired with the default tank. Ridiculous and heavy.", true,
                 e => { e.backpackFuelCapacityLiters = 22f; e.backpackContainerMassKg = 1.10f; });
 
-            // accessories: toggles existing in-game accessory objects only; no custom meshes are spawned here.
-            Add("accessory.stock", Accessories, "Factory Accessories", "Keep current accessory state.", false,
-                e => { e.accessoryMode = "stock"; });
-            Add("accessory.race_trim", Accessories, "Clean Race Trim", "Hide exposed removable trim where the model allows it.", false,
-                e => { e.accessoryMode = "race_trim"; });
-            Add("accessory.utility", Accessories, "Utility Kit", "Show windshield, flap, and rear accessory groups where present.", false,
-                e => { e.accessoryMode = "utility"; });
         }
 
         private void Add(string id, string category, string name, string description, bool requiresReload, Action<PartEffect> configure)
@@ -662,6 +749,8 @@ namespace AlpineTuning
                    !Mathf.Approximately(effect.fuelCapacityMultiplier, 1f) ||
                    !Mathf.Approximately(effect.tankHardwareMassOffsetKg, 0f) ||
                    effect.backpackFuelCapacityLiters > 0.001f ||
+                   effect.headlightDelete ||
+                   !string.IsNullOrWhiteSpace(effect.visualTrackVariantId) ||
                    !Mathf.Approximately(effect.skiStanceOffset, 0f) ||
                    !Mathf.Approximately(effect.skisXDistanceOffset, 0f) ||
                    center.sqrMagnitude > 0.0000001f ||
@@ -687,6 +776,68 @@ namespace AlpineTuning
                     e.weightOffset = weightOffset;
                     e.nativeTrackMassMultiplier = Mathf.Clamp(1f + weightOffset / 100f, 0.92f, 1.12f);
                 });
+        }
+
+        private void AddRacingClutch(string id, float engagementRpm)
+        {
+            Add(id, Clutch,
+                string.Format(System.Globalization.CultureInfo.InvariantCulture, "Racing Clutch {0:0} RPM", engagementRpm),
+                "Fixed high-engagement racing calibration with a protected clutch-lock margin.",
+                false,
+                e =>
+                {
+                    e.clutchEngagementTargetRpm = engagementRpm;
+                    e.rpmSensitivityMultiplier = 1.16f;
+                    e.rpmSensitivityDownMultiplier = 0.92f;
+                    e.throttleExponentDelta = -0.06f;
+                });
+        }
+
+        internal TunePart RegisterDetectedTrackLength(
+            string variantId,
+            string displayName,
+            float lengthInches,
+            float massMultiplier,
+            float snowFrictionMultiplier,
+            float hardSurfaceGripMultiplier,
+            bool scaledFallback = false,
+            bool experimental = false)
+        {
+            if (string.IsNullOrWhiteSpace(variantId) || lengthInches < 80f || lengthInches > 240f)
+                return null;
+
+            string id = "track.length." + variantId;
+            TunePart existing = Find(id);
+            if (existing != null)
+            {
+                if (!string.IsNullOrWhiteSpace(displayName))
+                    existing.name = displayName;
+                existing.description = scaledFallback
+                    ? "Measured source-track scaling fallback with paired length handling; native rear chassis is retained."
+                    : "Detected compatible in-game track and rear-chassis assembly with paired native handling calibration.";
+                existing.experimental = experimental || scaledFallback;
+                return existing;
+            }
+
+            Add(id, Track,
+                string.IsNullOrWhiteSpace(displayName)
+                    ? string.Format(System.Globalization.CultureInfo.InvariantCulture, "{0:0}\" Native Track", lengthInches)
+                    : displayName,
+                scaledFallback
+                    ? "Measured source-track scaling fallback with paired length handling; native rear chassis is retained."
+                    : "Detected compatible in-game track and rear-chassis assembly with paired native handling calibration.",
+                true,
+                e =>
+                {
+                    e.visualTrackVariantId = variantId;
+                    e.visualTrackLengthInches = lengthInches;
+                    e.nativeTrackMassMultiplier = Mathf.Clamp(massMultiplier, 0.85f, 1.25f);
+                    e.frictionMultiplier = Mathf.Clamp(snowFrictionMultiplier, 0.85f, 1.20f);
+                    e.nativeTrackGripMultiplier = Mathf.Clamp(hardSurfaceGripMultiplier, 0.75f, 1.35f);
+                });
+            TunePart registered = Find(id);
+            if (registered != null) registered.experimental = experimental || scaledFallback;
+            return registered;
         }
     }
 }

@@ -64,6 +64,14 @@
       <HintPath>$(SleddersDir)\Sledders_Data\Managed\Assembly-CSharp.dll</HintPath>
       <Private>False</Private>
     </Reference>
+    <Reference Include="Unity.Addressables">
+      <HintPath>$(SleddersDir)\Sledders_Data\Managed\Unity.Addressables.dll</HintPath>
+      <Private>False</Private>
+    </Reference>
+    <Reference Include="Unity.ResourceManager">
+      <HintPath>$(SleddersDir)\Sledders_Data\Managed\Unity.ResourceManager.dll</HintPath>
+      <Private>False</Private>
+    </Reference>
     <Reference Include="Facepunch.Steamworks.Win64">
       <HintPath>$(SleddersDir)\Sledders_Data\Managed\Facepunch.Steamworks.Win64.dll</HintPath>
       <Private>False</Private>
@@ -90,8 +98,16 @@
       <HintPath>$(SleddersDir)\Sledders_Data\Managed\UnityEngine.CoreModule.dll</HintPath>
       <Private>False</Private>
     </Reference>
+    <Reference Include="UnityEngine.AnimationModule">
+      <HintPath>$(SleddersDir)\Sledders_Data\Managed\UnityEngine.AnimationModule.dll</HintPath>
+      <Private>False</Private>
+    </Reference>
     <Reference Include="UnityEngine.InputLegacyModule">
       <HintPath>$(SleddersDir)\Sledders_Data\Managed\UnityEngine.InputLegacyModule.dll</HintPath>
+      <Private>False</Private>
+    </Reference>
+    <Reference Include="Unity.InputSystem">
+      <HintPath>$(SleddersDir)\Sledders_Data\Managed\Unity.InputSystem.dll</HintPath>
       <Private>False</Private>
     </Reference>
     <Reference Include="UnityEngine.IMGUIModule">
@@ -117,8 +133,17 @@
   </ItemGroup>
   <ItemGroup>
     <Compile Include="AlpineSleddersTransport.cs" />
+    <Compile Include="AlpineSledForgeSystem.cs" />
+    <Compile Include="AlpineControllerInput.cs" />
     <Compile Include="AlpineFuelSystem.cs" />
+    <Compile Include="AlpineExperimentalSystems.cs" />
+    <Compile Include="AlpineHeadTrackingSystem.cs" />
+    <Compile Include="AlpineHeadlightDeleteProjection.cs" />
+    <Compile Include="AlpineNitrousSystem.cs" />
+    <Compile Include="AlpineTrackGraft.cs" />
     <Compile Include="AlpineTuneMath.cs" />
+    <Compile Include="AlpineVisualPartSystem.cs" />
+    <Compile Include="VisualProjectionCoordinator.cs" />
     <Compile Include="AlpineRemoteReplication.cs" />
     <Compile Include="AlpineNativeUi.cs" />
     <Compile Include="AlpinePeerSharing.cs" />

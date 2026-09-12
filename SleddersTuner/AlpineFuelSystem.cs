@@ -23,7 +23,7 @@ namespace AlpineTuning
     [Serializable]
     internal sealed class AlpineFuelStateFile
     {
-        public int schemaVersion = 1;
+        public int schemaVersion = 2;
         public Dictionary<string, AlpineFuelStateRecord> sleds =
             new Dictionary<string, AlpineFuelStateRecord>(StringComparer.OrdinalIgnoreCase);
     }
@@ -128,6 +128,14 @@ namespace AlpineTuning
             _sled = null;
         }
 
+        internal void SuspendRuntime()
+        {
+            SaveState(true);
+            RemoveHudAdditions();
+            RestoreRuntimePayloadMass();
+            _samples.Clear();
+        }
+
         internal void OnControllerInitializing(SnowmobileController controller, VehicleScriptableObject sled)
         {
             if (controller == null || sled == null)
@@ -198,7 +206,10 @@ namespace AlpineTuning
             ApplyRuntimePayloadMassAndCog(true);
         }
 
-        internal void OnControllerInitialized(SnowmobileController controller, VehicleScriptableObject sled)
+        internal void OnControllerInitialized(
+            SnowmobileController controller,
+            VehicleScriptableObject sled,
+            bool runtimeEnabledForSetup = true)
         {
             RestoreRuntimePayloadMass();
             _controller = controller;
@@ -219,7 +230,8 @@ namespace AlpineTuning
                 _lastAppliedDynamicCenterOfMass = _runtimeBaselineCenterOfMass;
             }
 
-            if (controller == null || sled == null || !_mod.Settings.alpineTuningEnabled)
+            if (controller == null || sled == null || !_mod.Settings.alpineTuningEnabled ||
+                !runtimeEnabledForSetup)
                 return;
 
             ResolveFuelControllerBindings(controller, true);
@@ -302,6 +314,8 @@ namespace AlpineTuning
             EnsureOverlayStyles();
             if (!fuelReadable)
             {
+                if (!_mod.Settings.showFuelOverlay)
+                    return;
                 int oldDepth = GUI.depth;
                 GUI.depth = -10000;
                 try
@@ -339,30 +353,33 @@ namespace AlpineTuning
                 bool fuelUsageEnabled = IsFuelUsageEnabled(_controller);
 
                 const float panelWidth = 320f;
-                float panelHeight = reserveCapacity > 0.001f ? 82f : 64f;
-                Rect panel = new Rect(Mathf.Max(8f, Screen.width - panelWidth - 18f), 18f, panelWidth, panelHeight);
-                GUI.Box(panel, GUIContent.none);
-                GUI.Label(new Rect(panel.x + 10f, panel.y + 7f, panel.width - 20f, 20f),
-                    string.Format(System.Globalization.CultureInfo.InvariantCulture,
-                        "FUEL  {0:F1} / {1:F1} L  ({2:F0}%)",
-                        liters, capacity, Mathf.Clamp01(normalized) * 100f),
-                    _fuelHeaderStyle);
-
-                string consumption = fuelUsageEnabled
-                    ? (hasPer100Km
-                        ? string.Format(System.Globalization.CultureInfo.InvariantCulture,
-                            "2.5s  {0:F1} L/100 km   |   {1:F1} L/h", per100Km, hourlyRate)
-                        : string.Format(System.Globalization.CultureInfo.InvariantCulture,
-                            "2.5s  {0:F1} L/h", hourlyRate))
-                    : "Fuel usage disabled by Sledders";
-                GUI.Label(new Rect(panel.x + 10f, panel.y + 29f, panel.width - 20f, 20f), consumption, _fuelTextStyle);
-
-                if (reserveCapacity > 0.001f)
+                if (_mod.Settings.showFuelOverlay)
                 {
-                    GUI.Label(new Rect(panel.x + 10f, panel.y + 50f, panel.width - 20f, 20f),
+                    float panelHeight = reserveCapacity > 0.001f ? 82f : 64f;
+                    Rect panel = new Rect(Mathf.Max(8f, Screen.width - panelWidth - 18f), 18f, panelWidth, panelHeight);
+                    GUI.Box(panel, GUIContent.none);
+                    GUI.Label(new Rect(panel.x + 10f, panel.y + 7f, panel.width - 20f, 20f),
                         string.Format(System.Globalization.CultureInfo.InvariantCulture,
-                            "RESERVE  {0:F1} / {1:F1} L", reserveLiters, reserveCapacity),
-                        _fuelTextStyle);
+                            "FUEL  {0:F1} / {1:F1} L  ({2:F0}%)",
+                            liters, capacity, Mathf.Clamp01(normalized) * 100f),
+                        _fuelHeaderStyle);
+
+                    string consumption = fuelUsageEnabled
+                        ? (hasPer100Km
+                            ? string.Format(System.Globalization.CultureInfo.InvariantCulture,
+                                "2.5s  {0:F1} L/100 km   |   {1:F1} L/h", per100Km, hourlyRate)
+                            : string.Format(System.Globalization.CultureInfo.InvariantCulture,
+                                "2.5s  {0:F1} L/h", hourlyRate))
+                        : "Fuel usage disabled by Sledders";
+                    GUI.Label(new Rect(panel.x + 10f, panel.y + 29f, panel.width - 20f, 20f), consumption, _fuelTextStyle);
+
+                    if (reserveCapacity > 0.001f)
+                    {
+                        GUI.Label(new Rect(panel.x + 10f, panel.y + 50f, panel.width - 20f, 20f),
+                            string.Format(System.Globalization.CultureInfo.InvariantCulture,
+                                "RESERVE  {0:F1} / {1:F1} L", reserveLiters, reserveCapacity),
+                            _fuelTextStyle);
+                    }
                 }
 
                 bool canRefuel = CanRefuelFromBackpack();
@@ -813,6 +830,12 @@ namespace AlpineTuning
                 // scanning for it even when our 2.5-second consumption label is
                 // already attached.
                 EnsureRescuePromptButton();
+                if (!_mod.Settings.showFuelOverlay)
+                {
+                    if (_consumptionLabel != null)
+                        _consumptionLabel.style.display = DisplayStyle.None;
+                    return;
+                }
                 if (_consumptionLabel != null && _consumptionLabel.panel != null)
                     return;
                 foreach (UIDocument document in Resources.FindObjectsOfTypeAll<UIDocument>())
@@ -909,6 +932,11 @@ namespace AlpineTuning
         {
             if (_consumptionLabel == null || _consumptionLabel.panel == null)
                 return;
+            if (!_mod.Settings.showFuelOverlay)
+            {
+                _consumptionLabel.style.display = DisplayStyle.None;
+                return;
+            }
             float hourlyRate = CurrentConsumptionLitersPerHour();
             AlpineFuelStateRecord record = CurrentRecord();
             string reserve = record != null && record.backpackCapacityLiters > 0.001f
@@ -1518,16 +1546,38 @@ namespace AlpineTuning
             {
                 record = new AlpineFuelStateRecord();
                 _state.sleds[key] = record;
+
+                // Earlier Alpine versions followed Sledders' per-ride ItemIdentifier.
+                // Keep the first model-level record continuous when this sled is next
+                // loaded, then all setups and owned instances of that model share it.
+                string legacyKey = LegacyRideIdentity(_sled);
+                if (_sled != null && string.Equals(key, Identity(_sled), StringComparison.OrdinalIgnoreCase) &&
+                    !string.IsNullOrWhiteSpace(legacyKey) &&
+                    !string.Equals(legacyKey, key, StringComparison.OrdinalIgnoreCase) &&
+                    _state.sleds.TryGetValue(legacyKey, out AlpineFuelStateRecord legacy) && legacy != null)
+                {
+                    record.tankLiters = legacy.tankLiters;
+                    record.lastTankCapacityLiters = legacy.lastTankCapacityLiters;
+                    record.backpackLiters = legacy.backpackLiters;
+                    record.backpackCapacityLiters = legacy.backpackCapacityLiters;
+                    _dirty = true;
+                }
             }
             return record;
         }
 
         private static string Identity(VehicleScriptableObject sled)
         {
-            string value = SledIdentity.StableIdentityKey(sled);
-            if (!string.IsNullOrWhiteSpace(value))
-                return value;
-            return sled != null ? AlpineTuningMod.GetSledKey(sled) : "unknown";
+            // Fuel belongs to the named sled model, not to Sledders' owned-ride ID.
+            // This deliberately makes an RMK 165 retain one physical tank level
+            // across every Alpine setup and every owned instance of that model.
+            string model = sled != null ? AlpineTuningMod.GetSledKey(sled) : null;
+            return !string.IsNullOrWhiteSpace(model) ? "model:" + model : "unknown";
+        }
+
+        private static string LegacyRideIdentity(VehicleScriptableObject sled)
+        {
+            return SledIdentity.StableIdentityKey(sled);
         }
 
         private static bool SameSled(VehicleScriptableObject left, VehicleScriptableObject right)
@@ -1548,6 +1598,7 @@ namespace AlpineTuning
                 {
                     if (loaded.sleds == null)
                         loaded.sleds = new Dictionary<string, AlpineFuelStateRecord>(StringComparer.OrdinalIgnoreCase);
+                    loaded.schemaVersion = 2;
                     _state = loaded;
                 }
             }

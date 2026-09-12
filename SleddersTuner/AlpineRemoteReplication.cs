@@ -90,13 +90,9 @@ namespace AlpineTuning
                 skipped.Add("headlight sharing off");
             }
 
-            if (settings.receivePeerVisualEquipment)
-                ApplyAccessories(state, root, effect.accessoryMode, applied, skipped);
-            else
-            {
-                RestoreAccessories(state);
-                skipped.Add("visual equipment sharing off");
-            }
+            // Sledders owns cosmetic accessories such as windshields and flaps.
+            // Always restore any legacy Alpine mutation instead of replicating it.
+            RestoreAccessories(state);
 
             if (!string.IsNullOrWhiteSpace(profile.checksum))
                 state.lastAppliedSignature = applicationSignature;

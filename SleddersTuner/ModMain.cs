@@ -37,6 +37,11 @@ namespace AlpineTuning
         internal AlpinePeerSharing Sharing { get; private set; }
         internal AlpineRemoteReplication RemoteReplication { get; private set; }
         internal AlpineFuelSystem FuelSystem { get; private set; }
+        internal AlpineNitrousSystem NitrousSystem { get; private set; }
+        internal AlpineExperimentalSystems ExperimentalSystems { get; private set; }
+        internal AlpineSledForgeSystem SledForge { get; private set; }
+        internal AlpineHeadTrackingSystem HeadTracking { get; private set; }
+        internal VisualProjectionCoordinator VisualParts { get; private set; }
 
         private readonly List<VehicleScriptableObject> _selectableSleds = new List<VehicleScriptableObject>();
         private readonly HashSet<string> _sledsModifiedByAlpineThisSession = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -53,6 +58,9 @@ namespace AlpineTuning
         private float _nextSelectableSledRefreshTime;
         private float _nextCurrentSetupFlushTime;
         private bool _shutdownComplete;
+        private bool _runtimeSuspended;
+        private bool _nativeSetupRuntimeSuspended;
+        private bool _applyingAfterLocalInit;
 
         private string _pendingEngineAudioEnumType;
         private string _pendingEngineAudioEnumName;
@@ -82,14 +90,28 @@ namespace AlpineTuning
         private HeadlightBindingCaptureResult _headlightBindingCaptureResult;
         private int _headlightBindingCancelFrame = -1;
         private float _nextHeadlightToggleTime;
+        private bool _waitingForNitrousKeyboardBinding;
+        private bool _waitingForNitrousControllerBinding;
+        private float _nitrousBindingCaptureDeadline;
+        private bool _waitingForWalkingKeyboardBinding;
+        private bool _waitingForWalkingControllerBinding;
+        private float _walkingBindingCaptureDeadline;
         private bool _lastHeadlightToggleHadTarget;
+        private readonly AlpineControllerInput _controllerInput = new AlpineControllerInput();
         private static readonly KeyCode[] AllKeyCodes = (KeyCode[])Enum.GetValues(typeof(KeyCode));
 
         private sealed class RuntimeHeadlightDefaults
         {
             public readonly List<RuntimeHeadlightDefault> lights = new List<RuntimeHeadlightDefault>();
+            public readonly List<RuntimeHeadlightDeleteObject> deleteObjects = new List<RuntimeHeadlightDeleteObject>();
             public SnowmobileController controller;
             public bool nativeSwitchEnabled;
+        }
+
+        private sealed class RuntimeHeadlightDeleteObject
+        {
+            public GameObject gameObject;
+            public bool active;
         }
 
         private sealed class RuntimeHeadlightDefault
@@ -242,12 +264,16 @@ namespace AlpineTuning
             Store.Initialize();
             FuelSystem = new AlpineFuelSystem(this);
             FuelSystem.Initialize();
-            if (!AlpineConstants.PeerSharingTemporarilyDisabled)
-            {
-                RemoteReplication = new AlpineRemoteReplication();
-                Sharing = new AlpinePeerSharing(this);
+            NitrousSystem = new AlpineNitrousSystem(this);
+            NitrousSystem.Initialize();
+            ExperimentalSystems = new AlpineExperimentalSystems(this);
+            SledForge = new AlpineSledForgeSystem(this);
+            HeadTracking = new AlpineHeadTrackingSystem(this);
+            VisualParts = new VisualProjectionCoordinator(this);
+            RemoteReplication = new AlpineRemoteReplication();
+            Sharing = new AlpinePeerSharing(this);
+            if (Settings.alpineTuningEnabled)
                 Sharing.Initialize();
-            }
 
             MelonLogger.Msg(
                 $"Alpine Tuning {AlpineConstants.ModVersion} initialized. " +
@@ -265,17 +291,60 @@ namespace AlpineTuning
             }
 
             AlpineNativeUi.UpdateGarageTuningShortcut();
-            Sharing?.Update();
-            FlushPendingCurrentSetups(false);
-            UpdateHeadlightInputBinding();
-            FuelSystem?.Update();
+            // Binding capture belongs to the editor, not the live runtime. Keep
+            // it responsive in menus, Sledders Default, and while the master
+            // runtime switch is off without polling ordinary hotkeys there.
+            bool processedBindingCapture = IsCapturingHeadlightBinding || IsCapturingNitrousBinding || IsCapturingWalkingBinding;
+            if (processedBindingCapture)
+                UpdateHeadlightInputBinding();
+            // Garage preview work remains available while live tuning is off;
+            // the disabled boundary below still restores every runtime graft.
+            if (Settings.alpineTuningEnabled || AlpineNativeUi.IsGarageTuningOpen)
+                VisualParts?.Update();
 
             if (!Settings.alpineTuningEnabled)
             {
+                if (!_runtimeSuspended)
+                {
+                    FuelSystem?.SuspendRuntime();
+                    NitrousSystem?.SuspendRuntime();
+                    ExperimentalSystems?.SuspendRuntime();
+                    HeadTracking?.Suspend();
+                    VisualParts?.RestoreTrackVisual();
+                    SledForge?.RestoreLocal();
+                    Sharing?.Shutdown();
+                    _runtimeSuspended = true;
+                }
                 _activeHeadlightOverride = null;
                 _pendingEngineAudioApply = false;
                 return;
             }
+
+            _runtimeSuspended = false;
+            ExperimentalSystems?.Update();
+            Sharing?.Update();
+            FlushPendingCurrentSetups(false);
+            HeadTracking?.Update();
+            if (ActiveSetupUsesSleddersDefaults())
+            {
+                if (!_nativeSetupRuntimeSuspended)
+                {
+                    FuelSystem?.SuspendRuntime();
+                    NitrousSystem?.SuspendRuntime();
+                    ExperimentalSystems?.SuspendRuntime();
+                    VisualParts?.RestoreTrackVisual();
+                    _nativeSetupRuntimeSuspended = true;
+                }
+                _activeHeadlightOverride = null;
+                _pendingEngineAudioApply = false;
+                return;
+            }
+
+            _nativeSetupRuntimeSuspended = false;
+            if (!processedBindingCapture)
+                UpdateHeadlightInputBinding();
+            FuelSystem?.Update();
+            NitrousSystem?.Update();
 
             PrepareHeadlightOverride();
             if (ActiveSO == null)
@@ -303,6 +372,7 @@ namespace AlpineTuning
                 return;
 
             MelonLogger.Msg("Cleared Alpine's stale local-sled runtime state after world teardown.");
+            VisualParts?.RestoreTrackVisual();
             ActiveSO = null;
             ActiveController = null;
             ActiveRespawn = null;
@@ -332,13 +402,23 @@ namespace AlpineTuning
 
         public override void OnGUI()
         {
-            FuelSystem?.DrawOverlay();
+            if (Settings.alpineTuningEnabled && !ActiveSetupUsesSleddersDefaults())
+            {
+                FuelSystem?.DrawOverlay();
+                NitrousSystem?.DrawOverlay();
+                SledForge?.DrawShowcaseTags();
+            }
         }
 
         public override void OnLateUpdate()
         {
             if (Settings.alpineTuningEnabled)
-                EnforceHeadlightOverride();
+            {
+                ExperimentalSystems?.LateUpdate();
+                if (!ActiveSetupUsesSleddersDefaults())
+                    EnforceHeadlightOverride();
+                HeadTracking?.LateUpdate();
+            }
         }
 
         public override void OnDeinitializeMelon()
@@ -349,6 +429,24 @@ namespace AlpineTuning
         public override void OnApplicationQuit()
         {
             ShutdownRuntime();
+        }
+
+        public override void OnSceneWasLoaded(int buildIndex, string sceneName)
+        {
+            if (_shutdownComplete)
+                return;
+            // Scene transitions invalidate preview roots, cameras, parked walkers,
+            // prop parents and any controller graph that has not yet been replaced.
+            // Fresh LocalInit remains the authoritative live reinstallation point.
+            AlpineNativeUi.DetachGarageSessions();
+            VisualParts?.RestoreGaragePreview();
+            ExperimentalSystems?.OnSceneChanged();
+            HeadTracking?.Suspend();
+            NitrousSystem?.SuspendRuntime();
+            FuelSystem?.SuspendRuntime();
+            PruneDestroyedActiveRuntime();
+            if (ActiveController != null && ActiveSO != null && Settings.alpineTuningEnabled)
+                OnNativeLifecycleBoundary("scene load " + (sceneName ?? buildIndex.ToString()));
         }
 
         private void ShutdownRuntime()
@@ -380,6 +478,11 @@ namespace AlpineTuning
             try
             {
                 FuelSystem?.Shutdown();
+                NitrousSystem?.Shutdown();
+                ExperimentalSystems?.Shutdown();
+                SledForge?.Shutdown();
+                HeadTracking?.Shutdown();
+                VisualParts?.Shutdown();
                 RestoreAlpineMutationsBeforeShutdown();
             }
             catch (Exception ex)
@@ -445,9 +548,9 @@ namespace AlpineTuning
 
             if (ActiveController != null && ActiveSO != null)
             {
+                VisualParts?.RestoreTrackVisual();
                 RestoreNativePhysicsDefaults();
                 ApplyHeadlightDefaults();
-                RestoreAccessoryDefaults();
 
                 SledDefaults defaults = Store.GetDefaults(GetSledKey(ActiveSO), GetVehicleId(ActiveSO));
                 if (defaults != null)
@@ -497,6 +600,21 @@ namespace AlpineTuning
             return Store != null && Store.SaveSettings();
         }
 
+        internal bool IsNitrousRuntimeAllowed()
+        {
+            return !_shutdownComplete && !_runtimeSuspended && !_nativeSetupRuntimeSuspended &&
+                   ActiveController != null && ActiveSO != null &&
+                   !AlpineNativeUi.HasAttachedMenus && Time.timeScale > 0.0001f &&
+                   !(ExperimentalSystems?.IsWalking ?? false);
+        }
+
+        internal void OnExperimentalSettingsChanged()
+        {
+            VisualParts?.InvalidateCatalog();
+            if (ActiveSO != null)
+                VisualParts?.Refresh(ActiveSO);
+        }
+
         internal bool SetAlpineTuningEnabled(bool enabled, out string status)
         {
             status = null;
@@ -520,12 +638,22 @@ namespace AlpineTuning
             {
                 if (!enabled)
                 {
-                    FuelSystem?.RestoreRuntimePayloadMass();
+                    FuelSystem?.SuspendRuntime();
+                    NitrousSystem?.SuspendRuntime();
+                    ExperimentalSystems?.SuspendRuntime();
+                    HeadTracking?.Suspend();
+                    VisualParts?.RestoreTrackVisual();
+                    VisualParts?.RestoreHeadlightDelete();
+                    Sharing?.Shutdown();
                     RestoreAlpineMutationsBeforeShutdown();
+                    _runtimeSuspended = true;
+                    _nativeSetupRuntimeSuspended = false;
                     status = "Alpine Tuning disabled; vanilla sled values restored. Saved tunes were retained.";
                 }
                 else
                 {
+                    _runtimeSuspended = false;
+                    Sharing?.Initialize();
                     bool applied = TryApplyActiveProfileForCurrentSled();
                     if (applied && ActiveController != null && ActiveSO != null)
                     {
@@ -753,6 +881,8 @@ namespace AlpineTuning
             if (profile == null || sled == null)
                 return null;
 
+            SynchronizeSledBuildSpec(profile, sled);
+
             var computation = ComputeProfile(profile, sled);
             if (computation == null || computation.stats == null)
             {
@@ -765,6 +895,23 @@ namespace AlpineTuning
             profile.targetSledKey = GetSledKey(sled);
             profile.targetVehicleId = GetVehicleId(sled);
             return computation.stats;
+        }
+
+        private void SynchronizeSledBuildSpec(TuneProfile profile, VehicleScriptableObject sled)
+        {
+            if (profile == null || sled == null) return;
+            if (profile.sledBuild == null) profile.sledBuild = new SledBuildSpec();
+            profile.sledBuild.sourceSledKey = GetSledKey(sled);
+            profile.sledBuild.compatibilityFingerprint =
+                SleddersGameBindings.GetCompatibilityReport()?.assemblyLightHash;
+            if (!string.IsNullOrWhiteSpace(Settings?.experimentalPropAssetKey))
+            {
+                profile.sledBuild.propAssetKey = Settings.experimentalPropAssetKey;
+                profile.sledBuild.propPosition = Settings.experimentalPropPosition;
+                profile.sledBuild.propRotation = Settings.experimentalPropRotation;
+                profile.sledBuild.propScale = Settings.experimentalPropScale;
+            }
+            profile.sledBuild.Normalize();
         }
 
         internal void PreviewProfilesWithSharedEnvironment(
@@ -814,12 +961,33 @@ namespace AlpineTuning
             try
             {
                 TryBuildDefaults();
+                // Dynamic native-length parts are scoped to the target platform.
+                // Refresh before normalization so saved donor IDs can migrate to
+                // the one compatible canonical-length option when available.
+                VisualParts?.Refresh(sled);
                 Catalog.EnsureProfileSelections(profile);
 
                 var computation = ComputeProfile(profile, sled);
                 if (computation == null || computation.stats == null)
                 {
                     status = computation?.unavailableReason ?? "Setup comparison is unavailable.";
+                    return false;
+                }
+
+                if (sled == ActiveSO &&
+                    !string.IsNullOrWhiteSpace(computation.mergedEffect.visualTrackVariantId))
+                {
+                    if (VisualParts == null ||
+                        !VisualParts.IsCompatible(computation.mergedEffect.visualTrackVariantId, sled))
+                    {
+                        status = "The saved track-length donor is not currently available for this sled.";
+                        return false;
+                    }
+                }
+                if (sled == ActiveSO && computation.mergedEffect.headlightDelete &&
+                    !CanUseHeadlightDelete(sled))
+                {
+                    status = "The Carbon Headlight Delete is not compatible with this sled.";
                     return false;
                 }
 
@@ -837,6 +1005,8 @@ namespace AlpineTuning
                 profile.requiresReload = computation.requiresReload;
                 profile.targetSledKey = GetSledKey(sled);
                 profile.targetVehicleId = GetVehicleId(sled);
+                if (sled == ActiveSO)
+                    VisualParts?.SetDesiredProfile(TuneStore.ComputeChecksum(profile));
 
                 // Persistence is the irreversible boundary. Do it before
                 // mutating the live asset/runtime so a failed write cannot leave
@@ -866,6 +1036,47 @@ namespace AlpineTuning
                     return true;
                 }
 
+                bool sleddersDefault = profile.baseline == AlpineSetupBaseline.SleddersDefault;
+                bool wasModified = IsSledModifiedByAlpine(sled);
+                if (sleddersDefault)
+                {
+                    ApplyDefaultsToSled(sled, computation.baseDefaults);
+                    ApplyEngineAudioToSled(sled, computation.baseDefaults, sled);
+                    if (sled == ActiveSO)
+                    {
+                        FuelSystem?.SuspendRuntime();
+                        NitrousSystem?.SuspendRuntime();
+                        VisualParts?.RestoreTrackVisual();
+                        RestoreNativePhysicsDefaults();
+                        ApplyRuntimeDefaults(computation.baseDefaults);
+                        ApplyHeadlightDefaults();
+                    }
+                    UnmarkSledModifiedByAlpine(sled);
+                    _nativeSetupRuntimeSuspended = sled == ActiveSO;
+                    if (reloadIfNeeded && wasModified && sled == ActiveSO &&
+                        !ReloadSled(out string resetReloadStatus))
+                    {
+                        status = string.IsNullOrWhiteSpace(resetReloadStatus)
+                            ? "Sledders Default staged; reload the sled to finish restoring native state."
+                            : resetReloadStatus;
+                        return false;
+                    }
+                    if (persist && notifyActive)
+                        NotifyActiveTuneChanged(profile, sled);
+                    status = persist ? "Sledders Default saved." : "Sledders Default restored.";
+                    return true;
+                }
+
+                if (sled == ActiveSO &&
+                    !VisualParts.Apply(computation.mergedEffect, out string visualReason))
+                {
+                    status = string.IsNullOrWhiteSpace(visualReason)
+                        ? "Track visual swap failed safely."
+                        : visualReason;
+                    return false;
+                }
+
+                _nativeSetupRuntimeSuspended = false;
                 FuelSystem?.PrepareProfileInstall(sled, computation);
                 ApplyDefaultsToSled(sled, computation.baseDefaults);
                 if (sled == ActiveSO)
@@ -880,8 +1091,9 @@ namespace AlpineTuning
                 {
                     ApplyRuntimeController(computation, profile);
                     ApplyHeadlightRuntime(computation.mergedEffect, profile);
-                    ApplyAccessoryMode(computation.mergedEffect.accessoryMode, computation.baseDefaults);
                     FuelSystem?.OnProfileApplied(ActiveController, sled, computation);
+                    NitrousSystem?.OnProfileApplied(ActiveController, sled, computation, profile);
+                    SledForge?.ApplyLocal(ActiveController, sled, profile);
                 }
 
                 MarkSledModifiedByAlpine(sled);
@@ -896,6 +1108,7 @@ namespace AlpineTuning
                 {
                     if (!ReloadSled(out string reloadStatus))
                     {
+                        VisualParts?.RollbackPendingSwap();
                         // A failed recreate leaves the original controller alive,
                         // but ReloadSled deliberately restored its captured stock
                         // objects before trying either rebuild path. Put the live
@@ -906,7 +1119,10 @@ namespace AlpineTuning
                         {
                             ApplyRuntimeController(computation, profile);
                             ApplyHeadlightRuntime(computation.mergedEffect, profile);
-                            ApplyAccessoryMode(computation.mergedEffect.accessoryMode, computation.baseDefaults);
+                            if (string.IsNullOrWhiteSpace(computation.mergedEffect.visualTrackVariantId) ||
+                                VisualParts.IsInstalledVariant(
+                                    computation.mergedEffect.visualTrackVariantId, sled))
+                                VisualParts.Apply(computation.mergedEffect, out _);
                         }
                         status = persist
                             ? "Setup saved; rebuild failed."
@@ -915,7 +1131,11 @@ namespace AlpineTuning
                             MelonLogger.Warning(reloadStatus);
                         return false;
                     }
-                    status = persist ? "Setup saved and ready." : "Setup ready.";
+                    status = VisualParts != null && VisualParts.HasPendingChassisSwap
+                        ? (persist
+                            ? "Setup saved; track and rear chassis are loading."
+                            : "Track and rear chassis are loading.")
+                        : (persist ? "Setup saved and ready." : "Setup ready.");
                 }
                 else
                     status = persist ? "Setup saved." : "Setup updated.";
@@ -923,6 +1143,8 @@ namespace AlpineTuning
             }
             catch (Exception ex)
             {
+                if (sled == ActiveSO)
+                    VisualParts?.RestoreTrackVisual();
                 MelonLogger.Error($"ApplyProfile failed: {ex.GetType().Name}");
                 status = persisted
                     ? "Setup saved; install failed."
@@ -1252,6 +1474,7 @@ namespace AlpineTuning
                 right.donorSledKey,
                 right.donorVehicleId);
             if (!string.Equals(leftDonor, rightDonor, StringComparison.OrdinalIgnoreCase) ||
+                left.baseline != right.baseline ||
                 left.headlightEnabled != right.headlightEnabled)
             {
                 return false;
@@ -1277,7 +1500,8 @@ namespace AlpineTuning
                    !Differs(a.clutchTrimPercent, b.clutchTrimPercent, epsilon) &&
                    !Differs(a.centerOfMassYTrim, b.centerOfMassYTrim, epsilon) &&
                    !Differs(a.centerOfMassZTrim, b.centerOfMassZTrim, epsilon) &&
-                   !Differs(a.skiStanceTrim, b.skiStanceTrim, epsilon);
+                   !Differs(a.skiStanceTrim, b.skiStanceTrim, epsilon) &&
+                   !Differs(a.nitrousBoostPercent, b.nitrousBoostPercent, epsilon);
         }
 
         internal bool RenameSetupSlot(TuneProfile profile, VehicleScriptableObject sled, string newName, out string status)
@@ -1477,7 +1701,6 @@ namespace AlpineTuning
                 {
                     ApplyRuntimeDefaults(defaults);
                     ApplyHeadlightDefaults();
-                    ApplyAccessoryMode("stock", defaults);
                     QueueEngineAudioSwap(defaults, sled);
                     if (reloadIfActive || activeNativePhysicsMayBeTuned)
                     {
@@ -1510,7 +1733,7 @@ namespace AlpineTuning
 
         internal bool PublishProfile(TuneProfile profile, VehicleScriptableObject sled)
         {
-            if (Sharing == null || profile == null)
+            if (Sharing == null || profile == null || !Settings.alpineTuningEnabled)
                 return false;
 
             try
@@ -1527,7 +1750,7 @@ namespace AlpineTuning
 
         internal void NotifyActiveTuneChanged(TuneProfile profile, VehicleScriptableObject sled)
         {
-            if (Sharing == null || profile == null || sled == null)
+            if (Sharing == null || profile == null || sled == null || !Settings.alpineTuningEnabled)
                 return;
 
             var settings = Settings;
@@ -1548,7 +1771,7 @@ namespace AlpineTuning
 
         internal void NotifyActiveTuneCleared(VehicleScriptableObject sled)
         {
-            if (Sharing == null)
+            if (Sharing == null || !Settings.alpineTuningEnabled)
                 return;
 
             try
@@ -1566,6 +1789,11 @@ namespace AlpineTuning
         internal bool TryApplyRemoteRuntimeTune(ulong senderId, TuneProfile profile, out string status)
         {
             status = null;
+            if (!Settings.alpineTuningEnabled)
+            {
+                status = "Alpine runtime is disabled.";
+                return false;
+            }
             if (senderId == 0 || profile == null)
             {
                 status = "Remote setup state is invalid.";
@@ -1624,8 +1852,15 @@ namespace AlpineTuning
                     runtimeSettings.receivePeerVisualEquipment &= peerState.shareVisualEquipment;
                 }
 
-                return RemoteReplication != null &&
-                       RemoteReplication.TryApply(senderId, clone, computation, runtimeSettings, out status);
+                bool applied = RemoteReplication != null &&
+                    RemoteReplication.TryApply(senderId, clone, computation, runtimeSettings, out status);
+                if (applied && runtimeSettings.receivePeerVisualEquipment &&
+                    SleddersGameBindings.TryFindRemoteSnowmobileRoot(senderId, out Component remoteRoot, out _) &&
+                    remoteRoot != null)
+                {
+                    SledForge?.ApplyRemote(senderId, remoteRoot, clone);
+                }
+                return applied;
             }
             catch (Exception ex)
             {
@@ -1887,7 +2122,6 @@ namespace AlpineTuning
                 // an Alpine-tuned brake, geometry, or contact grip as stock.
                 RestoreCapturedNativePhysicsDefaults();
                 ApplyHeadlightDefaults();
-                RestoreAccessoryDefaults();
 
                 if (_pendingEngineAudioApply)
                 {
@@ -2102,6 +2336,7 @@ namespace AlpineTuning
                     return;
 
                 _selectableSleds[existingIndex] = sled;
+                VisualParts?.InvalidateCatalog();
                 if (_defaultsBuilt)
                 {
                     RefreshStatDefaultsFromCleanLoad(sled);
@@ -2119,6 +2354,8 @@ namespace AlpineTuning
 
             if (!AddSelectableSled(sled, seen))
                 return;
+
+            VisualParts?.InvalidateCatalog();
 
             _selectableSleds.Sort((a, b) =>
                 string.Compare(GetSledDisplayName(a), GetSledDisplayName(b), StringComparison.OrdinalIgnoreCase));
@@ -2325,10 +2562,48 @@ namespace AlpineTuning
             if (ApplyProfile(activeClone, ActiveSO, false, false))
             {
                 NotifyActiveTuneChanged(activeClone, ActiveSO);
+                // Rear grafts reload the original source sled once, then install
+                // the validated donor assembly after LocalInit rebuilds its graph.
+                if (VisualParts != null && VisualParts.NeedsSourceReload && _applyingAfterLocalInit)
+                {
+                    // The LocalInit prefix already projected spawn-copied values
+                    // into this brand-new native graph. Bind the donor here; a
+                    // second immediate spawn request is redundant and some native
+                    // spawn paths acknowledge it without producing another graph.
+                    VisualParts.OnControllerInitialized(ActiveController, ActiveSO);
+                }
+                if (VisualParts != null && VisualParts.NeedsSourceReload &&
+                    !ReloadSled(out string chassisReloadStatus))
+                {
+                    VisualParts.RollbackPendingSwap();
+                    MelonLogger.Warning(chassisReloadStatus ??
+                        "Native chassis recreation could not be started.");
+                    return false;
+                }
                 return true;
             }
 
             return false;
+        }
+
+        internal void OnTrackCompatibilityScanCompleted(VehicleScriptableObject target)
+        {
+            if (!Settings.alpineTuningEnabled || target == null || ActiveSO == null ||
+                ActiveController == null ||
+                !string.Equals(SledIdentity.StableIdentityKey(target),
+                    SledIdentity.StableIdentityKey(ActiveSO), StringComparison.OrdinalIgnoreCase))
+                return;
+            TryApplyActiveProfileForCurrentSled();
+        }
+
+        private bool ActiveSetupUsesSleddersDefaults()
+        {
+            if (Store == null || ActiveSO == null)
+                return false;
+            TuneProfile profile =
+                Store.GetCurrentSetupForSled(GetSledKey(ActiveSO), GetVehicleId(ActiveSO)) ??
+                Store.GetActiveProfileForSled(GetSledKey(ActiveSO), GetVehicleId(ActiveSO));
+            return profile != null && profile.baseline == AlpineSetupBaseline.SleddersDefault;
         }
 
         private TuneComputation ComputeProfile(TuneProfile profile, VehicleScriptableObject sled)
@@ -2349,6 +2624,23 @@ namespace AlpineTuning
             var engineDefaults = baseDefaults;
             var audioDefaults = baseDefaults;
             var audioSource = sled;
+
+            if (profile.baseline == AlpineSetupBaseline.SleddersDefault)
+            {
+                var nativeEffect = new PartEffect();
+                return new TuneComputation
+                {
+                    baseDefaults = baseDefaults,
+                    engineDefaults = baseDefaults,
+                    audioDefaults = baseDefaults,
+                    audioSource = sled,
+                    parts = new List<TunePart>(),
+                    mergedEffect = nativeEffect,
+                    requiresReload = IsSledModifiedByAlpine(sled),
+                    stats = AlpineTuneMath.ComputeStats(
+                        baseDefaults, baseDefaults, new List<TunePart>(), nativeEffect, new FineTuneSettings())
+                };
+            }
 
             bool hasDonorReference = !string.IsNullOrWhiteSpace(profile.donorSledKey) ||
                                      !string.IsNullOrWhiteSpace(profile.donorVehicleId);
@@ -2415,6 +2707,12 @@ namespace AlpineTuning
             requiresReload = comparedActiveSpawn
                 ? activeSpawnDiffers
                 : NativeSpawnValuesDiffer(baseDefaults, resolvedStats);
+            if (sled == ActiveSO && VisualParts != null)
+            {
+                requiresReload |= string.IsNullOrWhiteSpace(effect.visualTrackVariantId)
+                    ? VisualParts.HasInstalledChassis(sled)
+                    : !VisualParts.IsInstalledVariant(effect.visualTrackVariantId, sled);
+            }
 
             return new TuneComputation
             {
@@ -2533,6 +2831,11 @@ namespace AlpineTuning
             fine.centerOfMassYTrim = Mathf.Clamp(fine.centerOfMassYTrim, -0.08f, 0.08f);
             fine.centerOfMassZTrim = Mathf.Clamp(fine.centerOfMassZTrim, -0.12f, 0.12f);
             fine.skiStanceTrim = Mathf.Clamp(fine.skiStanceTrim, -0.08f, 0.08f);
+            fine.nitrousBoostPercent = Mathf.Clamp(
+                float.IsNaN(fine.nitrousBoostPercent) || float.IsInfinity(fine.nitrousBoostPercent) ||
+                fine.nitrousBoostPercent <= 0f ? 100f : fine.nitrousBoostPercent,
+                25f,
+                200f);
         }
 
         private static float SafeRatio(float value, float baseline)
@@ -2698,18 +3001,84 @@ namespace AlpineTuning
 
         internal void BeginHeadlightKeyboardBind()
         {
+            CancelNitrousBindingCapture();
+            CancelWalkingBindingCapture();
             _waitingForHeadlightKeyboardBinding = true;
             _waitingForHeadlightControllerBinding = false;
             _headlightBindingCaptureDeadline = Time.unscaledTime + 8f;
             _headlightBindingCaptureResult = HeadlightBindingCaptureResult.None;
         }
 
+        internal bool IsCapturingNitrousBinding =>
+            _waitingForNitrousKeyboardBinding || _waitingForNitrousControllerBinding;
+        internal bool IsCapturingWalkingBinding =>
+            _waitingForWalkingKeyboardBinding || _waitingForWalkingControllerBinding;
+
+        internal void BeginNitrousKeyboardBind()
+        {
+            if (IsCapturingHeadlightBinding)
+                CancelHeadlightBindingCapture();
+            CancelWalkingBindingCapture();
+            _waitingForNitrousKeyboardBinding = true;
+            _waitingForNitrousControllerBinding = false;
+            _nitrousBindingCaptureDeadline = Time.unscaledTime + 8f;
+        }
+
+        internal void BeginNitrousControllerBind()
+        {
+            if (IsCapturingHeadlightBinding)
+                CancelHeadlightBindingCapture();
+            CancelWalkingBindingCapture();
+            _waitingForNitrousControllerBinding = true;
+            _waitingForNitrousKeyboardBinding = false;
+            _nitrousBindingCaptureDeadline = Time.unscaledTime + 8f;
+            _controllerInput.BeginCapture();
+        }
+
+        internal void CancelNitrousBindingCapture()
+        {
+            _waitingForNitrousKeyboardBinding = false;
+            _waitingForNitrousControllerBinding = false;
+            _nitrousBindingCaptureDeadline = 0f;
+        }
+
+        internal void BeginWalkingKeyboardBind()
+        {
+            if (IsCapturingHeadlightBinding)
+                CancelHeadlightBindingCapture();
+            CancelNitrousBindingCapture();
+            _waitingForWalkingKeyboardBinding = true;
+            _waitingForWalkingControllerBinding = false;
+            _walkingBindingCaptureDeadline = Time.unscaledTime + 8f;
+        }
+
+        internal void BeginWalkingControllerBind()
+        {
+            if (IsCapturingHeadlightBinding)
+                CancelHeadlightBindingCapture();
+            CancelNitrousBindingCapture();
+            _waitingForWalkingControllerBinding = true;
+            _waitingForWalkingKeyboardBinding = false;
+            _walkingBindingCaptureDeadline = Time.unscaledTime + 8f;
+            _controllerInput.BeginCapture();
+        }
+
+        internal void CancelWalkingBindingCapture()
+        {
+            _waitingForWalkingKeyboardBinding = false;
+            _waitingForWalkingControllerBinding = false;
+            _walkingBindingCaptureDeadline = 0f;
+        }
+
         internal void BeginHeadlightControllerBind()
         {
+            CancelNitrousBindingCapture();
+            CancelWalkingBindingCapture();
             _waitingForHeadlightControllerBinding = true;
             _waitingForHeadlightKeyboardBinding = false;
             _headlightBindingCaptureDeadline = Time.unscaledTime + 8f;
             _headlightBindingCaptureResult = HeadlightBindingCaptureResult.None;
+            _controllerInput.BeginCapture();
         }
 
         internal void CancelHeadlightBindingCapture()
@@ -2740,7 +3109,7 @@ namespace AlpineTuning
             Settings.headlightKeyboardKey = null;
             Settings.headlightControllerButton = null;
             Settings.headlightBindingConfigured = false;
-            Settings.headlightBindingRevision = 2;
+            Settings.headlightBindingRevision = 4;
             if (SaveSettings())
                 return true;
 
@@ -2756,12 +3125,71 @@ namespace AlpineTuning
         {
             var settings = Settings;
 
+            if (_waitingForWalkingKeyboardBinding || _waitingForWalkingControllerBinding)
+            {
+                if (Input.GetKeyDown(KeyCode.Escape) ||
+                    (_waitingForWalkingControllerBinding && _controllerInput.CancelPressed()) ||
+                    Time.unscaledTime > _walkingBindingCaptureDeadline)
+                {
+                    CancelWalkingBindingCapture();
+                    return;
+                }
+                string walkingBinding;
+                bool capturedWalking = _waitingForWalkingControllerBinding
+                    ? _controllerInput.TryCapture(out walkingBinding)
+                    : TryCaptureKeyboardBinding(out walkingBinding);
+                if (capturedWalking)
+                {
+                    string previous = _waitingForWalkingControllerBinding
+                        ? settings.walkingControllerButton : settings.walkingKeyboardKey;
+                    if (_waitingForWalkingControllerBinding) settings.walkingControllerButton = walkingBinding;
+                    else settings.walkingKeyboardKey = walkingBinding;
+                    if (!SaveSettings())
+                    {
+                        if (_waitingForWalkingControllerBinding) settings.walkingControllerButton = previous;
+                        else settings.walkingKeyboardKey = previous;
+                    }
+                    CancelWalkingBindingCapture();
+                }
+                return;
+            }
+
+            if (_waitingForNitrousKeyboardBinding || _waitingForNitrousControllerBinding)
+            {
+                if (Input.GetKeyDown(KeyCode.Escape) ||
+                    (_waitingForNitrousControllerBinding && _controllerInput.CancelPressed()) ||
+                    Time.unscaledTime > _nitrousBindingCaptureDeadline)
+                {
+                    CancelNitrousBindingCapture();
+                    return;
+                }
+                string nitrousBinding;
+                bool capturedNitrous = _waitingForNitrousControllerBinding
+                    ? _controllerInput.TryCapture(out nitrousBinding)
+                    : TryCaptureKeyboardBinding(out nitrousBinding);
+                if (capturedNitrous)
+                {
+                    string previous = _waitingForNitrousControllerBinding
+                        ? settings.nitrousControllerButton : settings.nitrousKeyboardKey;
+                    if (_waitingForNitrousControllerBinding) settings.nitrousControllerButton = nitrousBinding;
+                    else settings.nitrousKeyboardKey = nitrousBinding;
+                    if (!SaveSettings())
+                    {
+                        if (_waitingForNitrousControllerBinding) settings.nitrousControllerButton = previous;
+                        else settings.nitrousKeyboardKey = previous;
+                    }
+                    CancelNitrousBindingCapture();
+                }
+                return;
+            }
+
             if (_waitingForHeadlightKeyboardBinding || _waitingForHeadlightControllerBinding)
             {
                 // Escape is always the clear cancellation route and can never
                 // become the hotkey itself. This also prevents a garage Back
                 // press from being captured as a lighting binding.
-                if (Input.GetKeyDown(KeyCode.Escape))
+                if (Input.GetKeyDown(KeyCode.Escape) ||
+                    (_waitingForHeadlightControllerBinding && _controllerInput.CancelPressed()))
                 {
                     CancelHeadlightBindingCapture();
                     return;
@@ -2773,8 +3201,11 @@ namespace AlpineTuning
                     return;
                 }
 
-                KeyCode captured;
-                if (TryCaptureBindingKey(_waitingForHeadlightControllerBinding, out captured))
+                string captured = null;
+                bool capturedInput = _waitingForHeadlightControllerBinding
+                    ? _controllerInput.TryCapture(out captured)
+                    : TryCaptureKeyboardBinding(out captured);
+                if (capturedInput)
                 {
                     bool previousEnabled = settings.headlightToggleEnabled;
                     string previousKeyboard = settings.headlightKeyboardKey;
@@ -2782,12 +3213,12 @@ namespace AlpineTuning
                     bool previousConfigured = settings.headlightBindingConfigured;
                     int previousRevision = settings.headlightBindingRevision;
                     if (_waitingForHeadlightControllerBinding)
-                        settings.headlightControllerButton = captured.ToString();
+                        settings.headlightControllerButton = captured;
                     else
-                        settings.headlightKeyboardKey = captured.ToString();
+                        settings.headlightKeyboardKey = captured;
 
                     settings.headlightBindingConfigured = true;
-                    settings.headlightBindingRevision = 2;
+                    settings.headlightBindingRevision = 4;
                     settings.headlightToggleEnabled = true;
                     settings.Normalize();
                     bool saved = SaveSettings();
@@ -2820,7 +3251,7 @@ namespace AlpineTuning
                 return;
 
             if (!BindingPressed(settings.headlightKeyboardKey) &&
-                !BindingPressed(settings.headlightControllerButton))
+                !_controllerInput.BindingPressed(settings.headlightControllerButton))
             {
                 return;
             }
@@ -2844,9 +3275,9 @@ namespace AlpineTuning
             return Enum.TryParse(keyName, true, out code) && Input.GetKeyDown(code);
         }
 
-        private static bool TryCaptureBindingKey(bool controllerOnly, out KeyCode captured)
+        private static bool TryCaptureKeyboardBinding(out string captured)
         {
-            captured = KeyCode.None;
+            captured = null;
 
             foreach (KeyCode code in AllKeyCodes)
             {
@@ -2861,12 +3292,10 @@ namespace AlpineTuning
 
                 bool controller = code.ToString().StartsWith("Joystick", StringComparison.OrdinalIgnoreCase);
                 bool mouse = code.ToString().StartsWith("Mouse", StringComparison.OrdinalIgnoreCase);
-                if (controllerOnly != controller)
-                    continue;
-                if (!controllerOnly && mouse)
+                if (controller || mouse)
                     continue;
 
-                captured = code;
+                captured = code.ToString();
                 return true;
             }
 
@@ -3120,12 +3549,22 @@ namespace AlpineTuning
                 }
             }
 
+            foreach (GameObject candidate in FindHeadlightDeleteObjects())
+            {
+                captured.deleteObjects.Add(new RuntimeHeadlightDeleteObject
+                {
+                    gameObject = candidate,
+                    active = candidate.activeSelf
+                });
+            }
+
             _activeHeadlightDefaults = captured;
             _headlightDefaultsControllerId = controllerId;
         }
 
         private void ApplyHeadlightDefaults()
         {
+            VisualParts?.RestoreHeadlightDelete();
             CaptureHeadlightDefaultsForActiveController(false);
             _activeHeadlightOverride = null;
             if (_activeHeadlightDefaults == null)
@@ -3135,6 +3574,12 @@ namespace AlpineTuning
             {
                 _activeHeadlightDefaults.controller.isHeadlightOn =
                     _activeHeadlightDefaults.nativeSwitchEnabled;
+            }
+
+            foreach (RuntimeHeadlightDeleteObject item in _activeHeadlightDefaults.deleteObjects)
+            {
+                if (item?.gameObject != null)
+                    item.gameObject.SetActive(item.active);
             }
 
             foreach (var defaults in _activeHeadlightDefaults.lights)
@@ -3224,7 +3669,9 @@ namespace AlpineTuning
             if (effect == null)
                 return;
 
-            _activeHeadlightOverride = profile != null ? profile.headlightEnabled : null;
+            _activeHeadlightOverride = effect.headlightDelete
+                ? false
+                : profile != null ? profile.headlightEnabled : null;
             CaptureHeadlightDefaultsForActiveController(false);
             if (_activeHeadlightDefaults == null)
                 return;
@@ -3233,6 +3680,32 @@ namespace AlpineTuning
                                        _activeHeadlightDefaults.nativeSwitchEnabled;
             if (ActiveController != null)
                 ActiveController.isHeadlightOn = nativeSwitchEnabled;
+
+            foreach (RuntimeHeadlightDeleteObject item in _activeHeadlightDefaults.deleteObjects)
+            {
+                if (item?.gameObject != null)
+                    item.gameObject.SetActive(effect.headlightDelete ? false : item.active);
+            }
+
+            if (effect.headlightDelete)
+            {
+                IEnumerable<GameObject> deleteTargets = _activeHeadlightDefaults.deleteObjects
+                    .Where(item => item != null && item.gameObject != null)
+                    .Select(item => item.gameObject);
+                if (!VisualParts.ApplyHeadlightDelete(ActiveController, deleteTargets, out string deleteReason))
+                {
+                    foreach (RuntimeHeadlightDeleteObject item in _activeHeadlightDefaults.deleteObjects)
+                        if (item?.gameObject != null) item.gameObject.SetActive(item.active);
+                    _activeHeadlightOverride = profile != null ? profile.headlightEnabled : null;
+                    nativeSwitchEnabled = _activeHeadlightOverride ?? _activeHeadlightDefaults.nativeSwitchEnabled;
+                    if (ActiveController != null) ActiveController.isHeadlightOn = nativeSwitchEnabled;
+                    MelonLogger.Warning(deleteReason ?? "Headlight delete closure plate was unavailable.");
+                }
+            }
+            else
+            {
+                VisualParts?.RestoreHeadlightDelete();
+            }
 
             float pitch = Mathf.Clamp(effect.headlightPitchOffsetDegrees, -5f, 5f);
             foreach (var defaults in _activeHeadlightDefaults.lights)
@@ -3279,6 +3752,96 @@ namespace AlpineTuning
             }
 
             SetActiveHeadlightsEnabled(nativeSwitchEnabled);
+        }
+
+        internal bool CanUseHeadlightDelete(VehicleScriptableObject sled)
+        {
+            if (sled == null || sled.headLightItem == null)
+                return false;
+            if (ActiveSO == null || ActiveController == null)
+                return sled.assetReference != null && sled.assetReference.RuntimeKeyIsValid();
+            SledIdentity identity = SledIdentity.FromSled(
+                sled, "headlight compatibility", false, false);
+            if (identity == null || !identity.Matches(ActiveSO))
+                return sled.assetReference != null && sled.assetReference.RuntimeKeyIsValid();
+            return FindHeadlightDeleteObjects().Count > 0;
+        }
+
+        internal void RefreshCompatibleVisualParts(VehicleScriptableObject sled)
+        {
+            VisualParts?.Refresh(sled);
+        }
+
+        internal bool HasAlternateNativeTrackLength(VehicleScriptableObject sled)
+        {
+            return VisualParts != null && VisualParts.HasAlternateNativeLength(sled);
+        }
+
+        internal bool IsTrackCompatibilityScanPending(VehicleScriptableObject sled)
+        {
+            VisualParts?.Refresh(sled);
+            return VisualParts != null && VisualParts.IsCompatibilityScanPending;
+        }
+
+        internal bool RequestGarageTrackPreview(
+            VehicleScriptableObject sled,
+            string partId,
+            Action<bool, string> completed)
+        {
+            string variantId = Catalog.Find(partId)?.effect?.visualTrackVariantId;
+            return VisualParts != null &&
+                   VisualParts.RequestGaragePreview(sled, variantId, completed);
+        }
+
+        internal void RestoreGarageTrackPreview()
+        {
+            VisualParts?.RestoreGaragePreview();
+        }
+
+        internal bool RequestGarageHeadlightDeletePreview(
+            VehicleScriptableObject sled,
+            bool installed,
+            Action<bool, string> completed)
+        {
+            return VisualParts != null &&
+                   VisualParts.RequestGarageHeadlightDeletePreview(sled, installed, completed);
+        }
+
+        internal bool IsPartCompatible(TunePart part, VehicleScriptableObject sled)
+        {
+            if (part?.effect == null)
+                return true;
+            if (part.effect.headlightDelete)
+                return CanUseHeadlightDelete(sled);
+            if (!string.IsNullOrWhiteSpace(part.effect.visualTrackVariantId))
+                return VisualParts != null && VisualParts.IsCompatible(part.effect.visualTrackVariantId, sled);
+            return true;
+        }
+
+        private static List<GameObject> FindHeadlightDeleteObjects()
+        {
+            var result = new List<GameObject>();
+            if (ActiveController == null)
+                return result;
+
+            foreach (Transform transform in ActiveController.GetComponentsInChildren<Transform>(true))
+            {
+                if (transform == null || transform == ActiveController.transform)
+                    continue;
+                string name = transform.name ?? string.Empty;
+                if (name.IndexOf("headlight", StringComparison.OrdinalIgnoreCase) < 0 &&
+                    name.IndexOf("head light", StringComparison.OrdinalIgnoreCase) < 0)
+                {
+                    continue;
+                }
+                if (transform.GetComponentInChildren<Renderer>(true) == null ||
+                    result.Any(item => transform.IsChildOf(item.transform)))
+                {
+                    continue;
+                }
+                result.Add(transform.gameObject);
+            }
+            return result;
         }
 
         private void ApplyStabilizerRuntime(ControllerDefaults defaults, PartEffect effect)
@@ -3837,7 +4400,6 @@ namespace AlpineTuning
             if (string.IsNullOrWhiteSpace(accessoryMode) ||
                 string.Equals(accessoryMode, "stock", StringComparison.OrdinalIgnoreCase))
             {
-                RestoreAccessoryDefaults();
                 return;
             }
 
@@ -3970,7 +4532,6 @@ namespace AlpineTuning
             if (_shutdownComplete || sled == null || Store == null || Catalog == null)
                 return;
 
-            FuelSystem?.OnControllerInitializing(controller, sled);
             RegisterSelectableSled(sled, "local sled pre-initialization");
             TryBuildDefaults();
             RefreshStatDefaultsFromCleanLoad(sled);
@@ -3983,13 +4544,17 @@ namespace AlpineTuning
                 Store.GetCurrentSetupForSled(GetSledKey(sled), GetVehicleId(sled)) ??
                 Store.GetActiveProfileForSled(GetSledKey(sled), GetVehicleId(sled));
             if (preserved == null)
+            {
+                FuelSystem?.OnControllerInitializing(controller, sled);
                 return;
+            }
 
             // LocalInit copies VehicleScriptableObject values into the native body,
             // track, skis and audio graph. Put the preserved setup on that source
             // object before the copy occurs; the postfix then captures the newly
             // initialized runtime baselines and applies live-only controller fields.
             TuneProfile profile = TuneStore.Clone(preserved);
+            VisualParts?.Refresh(sled);
             Catalog.EnsureProfileSelections(profile);
             TuneComputation computation = ComputeProfile(profile, sled);
             if (computation == null || computation.stats == null)
@@ -3998,6 +4563,15 @@ namespace AlpineTuning
                                     "Preserved Alpine setup could not be resolved before native initialization.");
                 return;
             }
+            if (profile.baseline == AlpineSetupBaseline.SleddersDefault)
+            {
+                ApplyDefaultsToSled(sled, computation.baseDefaults);
+                ApplyEngineAudioToSled(sled, computation.baseDefaults, sled);
+                UnmarkSledModifiedByAlpine(sled);
+                MelonLogger.Msg($"Prepared exact Sledders defaults before native initialization for {sled.name}.");
+                return;
+            }
+            FuelSystem?.OnControllerInitializing(controller, sled);
             FuelSystem?.PrepareProfileInstall(sled, computation);
             ApplyDefaultsToSled(sled, computation.baseDefaults);
             ApplyStatsToSled(sled, computation);
@@ -4019,6 +4593,8 @@ namespace AlpineTuning
             // or accessory changes.
             if (ActiveController != null && ActiveController != controller)
             {
+                if (VisualParts == null || !VisualParts.HasPendingChassisSwap)
+                    VisualParts?.RestoreTrackVisual();
                 RestoreNativePhysicsDefaults();
                 ApplyHeadlightDefaults();
                 RestoreAccessoryDefaults();
@@ -4027,7 +4603,11 @@ namespace AlpineTuning
             _activeHeadlightOverride = null;
             ActiveController = controller;
             ActiveSO = GetVehicleFromController(controller);
-            FuelSystem?.OnControllerInitialized(controller, ActiveSO);
+            VisualParts?.OnControllerInitialized(controller, ActiveSO);
+            bool sleddersDefault = ActiveSetupUsesSleddersDefaults();
+            FuelSystem?.OnControllerInitialized(controller, ActiveSO, !sleddersDefault);
+            NitrousSystem?.OnControllerInitialized(controller, ActiveSO);
+            ExperimentalSystems?.OnControllerInitialized(controller);
             _activeSpawnValues = SpawnValueSignature.FromSled(ActiveSO);
             _spawnValuesControllerId = controller != null
                 ? controller.GetInstanceID()
@@ -4036,7 +4616,6 @@ namespace AlpineTuning
             ActiveSpawnPos = spawnPos;
             ActiveSpawnRot = spawnRot;
             CaptureHeadlightDefaultsForActiveController(true);
-            CaptureAccessoryDefaultsForActiveController(true);
             // ReCreateSnowmobile can rebuild the controller's child physics graph
             // while retaining the same controller instance. LocalInit is the
             // authoritative lifecycle boundary, so never reuse component targets
@@ -4051,15 +4630,43 @@ namespace AlpineTuning
 
             TryBuildDefaults();
             RegisterSelectableSled(ActiveSO, "local sled initialization");
+            VisualParts?.Refresh(ActiveSO);
             RefreshStatDefaultsFromCleanLoad(ActiveSO);
             // LocalInit has just built a fresh native controller graph. Capture
             // that exact controller/stabilizer baseline even though the prefix
             // temporarily marked the source VSO as Alpine-modified.
-            EnsureDefaultsForSled(ActiveSO, true);
-            bool appliedActive = TryApplyActiveProfileForCurrentSled();
+            // A length kit keeps this source graph as the native mutation baseline;
+            // the donor rear assembly is installed only after these values are captured.
+            EnsureDefaultsForSled(
+                ActiveSO,
+                VisualParts == null || !VisualParts.HasInstalledChassis(ActiveSO));
+            bool appliedActive;
+            _applyingAfterLocalInit = true;
+            try
+            {
+                appliedActive = TryApplyActiveProfileForCurrentSled();
+            }
+            finally
+            {
+                _applyingAfterLocalInit = false;
+            }
             if (!appliedActive)
                 NotifyActiveTuneCleared(ActiveSO);
             MelonLogger.Msg($"Detected local sled '{ActiveSO.name}' for Alpine Tuning {AlpineConstants.ModVersion}.");
+        }
+
+        private void OnNativeLifecycleBoundary(string reason)
+        {
+            if (_shutdownComplete || !Settings.alpineTuningEnabled || ActiveController == null || ActiveSO == null)
+                return;
+            if (reason.IndexOf("respawn", StringComparison.OrdinalIgnoreCase) >= 0)
+                ExperimentalSystems?.OnSledReset(ActiveController);
+            else
+                ExperimentalSystems?.OnControllerInitialized(ActiveController);
+            VisualParts?.VerifyLiveProjection(ActiveController, ActiveSO);
+            if (!ActiveSetupUsesSleddersDefaults())
+                TryApplyActiveProfileForCurrentSled();
+            MelonLogger.Msg("Alpine visual projection reconciled after " + reason + ".");
         }
 
         private static T GetFieldValue<T>(object target, string fieldName)
@@ -4446,12 +5053,29 @@ namespace AlpineTuning
             {
                 try { Instance?.FuelSystem?.BeforeFuelSimulation(__instance); }
                 catch (Exception ex) { MelonLogger.Warning($"Alpine fuel pre-step skipped: {ex.GetType().Name}"); }
+                try { Instance?.HeadTracking?.BeforeSimulation(__instance); }
+                catch (Exception ex) { MelonLogger.Warning($"Alpine tracking lean pre-step skipped: {ex.GetType().Name}"); }
+                try { Instance?.NitrousSystem?.BeforeSimulation(__instance); }
+                catch (Exception ex) { MelonLogger.Warning($"Alpine nitrous pre-step skipped: {ex.GetType().Name}"); }
             }
 
             public static void Postfix(SnowmobileController __instance)
             {
+                try { Instance?.NitrousSystem?.AfterSimulation(__instance); }
+                catch (Exception ex) { MelonLogger.Warning($"Alpine nitrous restoration skipped: {ex.GetType().Name}"); }
+                try { Instance?.HeadTracking?.AfterSimulation(__instance); }
+                catch (Exception ex) { MelonLogger.Warning($"Alpine tracking lean restoration skipped: {ex.GetType().Name}"); }
                 try { Instance?.FuelSystem?.AfterFuelSimulation(__instance); }
                 catch (Exception ex) { MelonLogger.Warning($"Alpine fuel post-step skipped: {ex.GetType().Name}"); }
+            }
+
+            public static Exception Finalizer(SnowmobileController __instance, Exception __exception)
+            {
+                try { Instance?.NitrousSystem?.AfterSimulation(__instance); }
+                catch (Exception ex) { MelonLogger.Warning($"Alpine nitrous finalizer skipped: {ex.GetType().Name}"); }
+                try { Instance?.HeadTracking?.AfterSimulation(__instance); }
+                catch (Exception ex) { MelonLogger.Warning($"Alpine tracking lean finalizer skipped: {ex.GetType().Name}"); }
+                return __exception;
             }
         }
 
@@ -4482,6 +5106,52 @@ namespace AlpineTuning
                 {
                     MelonLogger.Error($"Alpine LocalInit patch failed: {ex.GetType().Name}");
                 }
+            }
+        }
+
+        [HarmonyPatch(typeof(FuelStation), "UpdateRefuelInput")]
+        private static class PatchNitrousStation
+        {
+            public static bool Prefix(FuelStation __instance, object[] __args)
+            {
+                try
+                {
+                    object input = __args != null && __args.Length > 0 ? __args[0] : null;
+                    return Instance?.NitrousSystem?.HandleFuelStationInput(__instance, input) ?? true;
+                }
+                catch (Exception ex)
+                {
+                    MelonLogger.Warning($"Alpine nitrous station integration skipped: {ex.GetType().Name}");
+                    return true;
+                }
+            }
+        }
+
+        [HarmonyPatch]
+        private static class PatchRespawnableRespawn
+        {
+            public static IEnumerable<MethodBase> TargetMethods()
+            {
+                return typeof(Respawnable)
+                    .GetMethods(BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic)
+                    .Where(method => method.Name == "Respawn" && method.ReturnType == typeof(void));
+            }
+
+            public static void Postfix(Respawnable __instance)
+            {
+                if (__instance != ActiveRespawn) return;
+                try { Instance?.OnNativeLifecycleBoundary("sled respawn"); }
+                catch (Exception ex) { MelonLogger.Warning($"Alpine sled respawn reconcile skipped: {ex.GetType().Name}"); }
+            }
+        }
+
+        [HarmonyPatch(typeof(Controller), "RequestGamePositionChange")]
+        private static class PatchGamePositionChange
+        {
+            public static void Postfix()
+            {
+                try { Instance?.OnNativeLifecycleBoundary("game-position change"); }
+                catch (Exception ex) { MelonLogger.Warning($"Alpine teleport reconcile skipped: {ex.GetType().Name}"); }
             }
         }
 

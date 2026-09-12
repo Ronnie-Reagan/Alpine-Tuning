@@ -1,7 +1,7 @@
 {
-  "schemaVersion": 3,
-  "modVersion": "2026.08.21",
-  "catalogVersion": "2026.08.fuel-v1",
+  "schemaVersion": 5,
+  "modVersion": "2026.09.02",
+  "catalogVersion": "2026.09.backlog-v5",
   "profileId": "fixture-modified",
   "name": "Summit Deep Snow",
   "usesAutomaticName": false,
@@ -28,6 +28,10 @@
     {
       "category": "intakeExhaust",
       "partId": "intake.flow"
+    },
+    {
+      "category": "nitrous",
+      "partId": "nitrous.race.10lb"
     },
     {
       "category": "clutchGearing",
@@ -94,10 +98,6 @@
       "partId": "light.aim.high"
     },
     {
-      "category": "accessories",
-      "partId": "accessory.race_trim"
-    },
-    {
       "category": "fuelTank",
       "partId": "fuel.tank.expedition"
     },
@@ -113,7 +113,8 @@
     "clutchTrimPercent": 2.0,
     "centerOfMassYTrim": -0.02,
     "centerOfMassZTrim": 0.04,
-    "skiStanceTrim": 0.05
+    "skiStanceTrim": 0.05,
+    "nitrousBoostPercent": 150.0
   },
   "resolvedStats": {
     "horsePower": 188.0,

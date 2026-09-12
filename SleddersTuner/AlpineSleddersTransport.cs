@@ -23,6 +23,7 @@ namespace AlpineTuning
         private const byte PacketKindChunk = 2;
         private const int MaxChunkCount = 16;
         private const float ChunkTimeoutSeconds = 20f;
+        private const float CapabilityProbeIntervalSeconds = 5f;
 
         private readonly Action<ulong, string, string> _onPayload;
         private readonly Dictionary<string, IncomingChunkSet> _incomingChunks =
@@ -33,8 +34,11 @@ namespace AlpineTuning
         private object _deliveryReliableFragmented;
 
         private object _clientInterface;
+        private object _clientSender;
         private object _serverInterface;
         private object _serverReceiveInterface;
+        private MethodInfo _clientNewWriterMethod;
+        private MethodInfo _clientSendMethod;
         private MethodInfo _serverNewWriterMethod;
         private MethodInfo _serverSendMethod;
         private MethodInfo _serverSendListMethod;
@@ -45,8 +49,13 @@ namespace AlpineTuning
         private Delegate _clientHandler;
         private Delegate _serverHandler;
         private bool _clientRegistered;
+        private bool _clientSendReady;
         private bool _serverRegistered;
         private bool _serverReceiveRegistered;
+        private bool _shutDown;
+        private bool _hostCapabilityConfirmed;
+        private readonly HashSet<ulong> _capableClients = new HashSet<ulong>();
+        private float _nextCapabilityProbeTime;
         private uint _nextSequence = 1;
 
         public AlpineSleddersTransport(Action<ulong, string, string> onPayload)
@@ -54,35 +63,44 @@ namespace AlpineTuning
             _onPayload = onPayload;
         }
 
-        public bool IsReady => _clientRegistered || _serverRegistered;
+        public bool IsReady => !_shutDown && (_clientRegistered || _serverRegistered);
         public bool ClientReady => _clientRegistered;
         public bool ServerReady => _serverRegistered;
-        public bool CanSend => _serverRegistered;
-        public bool HostRelayReady => _serverRegistered && _serverReceiveRegistered;
+        // Hosts send directly from NetServer. Joining clients send their packet
+        // to the host through NetClient, which then authenticates and relays it.
+        public bool CanSend => !_shutDown && (HostRelayReady
+            ? _capableClients.Count > 0
+            : _clientRegistered && _clientSendReady && _hostCapabilityConfirmed);
+        public bool HostRelayReady => !_shutDown && _serverRegistered && _serverReceiveRegistered;
         public string BindingStatus { get; private set; } = "not bound";
         public string LastSendStatus { get; private set; } = "not sent";
         public string LastReceiveStatus { get; private set; } = "not received";
 
         public void Update()
         {
+            _shutDown = false;
             EnsureBound();
+            ProbeCapabilities();
             ExpireChunks();
         }
 
         public void Shutdown()
         {
-            Unregister(_clientInterface, _unregisterClientMethod, ref _clientRegistered, "client");
-            Unregister(_serverReceiveInterface, _unregisterServerMethod, ref _serverReceiveRegistered, "server");
-            _serverRegistered = false;
-            _clientInterface = null;
-            _serverInterface = null;
-            _serverReceiveInterface = null;
+            // Peers may still have a confirmed receiver and queued packets.
+            // Keep the registered callbacks as discard-only sinks until the
+            // native interface dies. Re-enabling can reuse the same bindings.
+            _shutDown = true;
             _incomingChunks.Clear();
             BindingStatus = "shut down";
         }
 
         public bool Send(AlpineShareMessage message, ulong targetClientId, bool broadcast)
         {
+            if (_shutDown)
+            {
+                LastSendStatus = "blocked: transport shut down";
+                return false;
+            }
             if (message == null)
             {
                 LastSendStatus = "blocked: message missing";
@@ -90,9 +108,9 @@ namespace AlpineTuning
             }
 
             EnsureBound();
-            if (!IsReady)
+            if (!CanSend)
             {
-                LastSendStatus = "blocked: Sledders internal transport is not bound";
+                LastSendStatus = "blocked: waiting for a confirmed Alpine receiver; native game server may not support Alpine";
                 return false;
             }
 
@@ -103,7 +121,7 @@ namespace AlpineTuning
                 return false;
             }
 
-            if (_serverRegistered)
+            if (HostRelayReady)
             {
                 var targets = ResolveServerTargets(targetClientId, broadcast);
                 if (targets.Count == 0)
@@ -115,12 +133,8 @@ namespace AlpineTuning
                 return SendJsonFromServer(json, targets);
             }
 
-            if (_clientRegistered)
-            {
-                LastSendStatus =
-                    "blocked: internal client-to-host send disabled until a safe Alpine server relay is bound";
-                return false;
-            }
+            if (_clientSendReady)
+                return SendJsonFromClient(json);
 
             LastSendStatus = "blocked: no internal send path";
             return false;
@@ -137,6 +151,8 @@ namespace AlpineTuning
             {
                 if (!ReferenceEquals(_clientInterface, clientInterface))
                 {
+                    Unregister(_clientInterface, _unregisterClientMethod, ref _clientRegistered, "client");
+                    ResetCapabilities();
                     _clientInterface = clientInterface;
                     _clientRegistered = false;
                     _registerClientMethod = FindRegisterMethod(_clientInterface.GetType());
@@ -148,7 +164,38 @@ namespace AlpineTuning
             }
             else
             {
+                if (_clientInterface != null)
+                {
+                    Unregister(_clientInterface, _unregisterClientMethod, ref _clientRegistered, "client");
+                    _clientInterface = null;
+                    ResetCapabilities();
+                }
                 _clientRegistered = false;
+            }
+
+            string clientSendReason;
+            object clientSender;
+            if (SleddersGameBindings.TryGetNetClient(out clientSender, out clientSendReason) &&
+                clientSender != null)
+            {
+                if (!ReferenceEquals(_clientSender, clientSender))
+                {
+                    _clientSender = clientSender;
+                    _clientSendReady = false;
+                    _clientNewWriterMethod = FindNoArgMethod(_clientSender.GetType(), "MDNBFANMMHH");
+                    _clientSendMethod = FindClientSendMethod(_clientSender.GetType());
+                }
+
+                _clientSendReady =
+                    _clientNewWriterMethod != null &&
+                    _clientSendMethod != null;
+                clientSendReason = _clientSendReady
+                    ? "ready"
+                    : "NetClient.PIDJHAOLBJM send path missing";
+            }
+            else
+            {
+                _clientSendReady = false;
             }
 
             string serverReason;
@@ -185,6 +232,8 @@ namespace AlpineTuning
             {
                 if (!ReferenceEquals(_serverReceiveInterface, serverReceiveInterface))
                 {
+                    Unregister(_serverReceiveInterface, _unregisterServerMethod, ref _serverReceiveRegistered, "server");
+                    ResetCapabilities();
                     _serverReceiveInterface = serverReceiveInterface;
                     _serverReceiveRegistered = false;
                     _registerServerMethod = FindRegisterMethod(_serverReceiveInterface.GetType());
@@ -196,14 +245,22 @@ namespace AlpineTuning
             }
             else
             {
+                if (_serverReceiveInterface != null)
+                {
+                    Unregister(_serverReceiveInterface, _unregisterServerMethod, ref _serverReceiveRegistered, "server");
+                    _serverReceiveInterface = null;
+                    ResetCapabilities();
+                }
                 _serverReceiveRegistered = false;
             }
 
             BindingStatus =
-                $"client={(_clientRegistered ? "ready" : clientReason ?? "missing")}, " +
+                $"clientRx={(_clientRegistered ? "ready" : clientReason ?? "missing")}, " +
+                $"clientTx={(_clientSendReady ? "ready" : clientSendReason ?? "missing")}, " +
                 $"server={(_serverRegistered ? "ready" : serverReason ?? "missing")}, " +
                 $"serverRx={(_serverReceiveRegistered ? "ready" : serverReceiveReason ?? "missing")}, " +
-                $"messageId={AlpineConstants.SleddersInternalMessageId}";
+                $"messageId={AlpineConstants.SleddersInternalMessageId}, " +
+                $"receiverConfirmed={(HostRelayReady ? _capableClients.Count.ToString() : _hostCapabilityConfirmed.ToString())}";
 
             return IsReady;
         }
@@ -251,7 +308,14 @@ namespace AlpineTuning
                 return false;
             }
 
-            if (ContainsMessageId(netInterface))
+            var registry = GetMessageRegistry(netInterface);
+            if (registry == null)
+            {
+                reason = "message registry unavailable";
+                return false;
+            }
+            if (registry.Contains(AlpineConstants.SleddersInternalMessageId) &&
+                !IsDiscardHandler(registry[AlpineConstants.SleddersInternalMessageId]))
             {
                 reason = $"message id {AlpineConstants.SleddersInternalMessageId} already registered";
                 return false;
@@ -264,7 +328,10 @@ namespace AlpineTuning
                     BindingFlags.Instance | BindingFlags.NonPublic);
 
                 Delegate handler = Delegate.CreateDelegate(_handlerDelegateType, this, callback);
-                registerMethod.Invoke(netInterface, new object[] { AlpineConstants.SleddersInternalMessageId, handler });
+                if (registry.Contains(AlpineConstants.SleddersInternalMessageId))
+                    registry[AlpineConstants.SleddersInternalMessageId] = handler;
+                else
+                    registerMethod.Invoke(netInterface, new object[] { AlpineConstants.SleddersInternalMessageId, handler });
 
                 if (serverSide)
                     _serverHandler = handler;
@@ -286,13 +353,19 @@ namespace AlpineTuning
 
         private void Unregister(object netInterface, MethodInfo unregisterMethod, ref bool registered, string side)
         {
-            if (!registered || netInterface == null || unregisterMethod == null)
+            if (!registered || netInterface == null)
                 return;
 
             try
             {
-                unregisterMethod.Invoke(netInterface, new object[] { AlpineConstants.SleddersInternalMessageId });
-                MelonLogger.Msg($"[AlpineInternalTransport] Unregistered Sledders message id {AlpineConstants.SleddersInternalMessageId} from {side} netInterface.");
+                var registry = GetMessageRegistry(netInterface);
+                Delegate ownedHandler = side == "server" ? _serverHandler : _clientHandler;
+                if (registry != null && Equals(registry[AlpineConstants.SleddersInternalMessageId], ownedHandler))
+                {
+                    registry[AlpineConstants.SleddersInternalMessageId] = Delegate.CreateDelegate(
+                        _handlerDelegateType, typeof(AlpineSleddersTransport).GetMethod(
+                            "DiscardIncoming", BindingFlags.Static | BindingFlags.NonPublic));
+                }
             }
             catch (Exception ex)
             {
@@ -302,25 +375,28 @@ namespace AlpineTuning
             registered = false;
         }
 
-        private bool ContainsMessageId(object netInterface)
+        private System.Collections.IDictionary GetMessageRegistry(object netInterface)
         {
             try
             {
                 FieldInfo registryField = FindFieldInHierarchy(netInterface.GetType(), "MIHNCAHMKPF");
-                object registry = registryField?.GetValue(netInterface);
-                if (registry == null)
-                    return false;
-
-                MethodInfo contains = registry.GetType().GetMethod("ContainsKey", new[] { typeof(byte) });
-                if (contains == null)
-                    return false;
-
-                return (bool)contains.Invoke(registry, new object[] { AlpineConstants.SleddersInternalMessageId });
+                return registryField?.GetValue(netInterface) as System.Collections.IDictionary;
             }
             catch
             {
-                return false;
+                return null;
             }
+        }
+
+        private static bool IsDiscardHandler(object handler)
+        {
+            return handler is Delegate callback && callback.Method == typeof(AlpineSleddersTransport).GetMethod(
+                "DiscardIncoming", BindingFlags.Static | BindingFlags.NonPublic);
+        }
+
+        private static void DiscardIncoming(ulong senderId, ref DataStreamReader reader)
+        {
+            reader.SeekSet(reader.Length);
         }
 
         private void OnClientMessage(ulong transportSenderId, ref DataStreamReader reader)
@@ -337,6 +413,26 @@ namespace AlpineTuning
         {
             try
             {
+                if (_shutDown)
+                {
+                    LastReceiveStatus = "discarded: transport shut down";
+                    return;
+                }
+                // A bare message ID is the only safe probe for an unmodified
+                // receiver. HDIGLPKCIDC resumes parsing after a cached unknown
+                // ID, so even our ALP2 magic can become native gameplay commands.
+                if (reader.Length == reader.GetBytesRead())
+                {
+                    ReceiveCapabilityProbe(serverSide, transportSenderId);
+                    return;
+                }
+
+                if (serverSide ? !_capableClients.Contains(transportSenderId) : !_hostCapabilityConfirmed)
+                {
+                    LastReceiveStatus = "ignored: Alpine receiver capability not confirmed";
+                    return;
+                }
+
                 if (reader.Length - reader.GetBytesRead() < 21)
                 {
                     LastReceiveStatus = "ignored: internal packet header truncated";
@@ -358,7 +454,9 @@ namespace AlpineTuning
                 int payloadBytes = reader.ReadInt();
 
                 int remaining = reader.Length - reader.GetBytesRead();
-                if (payloadBytes <= 0 || payloadBytes > remaining || count == 0 || count > MaxChunkCount || index >= count)
+                if (totalBytes <= 0 || totalBytes > AlpineConstants.MaxPeerMessageBytes ||
+                    payloadBytes <= 0 || payloadBytes != remaining || count == 0 || count > MaxChunkCount || index >= count ||
+                    (kind == PacketKindFull && (count != 1 || index != 0 || totalBytes != payloadBytes)))
                 {
                     LastReceiveStatus = "ignored: invalid internal packet chunk bounds";
                     return;
@@ -392,6 +490,98 @@ namespace AlpineTuning
             {
                 LastReceiveStatus = "receive failed: " + ex.GetType().Name;
                 MelonLogger.Warning($"[AlpineInternalTransport] Receive failed: {ex.GetType().Name}");
+            }
+            finally
+            {
+                // Alpine sends one frame per native packet. Never return unread
+                // bytes to the game's multi-message dispatcher, including on
+                // invalid magic, truncated headers, bounds failures or exceptions.
+                reader.SeekSet(reader.Length);
+            }
+        }
+
+        private void ResetCapabilities()
+        {
+            _hostCapabilityConfirmed = false;
+            _capableClients.Clear();
+            _incomingChunks.Clear();
+            _nextCapabilityProbeTime = 0f;
+        }
+
+        private void ProbeCapabilities()
+        {
+            float now = UnityEngine.Time.unscaledTime;
+            if (now < _nextCapabilityProbeTime)
+                return;
+            _nextCapabilityProbeTime = now + CapabilityProbeIntervalSeconds;
+
+            if (HostRelayReady)
+            {
+                var targets = ResolveServerTargets(0, true, false);
+                _capableClients.RemoveWhere(id => !targets.Contains(id));
+                foreach (ulong target in targets)
+                {
+                    if (!_capableClients.Contains(target))
+                        SendCapabilityProbe(true, target);
+                }
+            }
+            else if (_clientRegistered && _clientSendReady && !_hostCapabilityConfirmed)
+            {
+                if (LastSendStatus == "not sent")
+                    MelonLogger.Msg("[AlpineInternalTransport] Waiting for a safe Alpine receiver handshake; tune data is blocked on unsupported native servers (race-start fix).");
+                SendCapabilityProbe(false, 0);
+            }
+        }
+
+        private void ReceiveCapabilityProbe(bool serverSide, ulong senderId)
+        {
+            if (serverSide)
+            {
+                if (!HostRelayReady || senderId == 0)
+                    return;
+                if (_capableClients.Add(senderId))
+                    MelonLogger.Msg("[AlpineInternalTransport] Confirmed Alpine client receiver.");
+                SendCapabilityProbe(true, senderId);
+            }
+            else
+            {
+                bool wasConfirmed = _hostCapabilityConfirmed;
+                _hostCapabilityConfirmed = true;
+                if (!wasConfirmed)
+                {
+                    MelonLogger.Msg("[AlpineInternalTransport] Confirmed Alpine host receiver.");
+                    SendCapabilityProbe(false, 0);
+                }
+            }
+            LastReceiveStatus = "Alpine receiver capability confirmed";
+        }
+
+        private bool SendCapabilityProbe(bool serverSide, ulong target)
+        {
+            object endpoint = serverSide ? _serverInterface : _clientSender;
+            MethodInfo factory = serverSide ? _serverNewWriterMethod : _clientNewWriterMethod;
+            MethodInfo send = serverSide ? _serverSendMethod : _clientSendMethod;
+            if (endpoint == null || factory == null || (send == null && (!serverSide || _serverSendListMethod == null)))
+                return false;
+
+            try
+            {
+                DataStreamWriter writer = CreateWriter(endpoint, factory);
+                writer.WriteByte(AlpineConstants.SleddersInternalMessageId);
+                if (writer.HasFailedWrites || writer.Length != 1)
+                    return false;
+                if (send != null)
+                    send.Invoke(endpoint, new object[] { target, _deliveryReliableFragmented, writer });
+                else
+                    _serverSendListMethod.Invoke(endpoint,
+                        new object[] { new List<ulong> { target }, _deliveryReliableFragmented, writer });
+                LastSendStatus = "sent safe receiver capability probe (1 byte)";
+                return true;
+            }
+            catch (Exception ex)
+            {
+                LastSendStatus = "capability probe failed: " + ex.GetType().Name;
+                return false;
             }
         }
 
@@ -462,8 +652,23 @@ namespace AlpineTuning
             try
             {
                 message = JsonConvert.DeserializeObject<AlpineShareMessage>(json);
-                if (message != null && message.senderSleddersClientId != 0)
+                if (!serverSide && message != null && message.senderSleddersClientId != 0)
                     logicalSender = message.senderSleddersClientId;
+
+                // A client can submit arbitrary JSON to the host.  The server
+                // must derive the sender identity from the transport callback,
+                // then relay that canonical packet to every recipient.
+                if (serverSide && message != null && transportSenderId != 0)
+                {
+                    message.senderId = transportSenderId;
+                    message.senderSleddersClientId = transportSenderId;
+                    if (message.summary != null)
+                        message.summary.senderId = transportSenderId;
+                    if (message.activeState != null)
+                        message.activeState.senderId = transportSenderId;
+                    json = JsonConvert.SerializeObject(message, Formatting.None);
+                    logicalSender = transportSenderId;
+                }
             }
             catch
             {
@@ -480,7 +685,7 @@ namespace AlpineTuning
 
         private void RelayFromServer(ulong logicalSender, AlpineShareMessage message, string json)
         {
-            if (!_serverRegistered || _serverInterface == null || message == null)
+            if (!HostRelayReady || _serverInterface == null || message == null)
                 return;
 
             var targets = ResolveServerTargets(message.targetSleddersClientId, message.targetSleddersClientId == 0);
@@ -497,7 +702,7 @@ namespace AlpineTuning
             SendJsonFromServer(json, targets);
         }
 
-        private List<ulong> ResolveServerTargets(ulong targetClientId, bool broadcast)
+        private List<ulong> ResolveServerTargets(ulong targetClientId, bool broadcast, bool requireCapability = true)
         {
             var targets = new HashSet<ulong>();
 
@@ -518,7 +723,7 @@ namespace AlpineTuning
             if (local != 0)
                 targets.Remove(local);
 
-            return targets.ToList();
+            return targets.Where(id => !requireCapability || _capableClients.Contains(id)).ToList();
         }
 
         private bool SendJsonFromServer(string json, List<ulong> targets)
@@ -569,6 +774,40 @@ namespace AlpineTuning
             }
         }
 
+        private bool SendJsonFromClient(string json)
+        {
+            if (_clientSender == null || _clientSendMethod == null || _clientNewWriterMethod == null)
+            {
+                LastSendStatus = "blocked: client internal send method missing";
+                return false;
+            }
+
+            try
+            {
+                int packetCount = 0;
+                foreach (DataStreamWriter writer in BuildWriters(_clientSender, _clientNewWriterMethod, json))
+                {
+                    // NetClient.PIDJHAOLBJM retains a destination parameter for
+                    // symmetry with NetServer, but its current implementation
+                    // submits to the connected host through netInterface.  Use
+                    // zero here so no peer identity is accidentally implied.
+                    _clientSendMethod.Invoke(
+                        _clientSender,
+                        new object[] { 0UL, _deliveryReliableFragmented, writer });
+                    packetCount++;
+                }
+
+                LastSendStatus = $"sent {packetCount} internal packet(s) client-to-host";
+                return packetCount > 0;
+            }
+            catch (Exception ex)
+            {
+                LastSendStatus = "client send failed: " + ex.GetType().Name;
+                MelonLogger.Warning($"[AlpineInternalTransport] Client send failed: {ex.GetType().Name}");
+                return false;
+            }
+        }
+
         private IEnumerable<DataStreamWriter> BuildWriters(object netInterface, MethodInfo newWriterMethod, string json)
         {
             byte[] bytes = Encoding.UTF8.GetBytes(json);
@@ -613,8 +852,10 @@ namespace AlpineTuning
             object raw = newWriterMethod.Invoke(netInterface, Array.Empty<object>());
             if (!(raw is DataStreamWriter))
                 throw new InvalidOperationException("MDNBFANMMHH did not return DataStreamWriter");
-
-            return (DataStreamWriter)raw;
+            DataStreamWriter writer = (DataStreamWriter)raw;
+            if (writer.Length != 0)
+                throw new InvalidOperationException("native writer factory returned a non-empty packet");
+            return writer;
         }
 
         private string SerializeForInternal(AlpineShareMessage message, ulong targetClientId)
@@ -714,6 +955,21 @@ namespace AlpineTuning
         }
 
         private MethodInfo FindServerSendMethod(Type type)
+        {
+            return FindMethodInHierarchy(type, m =>
+            {
+                if (m.Name != "PIDJHAOLBJM" || _deliveryType == null)
+                    return false;
+
+                var parameters = m.GetParameters();
+                return parameters.Length == 3 &&
+                       parameters[0].ParameterType == typeof(ulong) &&
+                       parameters[1].ParameterType == _deliveryType &&
+                       parameters[2].ParameterType == typeof(DataStreamWriter);
+            });
+        }
+
+        private MethodInfo FindClientSendMethod(Type type)
         {
             return FindMethodInHierarchy(type, m =>
             {

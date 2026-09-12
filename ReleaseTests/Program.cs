@@ -6,6 +6,7 @@ using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Reflection;
+using System.Runtime.InteropServices;
 using System.Security.Principal;
 using System.Text;
 using System.Text.RegularExpressions;
@@ -13,11 +14,47 @@ using Microsoft.Win32;
 
 namespace AlpineTuning.ReleaseTests
 {
+    public sealed class NativeTransportRegressionDomain : MarshalByRefObject
+    {
+        public string Run(string coreAssembly, string gameAssembly, string modAssembly)
+        {
+            AppDomain.CurrentDomain.AssemblyResolve += (sender, args) =>
+            {
+                string name = new AssemblyName(args.Name).Name;
+                if (name == "UnityEngine.CoreModule")
+                    return Assembly.LoadFrom(coreAssembly);
+                if (name == "Alpine Tuning")
+                    return Assembly.LoadFrom(modAssembly);
+                string managed = Path.GetDirectoryName(gameAssembly);
+                string game = Directory.GetParent(Directory.GetParent(managed).FullName).FullName;
+                foreach (string directory in new[] { managed, Path.Combine(game, "MelonLoader", "net35") })
+                {
+                    string candidate = Path.Combine(directory, name + ".dll");
+                    if (File.Exists(candidate))
+                        return Assembly.LoadFrom(candidate);
+                }
+                return null;
+            };
+            try
+            {
+                Assembly.LoadFrom(coreAssembly);
+                Assembly.LoadFrom(gameAssembly);
+                Assembly.LoadFrom(modAssembly);
+                Program.RunNativeTransportRegression();
+                return null;
+            }
+            catch (Exception ex)
+            {
+                return "native-transport-" + ex;
+            }
+        }
+    }
+
     internal static class Program
     {
-        private const string PublicVersion = "2026.08.22";
-        private const string AssemblyVersion = "2026.8.22.0";
-        private const string CatalogVersion = "2026.08.fuel-v1";
+        private const string PublicVersion = "2026.09.02";
+        private const string AssemblyVersion = "2026.9.2.0";
+        private const string CatalogVersion = "2026.09.backlog-v5";
         private const int ExpectedGarageIconCount = 182;
 
         private static readonly string[] RequiredGarageIconKeys =
@@ -35,6 +72,7 @@ namespace AlpineTuning.ReleaseTests
             "type.limiter-strap", "type.rear-shock", "type.rear-spring", "type.track",
             "type.skis", "type.steering-geometry", "type.headlight-color",
             "type.headlight-output", "type.headlight-beam", "type.headlight-aim",
+            "type.headlight-delete",
             "type.engine-swap",
             "engine.stock-native", "engine.unavailable", "engine.generic-na",
             "engine.generic-turbo"
@@ -54,11 +92,20 @@ namespace AlpineTuning.ReleaseTests
             "build-release.bat",
             "SleddersTuner/SleddersTuner.csproj",
             "SleddersTuner/AlpineNativeUi.cs",
+            "SleddersTuner/AlpineControllerInput.cs",
             "SleddersTuner/AlpineFuelSystem.cs",
+            "SleddersTuner/AlpineHeadTrackingSystem.cs",
+            "SleddersTuner/AlpineHeadlightDeleteProjection.cs",
+            "SleddersTuner/AlpineNitrousSystem.cs",
+            "SleddersTuner/AlpineExperimentalSystems.cs",
+            "SleddersTuner/AlpineTrackGraft.cs",
             "SleddersTuner/AlpinePeerSharing.cs",
             "SleddersTuner/AlpineRemoteReplication.cs",
             "SleddersTuner/AlpineSleddersTransport.cs",
+            "SleddersTuner/AlpineSledForgeSystem.cs",
             "SleddersTuner/AlpineTuneMath.cs",
+            "SleddersTuner/AlpineVisualPartSystem.cs",
+            "SleddersTuner/VisualProjectionCoordinator.cs",
             "SleddersTuner/GarageIconResources.cs",
             "SleddersTuner/ModMain.cs",
             "SleddersTuner/PartCatalog.cs",
@@ -77,7 +124,9 @@ namespace AlpineTuning.ReleaseTests
             "ReleaseTests/Fixtures/numerical-cases.json",
             "ReleaseTests/Fixtures/tune-stock.json",
             "ReleaseTests/Fixtures/tune-modified.json",
-            "ReleaseTests/Fixtures/tune-legacy.json"
+            "ReleaseTests/Fixtures/tune-legacy.json",
+            "scripts/Audit-SleddersAssembly.ps1",
+            "docs/native-feature-audit.generated.json"
         };
 
         private static readonly HashSet<string> IntentionalPublicIdentifiers =
@@ -110,6 +159,22 @@ namespace AlpineTuning.ReleaseTests
             public bool ContextOnly;
         }
 
+        private sealed class MockTrackingProvider : IAlpineHeadTrackingProvider
+        {
+            public MockTrackingProvider(string name, bool available)
+            {
+                Name = name;
+                IsAvailable = available;
+            }
+
+            public string Name { get; }
+            public bool IsAvailable { get; }
+            public bool Disposed { get; private set; }
+            public AlpineHeadPose NextPose { get; set; }
+            public bool TryRead(out AlpineHeadPose pose) { pose = NextPose; return IsAvailable; }
+            public void Dispose() { Disposed = true; }
+        }
+
         private static int Main(string[] args)
         {
             if (!TryReadArguments(args))
@@ -130,6 +195,9 @@ namespace AlpineTuning.ReleaseTests
             Run("internal subsystem and identity contracts", TestInternalContracts);
             Run("native drive numerical model", TestNativeDriveModel);
             Run("estimated curve numerical model", TestEstimatedCurveMath);
+            Run("experimental head tracking coordinator", TestHeadTrackingCoordinator);
+            Run("backlog v5 runtime contracts", TestBacklogV5RuntimeContracts);
+            Run("native transport packet isolation", TestNativeTransportIsolation);
             Run("TuneStore fixtures and recovery", () => TuneStoreRegression.Run(_repoRoot, _tuneTestRoot));
             Run("native assembly contracts", TestNativeAssemblyContracts);
             Run("release assembly metadata", TestReleaseAssemblyMetadata);
@@ -257,7 +325,7 @@ namespace AlpineTuning.ReleaseTests
             Require(unexpectedFile == null, "unexpected-public-file:" + unexpectedFile);
 
             foreach (string path in RequiredPublicFiles)
-                Require(entries.Contains(path, StringComparer.OrdinalIgnoreCase), "required-file-not-published");
+                Require(entries.Contains(path, StringComparer.OrdinalIgnoreCase), "required-file-not-published:" + path);
 
             string ignore = ReadRepoText(".gitignore");
             string firstRule = ignore.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries)
@@ -274,6 +342,59 @@ namespace AlpineTuning.ReleaseTests
                     ignore.IndexOf("!/SleddersTuner/*.cs", StringComparison.OrdinalIgnoreCase) < 0 &&
                     ignore.IndexOf("!/ReleaseTests/*.cs", StringComparison.OrdinalIgnoreCase) < 0,
                     "gitignore-compilation-input-contract");
+
+            // Check Git's actual rules with an empty index: tracked files can otherwise
+            // conceal broken exceptions, including missing parent-directory exceptions.
+            string probeRoot = Path.Combine(_tuneTestRoot, "gitignore-" + Guid.NewGuid().ToString("N"));
+            Directory.CreateDirectory(probeRoot);
+            File.WriteAllText(Path.Combine(probeRoot, ".gitignore"), ignore, new UTF8Encoding(false));
+            int exitCode;
+            RunGitProbe(probeRoot, "init --quiet", null, out exitCode);
+            Require(exitCode == 0, "gitignore-probe-init");
+            string[] excluded =
+            {
+                "local/private.json", "tmp/build.log", "tools/private.ps1",
+                "SleddersTuner.slnx", "ReleaseTests/releaseTests.zip",
+                "SleddersTuner/bin/x64/Release/Alpine Tuning.dll",
+                "SleddersTuner/obj/build.pdb", "ReleaseTests/bin/runner.exe",
+                "SleddersTuner/Unreviewed.cs", "ReleaseTests/Unreviewed.cs",
+                "scripts/private.ps1", "docs/private.md", ".github/workflows/unreviewed.yml"
+            };
+            string output = RunGitProbe(probeRoot, "-c core.quotePath=false check-ignore --no-index --stdin",
+                string.Join("\n", entries.Concat(excluded)) + "\n", out exitCode);
+            Require(exitCode == 1 || exitCode == 0, "gitignore-probe-failed");
+            var ignored = new HashSet<string>(output.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries),
+                StringComparer.OrdinalIgnoreCase);
+            foreach (string path in entries)
+                Require(!ignored.Contains(path), "public-file-ignored:" + path);
+            foreach (string path in excluded)
+                Require(ignored.Contains(path), "private-file-not-ignored:" + path);
+        }
+
+        private static string RunGitProbe(string directory, string arguments, string input, out int exitCode)
+        {
+            using (var process = new Process())
+            {
+                process.StartInfo = new ProcessStartInfo("git", arguments)
+                {
+                    WorkingDirectory = directory,
+                    UseShellExecute = false,
+                    CreateNoWindow = true,
+                    RedirectStandardInput = true,
+                    RedirectStandardOutput = true,
+                    RedirectStandardError = true
+                };
+                process.Start();
+                var output = process.StandardOutput.ReadToEndAsync();
+                var error = process.StandardError.ReadToEndAsync();
+                if (input != null)
+                    process.StandardInput.Write(input);
+                process.StandardInput.Close();
+                process.WaitForExit();
+                error.GetAwaiter().GetResult();
+                exitCode = process.ExitCode;
+                return output.GetAwaiter().GetResult();
+            }
         }
 
         private static string NormalizeRelativePath(string value)
@@ -306,7 +427,7 @@ namespace AlpineTuning.ReleaseTests
             string assemblyInfo = ReadRepoText("SleddersTuner/Properties/AssemblyInfo.cs");
             string build = ReadRepoText("build-release.bat");
 
-            Require(Regex.IsMatch(models, "SchemaVersion\\s*=\\s*3\\s*;"), "schema-version");
+            Require(Regex.IsMatch(models, "SchemaVersion\\s*=\\s*5\\s*;"), "schema-version");
             Require(models.Contains("ModVersion = \"" + PublicVersion + "\""), "mod-version");
             Require(models.Contains("CatalogVersion = \"" + CatalogVersion + "\""), "catalog-version");
             Require(assemblyInfo.Contains("AssemblyVersion(\"" + AssemblyVersion + "\")"), "assembly-version-source");
@@ -325,7 +446,7 @@ namespace AlpineTuning.ReleaseTests
             Require(readme.IndexOf("ESTIMATED", StringComparison.OrdinalIgnoreCase) >= 0, "readme-estimate-disclosure");
             Require(readme.IndexOf("Brake Calibration", StringComparison.OrdinalIgnoreCase) >= 0, "readme-brake");
             Require(readme.IndexOf("Steering Geometry", StringComparison.OrdinalIgnoreCase) >= 0, "readme-steering-geometry");
-            Require(readme.IndexOf("Multiplayer", StringComparison.OrdinalIgnoreCase) < 0, "readme-paused-multiplayer");
+            Require(readme.IndexOf("Multiplayer", StringComparison.OrdinalIgnoreCase) >= 0, "readme-multiplayer");
             Require(!Regex.IsMatch(readme, @"(?i)(press|shortcut|key)\s+(the\s+)?`?D`?\b|\[D\]"), "readme-d-shortcut");
         }
 
@@ -342,6 +463,10 @@ namespace AlpineTuning.ReleaseTests
             string math = ReadRepoText("SleddersTuner/AlpineTuneMath.cs");
             string fuel = ReadRepoText("SleddersTuner/AlpineFuelSystem.cs");
             string catalog = ReadRepoText("SleddersTuner/PartCatalog.cs");
+            string controllerInput = ReadRepoText("SleddersTuner/AlpineControllerInput.cs");
+            string tracking = ReadRepoText("SleddersTuner/AlpineHeadTrackingSystem.cs");
+            string visuals = ReadRepoText("SleddersTuner/AlpineVisualPartSystem.cs");
+            string trackGraft = ReadRepoText("SleddersTuner/AlpineTrackGraft.cs");
 
             Require(!Regex.IsMatch(ui, @"KeyCode\s*\.\s*D\b|DYNO\s*\[D\]", RegexOptions.IgnoreCase), "source-d-shortcut");
             Require(ui.IndexOf("AttachInlineFallback", StringComparison.Ordinal) < 0 &&
@@ -411,6 +536,61 @@ namespace AlpineTuning.ReleaseTests
             Require(catalog.IndexOf("requiresCosmeticBackpack = true", StringComparison.Ordinal) < 0 &&
                     fuel.IndexOf("Sledders currently has no wearable backpack cosmetic", StringComparison.Ordinal) >= 0,
                 "reserve-fuel-no-cosmetic-gate");
+            Require(models.IndexOf("public bool showFuelOverlay;", StringComparison.Ordinal) >= 0 &&
+                    fuel.IndexOf("if (_mod.Settings.showFuelOverlay)", StringComparison.Ordinal) >= 0 &&
+                    fuel.IndexOf("REFUEL FROM RESERVE", StringComparison.Ordinal) >= 0,
+                "optional-fuel-readout-keeps-rescue");
+            Require(main.IndexOf("FuelSystem?.SuspendRuntime();", StringComparison.Ordinal) >= 0 &&
+                    main.IndexOf("HeadTracking?.Suspend();", StringComparison.Ordinal) >= 0 &&
+                    main.IndexOf("VisualParts?.RestoreTrackVisual();", StringComparison.Ordinal) >= 0 &&
+                    main.IndexOf("Sharing?.Shutdown();", StringComparison.Ordinal) >= 0 &&
+                    main.IndexOf("if (!Settings.alpineTuningEnabled)", StringComparison.Ordinal) >= 0,
+                "true-runtime-shutdown");
+            Require(controllerInput.IndexOf("InputSystem.devices", StringComparison.Ordinal) >= 0 &&
+                    controllerInput.IndexOf("PhysicalControllers", StringComparison.Ordinal) >= 0 &&
+                    controllerInput.IndexOf("ButtonControl", StringComparison.Ordinal) >= 0 &&
+                    controllerInput.IndexOf("wasPressedThisFrame", StringComparison.Ordinal) >= 0 &&
+                    controllerInput.IndexOf("gamepad.buttonEast", StringComparison.Ordinal) >= 0 &&
+                    controllerInput.IndexOf("inputsystem:v1:", StringComparison.Ordinal) >= 0 &&
+                    controllerInput.IndexOf("Rewired.ReInput", StringComparison.Ordinal) < 0 &&
+                    project.IndexOf("Unity.InputSystem.dll", StringComparison.OrdinalIgnoreCase) >= 0 &&
+                    main.IndexOf("_controllerInput.TryCapture", StringComparison.Ordinal) >= 0 &&
+                    main.IndexOf("AlpineNativeUi.IsGarageTuningOpen", StringComparison.Ordinal) >= 0,
+                "input-system-headlight-binding");
+            Require(ui.IndexOf("RegisterCallback<NavigationMoveEvent>", StringComparison.Ordinal) >= 0 &&
+                    ui.IndexOf("visibleTiles[visibleTiles.Count - 1]", StringComparison.Ordinal) >= 0 &&
+                    ui.IndexOf("CenterNativeGarageTile(controller, rail, destination)", StringComparison.Ordinal) >= 0,
+                "controller-rail-wrap");
+            Require(visuals.IndexOf("TryDetectLength", StringComparison.Ordinal) >= 0 &&
+                    visuals.IndexOf("ResolvePlatformFamilyMetadata", StringComparison.Ordinal) >= 0 &&
+                    visuals.IndexOf("lynx-radien", StringComparison.Ordinal) >= 0 &&
+                    trackGraft.IndexOf("TrackAssemblyDescriptor", StringComparison.Ordinal) >= 0 &&
+                    trackGraft.IndexOf("EvaluateCompatibility", StringComparison.Ordinal) >= 0 &&
+                    trackGraft.IndexOf("Addressables.InstantiateAsync", StringComparison.Ordinal) >= 0 &&
+                    trackGraft.IndexOf("ApplyArcticVariant", StringComparison.Ordinal) >= 0 &&
+                    trackGraft.IndexOf("InstallContactMesh", StringComparison.Ordinal) >= 0 &&
+                    trackGraft.IndexOf("TrySetRearAxelController", StringComparison.Ordinal) >= 0 &&
+                    trackGraft.IndexOf("ScaledFallback", StringComparison.Ordinal) >= 0 &&
+                    trackGraft.IndexOf("RestoreSnapshot", StringComparison.Ordinal) >= 0 &&
+                    trackGraft.IndexOf("RequestGaragePreview", StringComparison.Ordinal) >= 0 &&
+                    trackGraft.IndexOf("BeginCompatibilityScan", StringComparison.Ordinal) >= 0 &&
+                    trackGraft.IndexOf("PumpCompatibilityScan", StringComparison.Ordinal) >= 0 &&
+                    visuals.IndexOf("_compatibilityScanPending", StringComparison.Ordinal) >= 0 &&
+                    project.IndexOf("AlpineTrackGraft.cs", StringComparison.Ordinal) >= 0,
+                "surgical-track-graft-compatibility-and-rollback");
+            Require(!Regex.IsMatch(visuals + trackGraft,
+                        @"\b(assetReference|prefabName|trackPositionOverride|trackScaleOverride|traxTransform)\s*=(?!=)",
+                        RegexOptions.CultureInvariant),
+                "track-graft-does-not-rewrite-vehicle-definition");
+            Require(ui.IndexOf("No alternate compatible track length found.",
+                        StringComparison.Ordinal) >= 0,
+                "track-graft-empty-platform-message");
+            Require(tracking.IndexOf("FT_SharedMem", StringComparison.Ordinal) >= 0 &&
+                    tracking.IndexOf("NP_StartDataTransmission", StringComparison.Ordinal) >= 0 &&
+                    tracking.IndexOf("RestoreCameraPose();", StringComparison.Ordinal) >= 0 &&
+                    tracking.IndexOf("AlpineNativeUi.HasAttachedMenus", StringComparison.Ordinal) >= 0 &&
+                    tracking.IndexOf("Time.timeScale <= 0.0001f", StringComparison.Ordinal) >= 0,
+                "six-axis-tracking-adapters");
             Require(ui.IndexOf("\"action.setups\"", StringComparison.Ordinal) >= 0 &&
                     ui.IndexOf("tertiaryLabel = \"Setups\"", StringComparison.Ordinal) >= 0 &&
                     ui.IndexOf("AddGarageNavigationTile(rail, tileButtons, \"Setups\"", StringComparison.Ordinal) < 0,
@@ -710,6 +890,68 @@ namespace AlpineTuning.ReleaseTests
                 "sled-key-long");
             Require(AlpineTuningMod.NormalizeSledKey("Mötör雪") == "Mötör雪",
                 "sled-key-unicode");
+
+            var sourceTrack = new TrackCompatibilitySignature
+            {
+                seamCenter = UnityEngine.Vector3.zero,
+                forward = UnityEngine.Vector3.forward,
+                up = UnityEngine.Vector3.up,
+                tunnelWidth = 0.40f,
+                trackCenter = new UnityEngine.Vector3(0f, -0.25f, -0.8f),
+                rearBounds = new UnityEngine.Bounds(
+                    new UnityEngine.Vector3(0f, -0.2f, -0.9f),
+                    new UnityEngine.Vector3(0.5f, 0.5f, 2f)),
+                trackLength = 3.7f,
+                animatedTrack = true,
+                contactMesh = true,
+                rearGraph = true
+            };
+            var compatibleDonor = new TrackCompatibilitySignature
+            {
+                seamCenter = new UnityEngine.Vector3(0.02f, 0f, 0f),
+                forward = UnityEngine.Vector3.forward,
+                up = UnityEngine.Vector3.up,
+                tunnelWidth = 0.42f,
+                trackCenter = new UnityEngine.Vector3(0.02f, -0.25f, -0.8f),
+                rearBounds = new UnityEngine.Bounds(
+                    new UnityEngine.Vector3(0.02f, -0.2f, -1f),
+                    new UnityEngine.Vector3(0.5f, 0.5f, 2.2f)),
+                trackLength = 3.9f,
+                animatedTrack = true,
+                contactMesh = true,
+                rearGraph = true
+            };
+            Require(AlpineTrackGraft.EvaluateCompatibility(sourceTrack, compatibleDonor).compatible,
+                "track-graft-compatible-signature");
+            compatibleDonor.tunnelWidth = 0.48f;
+            Require(!AlpineTrackGraft.EvaluateCompatibility(sourceTrack, compatibleDonor).compatible,
+                "track-graft-width-threshold");
+            compatibleDonor.tunnelWidth = 0.42f;
+            compatibleDonor.contactMesh = false;
+            Require(!AlpineTrackGraft.EvaluateCompatibility(sourceTrack, compatibleDonor).compatible,
+                "track-graft-requires-contact-graph");
+            compatibleDonor.contactMesh = true;
+            float sixDegrees = 6f * (float)Math.PI / 180f;
+            compatibleDonor.forward = new UnityEngine.Vector3(
+                (float)Math.Sin(sixDegrees), 0f, (float)Math.Cos(sixDegrees));
+            Require(!AlpineTrackGraft.EvaluateCompatibility(sourceTrack, compatibleDonor).compatible,
+                "track-graft-axis-threshold");
+            compatibleDonor.forward = UnityEngine.Vector3.forward;
+            compatibleDonor.seamCenter = new UnityEngine.Vector3(0.21f, 0f, 0f);
+            Require(!AlpineTrackGraft.EvaluateCompatibility(sourceTrack, compatibleDonor).compatible,
+                "track-graft-translation-threshold");
+
+            Require(AlpineTrackGraft.TryResolveFallbackScale(4f, 5f,
+                        out float fallbackRatio, out _) &&
+                    Approximately(fallbackRatio, 1.25d, 1e-7),
+                "track-fallback-scale-ratio");
+            Require(!AlpineTrackGraft.TryResolveFallbackScale(4f, 6.7f, out _, out _),
+                "track-fallback-scale-clamp");
+            AlpineTrackGraft.CalculateFrontAnchoredAxis(
+                1f, 2f, 1.25f, 4f, out float scaledAxis, out float shiftedAxis);
+            Require(Approximately(scaledAxis, 1.25d, 1e-7) &&
+                    Approximately(shiftedAxis + 5f * 0.5f, 2f + 4f * 0.5f, 1e-7),
+                "track-fallback-fixed-front-anchor");
         }
 
         private static SledDefaults SyntheticDefaults()
@@ -901,6 +1143,21 @@ namespace AlpineTuning.ReleaseTests
                 new FineTuneSettings());
             Require(modifiedClutch.Maximum >= modifiedClutch.Minimum + 100f,
                 "modified-clutch-safe-ordering");
+            foreach (float target in new[] { 6000f, 6500f, 7000f })
+            {
+                AlpineTuneMath.ResolvedClutchRange racing = AlpineTuneMath.ResolveClutchRange(
+                    new ControllerDefaults
+                    {
+                        hasClutchRpmMin = true,
+                        clutchRpmMin = 4000f,
+                        hasClutchRpmMax = true,
+                        clutchRpmMax = 6500f
+                    },
+                    new PartEffect { clutchEngagementTargetRpm = target },
+                    new FineTuneSettings());
+                Require(Approximately(racing.Minimum, target, 0d), "racing-clutch-exact-target");
+                Require(racing.Maximum >= racing.Minimum + 100f, "racing-clutch-lock-ordering");
+            }
             Require(Approximately(AlpineTuneMath.ResolveRpmSensitivity(
                     0f, new PartEffect()), 0d, 0d) &&
                     Approximately(AlpineTuneMath.ResolveRpmSensitivityDown(
@@ -914,6 +1171,490 @@ namespace AlpineTuning.ReleaseTests
                         turboRpmResponseMultiplier = 1.1f
                     }), 2.64d, 0.00001d),
                 "combined-rpm-response");
+        }
+
+        private static void TestHeadTrackingCoordinator()
+        {
+            var trackIr = new MockTrackingProvider("TrackIR", true);
+            int openTrackFactoryCalls = 0;
+            IAlpineHeadTrackingProvider selected = AlpineHeadTrackingSystem.SelectAvailableProvider(
+                AlpineHeadTrackingSource.Auto,
+                () => trackIr,
+                () => { openTrackFactoryCalls++; return new MockTrackingProvider("OpenTrack", true); });
+            Require(ReferenceEquals(selected, trackIr) && openTrackFactoryCalls == 0,
+                "tracking-auto-priority");
+            selected.Dispose();
+
+            var unavailableTrackIr = new MockTrackingProvider("TrackIR", false);
+            var openTrack = new MockTrackingProvider("OpenTrack", true);
+            selected = AlpineHeadTrackingSystem.SelectAvailableProvider(
+                AlpineHeadTrackingSource.Auto,
+                () => unavailableTrackIr,
+                () => openTrack);
+            Require(unavailableTrackIr.Disposed && ReferenceEquals(selected, openTrack),
+                "tracking-auto-fallback");
+            selected.Dispose();
+
+            int trackIrFactoryCalls = 0;
+            selected = AlpineHeadTrackingSystem.SelectAvailableProvider(
+                AlpineHeadTrackingSource.OpenTrack,
+                () => { trackIrFactoryCalls++; return new MockTrackingProvider("TrackIR", true); },
+                () => new MockTrackingProvider("OpenTrack", false));
+            Require(selected == null && trackIrFactoryCalls == 0, "tracking-explicit-source");
+            Require(AlpineHeadTrackingSystem.SelectAvailableProvider(
+                    AlpineHeadTrackingSource.TrackIr,
+                    () => throw new DllNotFoundException(),
+                    () => new MockTrackingProvider("OpenTrack", true)) == null,
+                "tracking-missing-library-safe");
+
+            AlpineHeadPose clamped = AlpineHeadTrackingSystem.ClampRelativePose(
+                new AlpineHeadPose
+                {
+                    positionMeters = new UnityEngine.Vector3(1f, -1f, 0.5f),
+                    rotationDegrees = new UnityEngine.Vector3(90f, -100f, 50f)
+                },
+                new AlpineHeadPose());
+            Require(Approximately(clamped.positionMeters.x, 0.20d, 1e-6) &&
+                    Approximately(clamped.positionMeters.y, -0.20d, 1e-6) &&
+                    Approximately(clamped.positionMeters.z, 0.20d, 1e-6),
+                "tracking-position-clamp");
+            Require(Approximately(clamped.rotationDegrees.x, 45d, 1e-6) &&
+                    Approximately(clamped.rotationDegrees.y, -60d, 1e-6) &&
+                    Approximately(clamped.rotationDegrees.z, 30d, 1e-6),
+                "tracking-rotation-clamp");
+
+            var filter = new AlpineHeadTrackingPoseFilter();
+            var trackingSample = new MockTrackingProvider("Mock", true)
+            {
+                NextPose = new AlpineHeadPose
+                {
+                    positionMeters = new UnityEngine.Vector3(0.05f, 0f, 0f),
+                    rotationDegrees = new UnityEngine.Vector3(0f, 5f, 0f)
+                }
+            };
+            Require(trackingSample.TryRead(out AlpineHeadPose firstPose), "tracking-mock-first-pose");
+            AlpineHeadPose firstFiltered = filter.Update(firstPose, 1f);
+            Require(filter.HasPose && Approximately(firstFiltered.positionMeters.x, 0d, 1e-6),
+                "tracking-first-pose-centers");
+            trackingSample.NextPose = new AlpineHeadPose
+            {
+                positionMeters = new UnityEngine.Vector3(0.15f, 0f, 0f),
+                rotationDegrees = new UnityEngine.Vector3(0f, 15f, 0f)
+            };
+            trackingSample.TryRead(out AlpineHeadPose movedPose);
+            AlpineHeadPose moved = filter.Update(movedPose, 1f);
+            Require(Approximately(moved.positionMeters.x, 0.10d, 1e-6) &&
+                    Approximately(moved.rotationDegrees.y, 10d, 1e-6),
+                "tracking-relative-pose");
+            filter.Recenter();
+            AlpineHeadPose recentered = filter.Update(movedPose, 1f);
+            Require(filter.HasPose && Approximately(recentered.positionMeters.x, 0d, 1e-6) &&
+                    Approximately(recentered.rotationDegrees.y, 0d, 1e-6),
+                "tracking-recenter");
+
+            var cameraPose = new AlpineCameraPoseState();
+            var nativePosition = new UnityEngine.Vector3(1f, 2f, 3f);
+            cameraPose.Capture(nativePosition, UnityEngine.Quaternion.identity);
+            UnityEngine.Vector3 appliedPosition = cameraPose.ApplyPosition(
+                new UnityEngine.Vector3(0.1f, -0.1f, 0.2f));
+            Require(Approximately(appliedPosition.x, 1.1d, 1e-6) && cameraPose.IsCaptured,
+                "tracking-camera-additive-pose");
+            Require(cameraPose.TryRestore(out UnityEngine.Vector3 restoredPosition,
+                        out UnityEngine.Quaternion restoredRotation) &&
+                    Approximately(restoredPosition.x, nativePosition.x, 1e-6) &&
+                    Approximately(restoredPosition.y, nativePosition.y, 1e-6) &&
+                    Approximately(restoredPosition.z, nativePosition.z, 1e-6) &&
+                    Approximately(restoredRotation.w, 1d, 1e-6) &&
+                    !cameraPose.IsCaptured,
+                "tracking-camera-restoration");
+        }
+
+        private static void TestBacklogV5RuntimeContracts()
+        {
+            var catalog = new PartCatalog();
+            TunePart compact = catalog.Find("nitrous.compact.5lb");
+            TunePart race = catalog.Find("nitrous.race.10lb");
+            TunePart drag = catalog.Find("nitrous.drag.20lb");
+            Require(compact != null && race != null && drag != null &&
+                    Approximately(compact.effect.nitrousCapacitySeconds, 6d, 0d) &&
+                    Approximately(race.effect.nitrousCapacitySeconds, 12d, 0d) &&
+                    Approximately(drag.effect.nitrousCapacitySeconds, 24d, 0d) &&
+                    Approximately(compact.effect.weightOffset, 5d, 0d) &&
+                    Approximately(race.effect.weightOffset, 8d, 0d) &&
+                    Approximately(drag.effect.weightOffset, 14d, 0d),
+                "nitrous-kit-contracts");
+            Require(Approximately(AlpineNitrousSystem.ComputePowerMultiplier(25f), 1.25d, 1e-6) &&
+                    Approximately(AlpineNitrousSystem.ComputePowerMultiplier(100f), 2d, 1e-6) &&
+                    Approximately(AlpineNitrousSystem.ComputePowerMultiplier(200f), 3d, 1e-6) &&
+                    Approximately(AlpineNitrousSystem.ComputeConsumptionScale(200f), 2d, 1e-6),
+                "nitrous-boost-consumption-contracts");
+
+            var fine = new FineTuneSettings { nitrousBoostPercent = 0f };
+            AlpineTuneMath.ClampFineTune(fine);
+            Require(Approximately(fine.nitrousBoostPercent, 100d, 0d), "nitrous-schema4-default");
+            fine.nitrousBoostPercent = 900f;
+            AlpineTuneMath.ClampFineTune(fine);
+            Require(Approximately(fine.nitrousBoostPercent, 200d, 0d), "nitrous-upper-bound");
+
+            var settings = new AlpineUserSettings
+            {
+                nitrousWotThreshold = 2f,
+                experimentalPropMassKg = 5000f,
+                headTracking = new HeadTrackingSettings
+                {
+                    smoothingResponse = 100f,
+                    motionCurve = 0.1f,
+                    translationClampMeters = new Vec3Data(5f, 5f, 5f)
+                }
+            };
+            settings.Normalize();
+            Require(Approximately(settings.nitrousWotThreshold, 1d, 0d) &&
+                    Approximately(settings.experimentalPropMassKg, 1000d, 0d) &&
+                    Approximately(settings.headTracking.smoothingResponse, 40d, 0d) &&
+                    Approximately(settings.headTracking.motionCurve, 0.5d, 0d) &&
+                    Approximately(settings.headTracking.translationClampMeters.x, 0.5d, 0d) &&
+                    !settings.experimentalTrackCompatibility && !settings.experimentalHiddenVehicles &&
+                    !settings.experimentalPropVehicles && !settings.experimentalWalking,
+                "schema5-settings-normalization");
+
+            var buildSpec = new SledBuildSpec
+            {
+                propScale = new Vec3Data(99f, -2f, 0f),
+                selections = new List<SledForgePartSelection>
+                {
+                    new SledForgePartSelection { slot = SledForgeSlot.Hood, donorSledKey = "donor-a" },
+                    new SledForgePartSelection { slot = SledForgeSlot.Hood, donorSledKey = "donor-b" }
+                }
+            };
+            buildSpec.Normalize();
+            Require(buildSpec.selections.Count == 1 && buildSpec.selections[0].donorSledKey == "donor-a" &&
+                    Approximately(buildSpec.propScale.x, 5d, 1e-6) && Approximately(buildSpec.propScale.y, 0.1d, 1e-6),
+                "sled-forge-build-spec-normalization");
+
+            var calibrated = new HeadTrackingSettings
+            {
+                translationSensitivity = new Vec3Data(2f, 1f, 1f),
+                translationDeadzoneMeters = new Vec3Data(0.01f, 0f, 0f),
+                translationClampMeters = new Vec3Data(0.20f, 0.20f, 0.20f),
+                rotationSensitivity = new Vec3Data(1f, 2f, 1f),
+                rotationDeadzoneDegrees = new Vec3Data(0f, 1f, 0f),
+                rotationClampDegrees = new Vec3Data(45f, 60f, 30f),
+                invertTranslationX = true,
+                invertYaw = true
+            };
+            AlpineHeadPose transformed = AlpineHeadTrackingSystem.TransformRelativePose(
+                new AlpineHeadPose
+                {
+                    positionMeters = new UnityEngine.Vector3(0.06f, 0f, 0f),
+                    rotationDegrees = new UnityEngine.Vector3(0f, 11f, 0f)
+                }, new AlpineHeadPose(), calibrated);
+            Require(transformed.positionMeters.x < -0.09f && transformed.positionMeters.x > -0.11f &&
+                    transformed.rotationDegrees.y < -19f && transformed.rotationDegrees.y > -21f,
+                "tracking-axis-tuning");
+
+            Type assembly = typeof(AlpineTuneMath).Assembly.GetType("AlpineTuning.VisualProjectionCoordinator", false);
+            Require(assembly != null &&
+                    typeof(AlpineTuneMath).Assembly.GetType("AlpineTuning.VisualProjectionContext", false) != null &&
+                    typeof(AlpineTuneMath).Assembly.GetType("AlpineTuning.TrackAssemblyRecipe", false) != null &&
+                    typeof(AlpineTuneMath).Assembly.GetType("AlpineTuning.ProjectionSnapshot", false) != null,
+                "visual-projection-models");
+
+            string main = ReadRepoText("SleddersTuner/ModMain.cs");
+            string input = ReadRepoText("SleddersTuner/AlpineControllerInput.cs");
+            string headlight = ReadRepoText("SleddersTuner/AlpineHeadlightDeleteProjection.cs");
+            string experimental = ReadRepoText("SleddersTuner/AlpineExperimentalSystems.cs");
+            string nativeUi = ReadRepoText("SleddersTuner/AlpineNativeUi.cs");
+            string fuel = ReadRepoText("SleddersTuner/AlpineFuelSystem.cs");
+            string nitrous = ReadRepoText("SleddersTuner/AlpineNitrousSystem.cs");
+            string forge = ReadRepoText("SleddersTuner/AlpineSledForgeSystem.cs");
+            string sharing = ReadRepoText("SleddersTuner/AlpinePeerSharing.cs");
+            string transport = ReadRepoText("SleddersTuner/AlpineSleddersTransport.cs");
+            string bindings = ReadRepoText("SleddersTuner/SleddersGameBindings.cs");
+            Require(main.Contains("public static Exception Finalizer") &&
+                    main.Contains("PatchNitrousStation") && main.Contains("PatchRespawnableRespawn") &&
+                    main.Contains("PatchGamePositionChange") && main.Contains("TargetMethods()") &&
+                    !main.Contains("[HarmonyPatch(typeof(Controller), \"OnRespawned\")]"),
+                "runtime-lifecycle-finalizer-contracts");
+            Require(input.Contains("BindingHeld") && input.Contains("BindableButtons") &&
+                    input.Contains("PhysicalControllers") && input.Contains("buttonEast"),
+                "physical-controller-adapter-contracts");
+            Require(headlight.Contains("_Cull") && headlight.Contains("_CullMode") &&
+                    headlight.Contains("_RenderFace") && headlight.Contains("0.85f") &&
+                    headlight.Contains("0.4f"), "headlight-double-sided-metal-contracts");
+            Require(experimental.Contains("RestoreHiddenVehicles") &&
+                    experimental.Contains("RestorePropProjection") && experimental.Contains("CanRemount") &&
+                    experimental.Contains("CharacterController"), "experimental-rollback-contracts");
+            Require(fuel.Contains("model:") && fuel.Contains("LegacyRideIdentity") &&
+                    fuel.Contains("Fuel belongs to the named sled model"),
+                "model-level-fuel-persistence-contract");
+            Require(nitrous.Contains("DefaultKeyboardKey") && nitrous.Contains("isEngineOn") &&
+                    nitrous.Contains("property-only lookup left every nitrous request inactive"),
+                "nitrous-native-engine-state-contract");
+            Require(nitrous.Contains("UpdateFieldRefill") && nitrous.Contains("KeyCode.N") &&
+                    nitrous.Contains("Park and switch off the engine"),
+                "nitrous-stationless-refill-contract");
+            Require(experimental.Contains("baseBoundsMaxExtent < 80f") &&
+                    experimental.Contains("GetComponentsInChildren<Collider>") &&
+                    nativeUi.Contains("PROP PAGE") && nativeUi.Contains("CompactPropName"),
+                "expanded-paged-prop-catalog-contract");
+            Require(experimental.Contains("BindSledPropMotionGroups") && forge.Contains("SlotUsesNativePhysics") &&
+                    forge.Contains("DrawShowcaseTags") && forge.Contains("Restore(Projection"),
+                "sled-forge-articulated-rollback-contract");
+            Require(sharing.Contains("BuildSyncProtocolVersion") && sharing.Contains("PrepareBuildMessage") &&
+                    sharing.Contains("incompatible game build"),
+                "networked-build-capability-contract");
+            Require(bindings.Contains("bool TryGetNetClient(out object netClient") &&
+                    transport.Contains("SendJsonFromClient") &&
+                    transport.Contains("client-to-host") &&
+                    transport.Contains("if (serverSide && message != null && transportSenderId != 0)"),
+                "internal-client-relay-and-canonical-sender-contract");
+            Require(nativeUi.Contains("string.Equals(category, \"performance\"") &&
+                    nativeUi.Contains("\"Engine Swap\", DonorDisplayName") &&
+                    nativeUi.Contains("Setups & Stock Resets") &&
+                    nativeUi.Contains("HEAD TRACKING\", \"Provider, six-axis calibration") &&
+                    nativeUi.Contains("fine.nitrousBoostPercent != 100f"),
+                "five-domain-transfer-contracts");
+
+            Type nativeUiType = typeof(AlpineTuneMath).Assembly.GetType("AlpineTuning.AlpineNativeUi", true);
+            MethodInfo categoriesForSection = nativeUiType.GetMethod(
+                "PartCategoriesForGarageSection", BindingFlags.Static | BindingFlags.NonPublic);
+            var transferredCategories = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            foreach (string section in new[] { "performance", "chassis-handling", "lighting", "utility" })
+            {
+                object result = categoriesForSection.Invoke(null, new object[] { section });
+                foreach (string category in (System.Collections.IEnumerable)result)
+                    transferredCategories.Add(category);
+            }
+            Require(new HashSet<string>(PartCatalog.OrderedCategories, StringComparer.OrdinalIgnoreCase)
+                    .SetEquals(transferredCategories),
+                "five-domain-complete-part-transfer");
+        }
+
+        private static void TestNativeTransportIsolation()
+        {
+            string directory = Path.Combine(_tuneTestRoot, "native-transport-runtime");
+            Directory.CreateDirectory(directory);
+            string core = Path.Combine(directory, "UnityEngine.CoreModule.dll");
+            // Unity's memory intrinsics cannot run in the CLR test runner. Only
+            // this isolated test copy receives equivalent managed operations;
+            // the game's dispatcher, reader, and release mod remain original.
+            using (var assembly = Mono.Cecil.AssemblyDefinition.ReadAssembly(
+                Path.Combine(Path.GetDirectoryName(_gameAssembly), "UnityEngine.CoreModule.dll")))
+            {
+                var memory = assembly.MainModule.GetType("Unity.Collections.LowLevel.Unsafe.UnsafeUtility");
+                foreach (string name in new[] { "MemCpy", "MemClear" })
+                {
+                    var method = memory.Methods.Single(candidate => candidate.Name == name);
+                    method.ImplAttributes = Mono.Cecil.MethodImplAttributes.IL;
+                    method.Body = new Mono.Cecil.Cil.MethodBody(method);
+                    var il = method.Body.GetILProcessor();
+                    il.Emit(Mono.Cecil.Cil.OpCodes.Ldarg_0);
+                    if (name == "MemCpy")
+                    {
+                        il.Emit(Mono.Cecil.Cil.OpCodes.Ldarg_1);
+                        il.Emit(Mono.Cecil.Cil.OpCodes.Ldarg_2);
+                        il.Emit(Mono.Cecil.Cil.OpCodes.Conv_U);
+                        il.Emit(Mono.Cecil.Cil.OpCodes.Cpblk);
+                    }
+                    else
+                    {
+                        il.Emit(Mono.Cecil.Cil.OpCodes.Ldc_I4_0);
+                        il.Emit(Mono.Cecil.Cil.OpCodes.Ldarg_1);
+                        il.Emit(Mono.Cecil.Cil.OpCodes.Conv_U);
+                        il.Emit(Mono.Cecil.Cil.OpCodes.Initblk);
+                    }
+                    il.Emit(Mono.Cecil.Cil.OpCodes.Ret);
+                }
+                var time = assembly.MainModule.GetType("UnityEngine.Time").Methods
+                    .Single(method => method.Name == "get_unscaledTime");
+                time.ImplAttributes = Mono.Cecil.MethodImplAttributes.IL;
+                time.Body = new Mono.Cecil.Cil.MethodBody(time);
+                time.Body.GetILProcessor().Emit(Mono.Cecil.Cil.OpCodes.Ldc_R4, 0f);
+                time.Body.GetILProcessor().Emit(Mono.Cecil.Cil.OpCodes.Ret);
+                foreach (var log in assembly.MainModule.GetType("UnityEngine.Debug").Methods
+                    .Where(method => (method.Name == "LogError" || method.Name == "LogException") &&
+                        method.Parameters.Count == 1))
+                {
+                    log.Body = new Mono.Cecil.Cil.MethodBody(log);
+                    log.Body.GetILProcessor().Emit(Mono.Cecil.Cil.OpCodes.Ret);
+                }
+                assembly.Write(core);
+            }
+
+            var domain = AppDomain.CreateDomain("Alpine transport isolation", null,
+                new AppDomainSetup { ApplicationBase = Path.GetDirectoryName(typeof(Program).Assembly.Location) });
+            try
+            {
+                var runner = (NativeTransportRegressionDomain)domain.CreateInstanceFromAndUnwrap(
+                    typeof(Program).Assembly.Location, typeof(NativeTransportRegressionDomain).FullName);
+                string failure = runner.Run(core, _gameAssembly, _releaseAssembly);
+                Require(failure == null, failure ?? "native-transport-isolation");
+            }
+            finally
+            {
+                AppDomain.Unload(domain);
+                File.Delete(core);
+                Directory.Delete(directory);
+            }
+        }
+
+        internal static void RunNativeTransportRegression()
+        {
+            const ulong sender = 123;
+            var native = new NativePacketDispatcher();
+            byte[] legacy = MakeInternalPacket(Encoding.UTF8.GetBytes("{}"));
+            // This is the actual dispatcher, with harmless sentinels replacing
+            // game effects. Native ping 80 reads one byte, exposing id 50 and
+            // checkpoint-race kind 1 in the old unnegotiated ALP2 header.
+            native.Dispatch(sender, legacy);
+            Require(native.PingCount == 1 && native.GameRulesCount == 1 && native.LastGameType == 1,
+                "native-dispatcher-reproduces-alp2-game-rules-leak");
+
+            native = new NativePacketDispatcher();
+            for (int i = 0; i < 512; i++)
+                native.Dispatch(sender, new[] { AlpineConstants.SleddersInternalMessageId });
+            Require(native.PingCount == 0 && native.GameRulesCount == 0,
+                "repeated-unhandled-capability-probes-never-reach-native-commands");
+
+            foreach (bool serverSide in new[] { false, true })
+            {
+                int delivered = 0;
+                string received = null;
+                ulong receivedSender = 0;
+                var transport = new AlpineSleddersTransport((peer, json, side) =>
+                {
+                    delivered++;
+                    received = json;
+                    receivedSender = peer;
+                });
+                var dispatcher = new NativePacketDispatcher();
+                MethodInfo callback = typeof(AlpineSleddersTransport).GetMethod(
+                    serverSide ? "OnServerMessage" : "OnClientMessage", BindingFlags.Instance | BindingFlags.NonPublic);
+                dispatcher.LIOJOEAICOP(AlpineConstants.SleddersInternalMessageId,
+                    (HDIGLPKCIDC.BJIFGFGGNFP)Delegate.CreateDelegate(typeof(HDIGLPKCIDC.BJIFGFGGNFP), transport, callback));
+
+                // An unsolicited complete packet must neither establish
+                // capability nor leak its body to the native command loop.
+                dispatcher.Dispatch(sender, legacy);
+                Require(delivered == 0 && dispatcher.GameRulesCount == 0 && dispatcher.PingCount == 0,
+                    "unconfirmed-internal-frame-is-contained-" + serverSide);
+                if (serverSide)
+                    ((HashSet<ulong>)typeof(AlpineSleddersTransport).GetField("_capableClients",
+                        BindingFlags.Instance | BindingFlags.NonPublic).GetValue(transport)).Add(sender);
+                else
+                    typeof(AlpineSleddersTransport).GetField("_hostCapabilityConfirmed",
+                        BindingFlags.Instance | BindingFlags.NonPublic).SetValue(transport, true);
+
+                byte[] valid = MakeInternalPacket(Encoding.UTF8.GetBytes("{\"senderSleddersClientId\":999}"));
+                var invalid = new List<byte[]>();
+                for (int length = 2; length < 22; length++)
+                    invalid.Add(new[] { AlpineConstants.SleddersInternalMessageId }
+                        .Concat(Enumerable.Repeat((byte)50, length - 1)).ToArray());
+                byte[] wrongMagic = (byte[])valid.Clone();
+                wrongMagic[1] ^= 1;
+                invalid.Add(wrongMagic);
+                foreach (int offset in new[] { 5, 12, 14, 18 })
+                {
+                    byte[] packet = (byte[])valid.Clone();
+                    packet[offset] = 255; // Invalid kind, count, total, or payload length.
+                    invalid.Add(packet);
+                }
+                invalid.Add(valid.Concat(new byte[] { 50, 1, 80, 0 }).ToArray());
+                foreach (byte[] packet in invalid)
+                {
+                    dispatcher.Dispatch(sender, packet);
+                    Require(dispatcher.GameRulesCount == 0 && dispatcher.PingCount == 0,
+                        "rejected-internal-body-never-reaches-native-command-" + serverSide);
+                }
+                Require(delivered == 0, "malformed-internal-frames-not-delivered-" + serverSide);
+
+                dispatcher.Dispatch(sender, valid);
+                Require(delivered == 1 && receivedSender == (serverSide ? sender : 999) &&
+                        received.Contains("senderSleddersClientId"), "valid-internal-frame-delivery-" + serverSide);
+                byte[] jsonBytes = Encoding.UTF8.GetBytes("{\"senderSleddersClientId\":999}");
+                int split = jsonBytes.Length / 2;
+                dispatcher.Dispatch(sender, MakeInternalPacket(jsonBytes.Skip(split).ToArray(), 2, 7, 1, 2, jsonBytes.Length));
+                Require(delivered == 1, "incomplete-chunk-waits-" + serverSide);
+                dispatcher.Dispatch(sender, MakeInternalPacket(jsonBytes.Take(split).ToArray(), 2, 7, 0, 2, jsonBytes.Length));
+                Require(delivered == 2 && dispatcher.GameRulesCount == 0 && dispatcher.PingCount == 0,
+                    "out-of-order-chunks-deliver-without-native-commands-" + serverSide);
+
+                transport.Shutdown();
+                Require(!transport.CanSend, "shutdown-blocks-internal-sends-" + serverSide);
+                dispatcher.Dispatch(sender, legacy);
+                dispatcher.Dispatch(sender, new[] { AlpineConstants.SleddersInternalMessageId });
+                Require(delivered == 2 && dispatcher.GameRulesCount == 0 && dispatcher.PingCount == 0,
+                    "shutdown-keeps-pending-packets-contained-" + serverSide);
+
+                dispatcher.Dispatch(sender, new byte[] { 80, 7, 50, 1 });
+                Require(dispatcher.PingCount == 1 && dispatcher.GameRulesCount == 1 && dispatcher.LastGameType == 1,
+                    "intentional-native-ping-and-game-rules-still-dispatch-" + serverSide);
+            }
+        }
+
+        private static byte[] MakeInternalPacket(byte[] payload, byte kind = 1, uint sequence = 1,
+            ushort index = 0, ushort count = 1, int total = 0)
+        {
+            using (var stream = new MemoryStream())
+            using (var writer = new BinaryWriter(stream))
+            {
+                writer.Write(AlpineConstants.SleddersInternalMessageId);
+                writer.Write(0x324C5041u);
+                writer.Write(kind);
+                writer.Write(sequence);
+                writer.Write(index);
+                writer.Write(count);
+                writer.Write(total == 0 ? payload.Length : total);
+                writer.Write(payload.Length);
+                writer.Write(payload);
+                return stream.ToArray();
+            }
+        }
+
+        private sealed class NativePacketDispatcher : HDIGLPKCIDC
+        {
+            internal int PingCount;
+            internal int GameRulesCount;
+            internal byte LastGameType;
+
+            internal NativePacketDispatcher()
+            {
+                var unknown = (HashSet<byte>)typeof(HDIGLPKCIDC).GetField("OBJPEOCEMPN",
+                    BindingFlags.Instance | BindingFlags.NonPublic).GetValue(this);
+                unknown.Add(AlpineConstants.SleddersInternalMessageId);
+                unknown.Add(65);
+                LIOJOEAICOP(80, (ulong peer, ref Unity.Collections.DataStreamReader reader) =>
+                {
+                    PingCount++;
+                    reader.ReadByte();
+                });
+                LIOJOEAICOP(50, (ulong peer, ref Unity.Collections.DataStreamReader reader) =>
+                {
+                    GameRulesCount++;
+                    LastGameType = reader.ReadByte();
+                    reader.SeekSet(reader.Length);
+                });
+            }
+
+            internal void Dispatch(ulong sender, byte[] packet)
+            {
+                IntPtr buffer = Marshal.AllocHGlobal(packet.Length);
+                try
+                {
+                    Marshal.Copy(packet, 0, buffer, packet.Length);
+                    object boxed = default(Unity.Collections.DataStreamReader);
+                    Type type = boxed.GetType();
+                    type.GetField("m_BufferPtr", BindingFlags.Instance | BindingFlags.NonPublic).SetValue(boxed, buffer);
+                    type.GetField("m_Length", BindingFlags.Instance | BindingFlags.NonPublic).SetValue(boxed, packet.Length);
+                    var reader = (Unity.Collections.DataStreamReader)boxed;
+                    CCILIGIBDPH(sender, ref reader);
+                    Require(reader.GetBytesRead() == packet.Length, "native-dispatch-consumes-complete-datagram");
+                }
+                finally
+                {
+                    Marshal.FreeHGlobal(buffer);
+                }
+            }
         }
 
         private static void TestNativeAssemblyContracts()
@@ -931,6 +1672,15 @@ namespace AlpineTuning.ReleaseTests
                 "coefficientOfFriction", "weight", "skisXDistanceOffset"
             })
                 RequireNativeFloatField(vehicle, fieldName, "native-vehicle-float-field");
+            foreach (string fieldName in new[]
+            {
+                "assetReference", "prefabName", "lengthName", "lenghtIndex",
+                "trackPositionOverride", "trackScaleOverride", "traxTransform", "group", "category"
+            })
+                RequireNativeField(vehicle, fieldName, "native-chassis-metadata-field");
+            Require(FindNativeField(vehicle, "assetReference").FieldType.FullName ==
+                    "UnityEngine.AddressableAssets.AssetReferenceGameObject",
+                "native-chassis-addressable-type");
             RequireNativeField(vehicle, "snowmobileStats", "native-snowmobile-stats-field");
             foreach (string fieldName in new[] { "power", "climbing", "agility" })
                 RequireNativeFloatField(typeof(SnowmobileStats), fieldName, "native-stat-field");
@@ -946,17 +1696,71 @@ namespace AlpineTuning.ReleaseTests
             foreach (string fieldName in new[]
             {
                 "powerEfficiency", "drivetrainMinSpeed", "drivetrainMaxSpeed1",
-                "drivetrainMaxSpeed2", "trackMass", "breakForce"
+                "drivetrainMaxSpeed2", "trackMass", "breakForce", "power"
             })
                 RequireNativeFloatField(mesh, fieldName, "native-drivetrain-field");
+            RequireNativeField(mesh, "trackMesh", "native-track-contact-mesh-field");
 
             Type controllerBase = RequireNativeType(game, "SnowmobileControllerBase");
             foreach (string fieldName in new[] { "skisMaxAngle", "toeAngle" })
                 RequireNativeFloatField(controllerBase, fieldName, "native-steering-field");
             RequireNativeField(controllerBase, "leftSki", "native-left-ski-field");
             RequireNativeField(controllerBase, "rightSki", "native-right-ski-field");
+            RequireNativeField(controllerBase, "track", "native-track-contact-root-field");
+            RequireNativeField(controllerBase, "meshInterpretter", "native-mesh-interpreter-field");
+
+            Type netClient = RequireNativeType(game, "NetClient");
+            Type netServer = RequireNativeType(game, "NetServer");
+            Type delivery = RequireNativeType(game, "BIMHPJPECDH");
+            Require(delivery.IsEnum && Enum.GetNames(delivery).Contains("ReliableFragmentedSequenced"),
+                "native-internal-delivery-contract");
+            foreach (Type transportEndpoint in new[] { netClient, netServer })
+            {
+                MethodInfo writerFactory = transportEndpoint.GetMethod(
+                    "MDNBFANMMHH", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic,
+                    null, Type.EmptyTypes, null);
+                MethodInfo sender = transportEndpoint.GetMethods(BindingFlags.Instance | BindingFlags.Public |
+                        BindingFlags.NonPublic)
+                    .FirstOrDefault(method =>
+                    {
+                        if (method.Name != "PIDJHAOLBJM")
+                            return false;
+                        ParameterInfo[] parameters = method.GetParameters();
+                        return parameters.Length == 3 && parameters[0].ParameterType == typeof(ulong) &&
+                               parameters[1].ParameterType == delivery &&
+                               parameters[2].ParameterType.FullName == "Unity.Collections.DataStreamWriter";
+                    });
+                Require(writerFactory != null && writerFactory.ReturnType.FullName == "Unity.Collections.DataStreamWriter" &&
+                        sender != null,
+                    "native-internal-" + transportEndpoint.Name.ToLowerInvariant() + "-send-contract");
+            }
             Type ski = RequireNativeType(game, "Ski2");
             RequireNativeFloatField(ski, "camberFactor", "native-camber-field");
+
+            Type structure = typeof(SnowmobileStructure);
+            foreach (string fieldName in new[]
+            {
+                "trackRenderer", "trackMeshes", "otherTrackObjects", "traxGroup", "traxBody",
+                "tunnelParts", "railParts"
+            })
+                RequireNativeField(structure, fieldName, "native-rear-assembly-field");
+            MethodInfo structureInit = structure.GetMethods(BindingFlags.Instance | BindingFlags.Public |
+                    BindingFlags.NonPublic)
+                .SingleOrDefault(method => method.Name == "Init");
+            Require(structureInit != null, "native-structure-init-signature");
+
+            Type rearAxel = RequireNativeType(game, "RearAxelController");
+            Type suspension = RequireNativeType(game, "SuspensionController");
+            Require(rearAxel != null && suspension.GetFields(BindingFlags.Instance |
+                    BindingFlags.Public | BindingFlags.NonPublic).Length > 0,
+                "native-suspension-rear-axel-cache");
+
+            Type preview = RequireNativeType(game, "SnowmobilePreviewHelper");
+            Require(preview.GetMethods(BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic)
+                    .Any(method => method.Name == "RefreshSnowmobilePreview"),
+                "native-preview-refresh-signature");
+            Require(FindNativeField(preview, "vehiclePreviewRoot") != null,
+                "native-preview-root-field");
 
             Type hardSurface = RequireNativeType(game, "HardSurfaceContactBase");
             Type skiContact = RequireNativeType(game, "SkiHardSurfaceContact");
@@ -969,11 +1773,35 @@ namespace AlpineTuning.ReleaseTests
                     hardSurface.IsAssignableFrom(trackContactBase.FieldType),
                 "native-contact-base-types");
             RequireNativeFloatField(hardSurface, "grip", "native-contact-grip-field");
+
+            Type station = typeof(FuelStation);
+            foreach (string fieldName in new[]
+            {
+                "refuelInputHoldTime", "refuelTickCooldown", "refuelTickFuelLiters"
+            })
+                RequireNativeFloatField(station, fieldName, "native-station-timing-field");
+            foreach (string fieldName in new[] { "refuelStartEvent", "refuelTickEvent", "refuelStopEvent" })
+                RequireNativeField(station, fieldName, "native-station-audio-field");
+            Require(station.GetMethods(BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic)
+                    .Any(method => method.Name == "UpdateRefuelInput" && method.ReturnType == typeof(bool)),
+                "native-station-input-signature");
+            Require(controller.GetMethods(BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic)
+                    .Any(method => method.Name == "SetEngineOnOff" && method.GetParameters().Length == 1 &&
+                                   method.GetParameters()[0].ParameterType == typeof(bool)),
+                "native-engine-shutoff-signature");
         }
 
         private static Type RequireNativeType(Assembly assembly, string name)
         {
-            Type type = assembly != null ? assembly.GetType(name, false, false) : null;
+            Type type;
+            try
+            {
+                type = assembly != null ? assembly.GetType(name, false, false) : null;
+            }
+            catch (Exception ex)
+            {
+                throw new ReleaseTestException("native-type-load-" + name + "-" + ex.GetType().Name);
+            }
             Require(type != null, "native-type-missing");
             return type;
         }
@@ -1094,15 +1922,186 @@ namespace AlpineTuning.ReleaseTests
                 runtimeKeys.Add("part." + part.id);
             }
 
-            TunePart[] accessoryParts = catalog.PartsForCategory(PartCatalog.Accessories).ToArray();
-            Require(accessoryParts.Length == 3 && accessoryParts.All(part =>
-                    part.effect != null && Approximately(part.effect.weightOffset, 0d, 0d) &&
-                    !part.requiresReload),
-                "accessory-cosmetic-runtime-only");
+            Require(!PartCatalog.OrderedCategories.Contains("accessories") &&
+                    !catalog.Parts.Any(part => string.Equals(part.category, "accessories", StringComparison.OrdinalIgnoreCase)),
+                "native-cosmetics-not-an-alpine-category");
             Require(catalog.Find("engine.stage1")?.requiresReload == true,
                 "spawn-effect-reload-derived");
             Require(catalog.Find("clutch.trail")?.requiresReload == false,
                 "runtime-controller-effect-no-reload");
+            foreach (float target in new[] { 6000f, 6500f, 7000f })
+            {
+                TunePart racing = catalog.Find("clutch.race." + target.ToString("0", CultureInfo.InvariantCulture));
+                Require(racing != null && !racing.requiresReload &&
+                        Approximately(racing.effect.clutchEngagementTargetRpm, target, 0d),
+                    "catalog-racing-clutch-target");
+            }
+            Require(Approximately(catalog.Find("chassis.runningboards.light")?.effect.weightOffset ?? 0f, -10d, 0d) &&
+                    Approximately(catalog.Find("chassis.cooling.light")?.effect.weightOffset ?? 0f, -3d, 0d),
+                "catalog-chassis-weight-savings");
+            TunePart headlightDelete = catalog.Find("light.delete.carbon");
+            Require(headlightDelete?.effect.headlightDelete == true &&
+                    Approximately(headlightDelete.effect.weightOffset, -2d, 0d),
+                "catalog-headlight-delete");
+            TunePart detectedTrack = catalog.RegisterDetectedTrackLength(
+                "fixture.154", "154\" Fixture Track", 154f, 1.05f, 1.03f, 1.08f);
+            Require(detectedTrack != null && detectedTrack.category == PartCatalog.Track &&
+                    detectedTrack.effect.visualTrackVariantId == "fixture.154" &&
+                    Approximately(detectedTrack.effect.nativeTrackMassMultiplier, 1.05d, 1e-7) &&
+                    Approximately(detectedTrack.effect.frictionMultiplier, 1.03d, 1e-7) &&
+                    Approximately(detectedTrack.effect.nativeTrackGripMultiplier, 1.08d, 1e-7),
+                "catalog-detected-track-profile");
+            var legacyTrackProfile = new TuneProfile
+            {
+                selectedParts = new List<PartSelection>
+                {
+                    new PartSelection
+                    {
+                        category = PartCatalog.Track,
+                        partId = "track.length.old-vehicle-id.154"
+                    }
+                }
+            };
+            catalog.EnsureProfileSelections(legacyTrackProfile);
+            Require(legacyTrackProfile.GetPartId(PartCatalog.Track) == detectedTrack.id,
+                "catalog-detected-track-length-migration");
+            TunePart preservedRmkTrack = catalog.RegisterDetectedTrackLength(
+                "rmk.155", "155\" Polaris Matryx Native Chassis", 155f, 1f, 1f, 1f);
+            Require(preservedRmkTrack?.id == "track.length.rmk.155",
+                "catalog-rmk-track-id-preserved");
+            TunePart metricTrack = catalog.RegisterDetectedTrackLength(
+                "lynx-radien.3900", "3900 mm (153.5\") Lynx Radien Native Chassis",
+                3900f / 25.4f, 1f, 1f, 1f);
+            var legacyMetricTrackProfile = new TuneProfile
+            {
+                selectedParts = new List<PartSelection>
+                {
+                    new PartSelection
+                    {
+                        category = PartCatalog.Track,
+                        partId = "track.length.old-lynx-donor.3900"
+                    }
+                }
+            };
+            catalog.EnsureProfileSelections(legacyMetricTrackProfile);
+            Require(legacyMetricTrackProfile.GetPartId(PartCatalog.Track) == metricTrack.id,
+                "catalog-metric-track-length-migration");
+            var scopedMigrationCatalog = new PartCatalog();
+            scopedMigrationCatalog.RegisterDetectedTrackLength(
+                "rmk.146", "146\" Polaris Matryx", 146f, 1f, 1f, 1f);
+            scopedMigrationCatalog.RegisterDetectedTrackLength(
+                "g5.146", "146\" Ski-Doo G5", 146f, 1f, 1f, 1f);
+            var ambiguousTrackProfile = new TuneProfile
+            {
+                selectedParts = new List<PartSelection>
+                {
+                    new PartSelection
+                    {
+                        category = PartCatalog.Track,
+                        partId = "track.length.old-donor.146"
+                    }
+                }
+            };
+            scopedMigrationCatalog.EnsureProfileSelections(ambiguousTrackProfile);
+            Require(ambiguousTrackProfile.GetPartId(PartCatalog.Track) ==
+                        "track.length.old-donor.146",
+                "catalog-ambiguous-track-migration-preserved");
+            scopedMigrationCatalog.ClearDetectedTrackLengths();
+            TunePart compatibleG5Track = scopedMigrationCatalog.RegisterDetectedTrackLength(
+                "g5.146", "146\" Ski-Doo G5", 146f, 1f, 1f, 1f);
+            scopedMigrationCatalog.EnsureProfileSelections(ambiguousTrackProfile);
+            Require(ambiguousTrackProfile.GetPartId(PartCatalog.Track) == compatibleG5Track.id,
+                "catalog-compatible-platform-track-migration");
+            Require(AlpineControllerInput.FormatBinding("rewired|fixture-pad|12|Left%20Paddle") == "Left Paddle",
+                "controller-binding-display");
+            Require(AlpineControllerInput.TryMigrateRewiredBinding(
+                        "rewired|fixture-pad|2|Square", out string migratedSquare) &&
+                    migratedSquare == "inputsystem:v1:<Gamepad>/buttonWest",
+                "controller-binding-rewired-migration");
+            Require(!AlpineControllerInput.TryMigrateRewiredBinding(
+                        "rewired|fixture-pad|1|Circle", out _),
+                "controller-binding-cancel-not-migrated");
+            Require(AlpineControllerInput.IsInputSystemBinding(
+                        "inputsystem:v1:<Gamepad>/rightShoulder"),
+                "controller-binding-input-system-format");
+            var platformAliases = new[]
+            {
+                new[] { "rmk", "Indy VR1 137.prefab" },
+                new[] { "rmk", "Switchback Assault 146.prefab" },
+                new[] { "rmk", "RMK Khaos 155.prefab" },
+                new[] { "rmk", "PRO RMK 165.prefab" },
+                new[] { "g5", "MXZ X-RS 136.prefab" },
+                new[] { "g5", "Backcountry X-RS 146.prefab" },
+                new[] { "g5", "Freeride 146.prefab" },
+                new[] { "g5", "Summit 154.prefab" },
+                new[] { "g5", "Summit 165.prefab" },
+                new[] { "g5", "G5 Future 154.prefab" },
+                new[] { "arctic-cat", "ArticCat 146.prefab" },
+                new[] { "arctic-cat", "ArticCat 154.prefab" },
+                new[] { "arctic-cat", "Arctic Cat 165.prefab" },
+                new[] { "arctic-cat", "Pollux Future 154.prefab" },
+                new[] { "lynx-radien", "Lynx Rave 3500.prefab" },
+                new[] { "lynx-radien", "Shredder RE 3700.prefab" },
+                new[] { "lynx-radien", "Shredder RE 3900.prefab" },
+                new[] { "lynx-radien", "Shredder DS 4100.prefab" },
+                new[] { "lynx-radien", "Brutal RE 3900.prefab" }
+            };
+            Require(platformAliases.All(alias =>
+                    AlpineVisualPartSystem.ResolvePlatformFamilyMetadata(
+                        null, alias[1], null, null)?.key == alias[0]),
+                "native-chassis-platform-aliases");
+            Require(AlpineVisualPartSystem.ResolveFamilyMetadata(
+                        "Polaris Mountain", "RMK Khaos 155.prefab", "Khaos", "Khaos") == "rmk",
+                "native-chassis-rmk-profile-key-preserved");
+            Require(AlpineVisualPartSystem.ResolveFamilyMetadata(
+                        null, "Future Trail 137.prefab", null, null) == "future-trail" &&
+                    AlpineVisualPartSystem.ResolveFamilyMetadata(
+                        null, "Future Trail 165.prefab", null, null) == "future-trail" &&
+                    AlpineVisualPartSystem.ResolveFamilyMetadata(
+                        null, "Future Mountain 155.prefab", null, null) == "future-mountain",
+                "native-chassis-unknown-platform-isolated");
+            Require(AlpineVisualPartSystem.TryDetectLengthMetadata(
+                        "155", "RMK Khaos 165.prefab", "Khaos", "Khaos", out float nativeLength) &&
+                    Approximately(nativeLength, 155d, 0d),
+                "native-chassis-length-metadata-precedence");
+            foreach (int length in new[] { 100, 136, 137, 146, 154, 155, 165, 200 })
+            {
+                Require(AlpineVisualPartSystem.TryDetectLengthMetadata(
+                            length.ToString(CultureInfo.InvariantCulture),
+                            "Engine 850 " + length.ToString(CultureInfo.InvariantCulture) + ".prefab",
+                            null, null, "g5", out AlpineVisualPartSystem.NativeTrackLength imperial) &&
+                        imperial.unit == AlpineVisualPartSystem.NativeTrackLengthUnit.Inches &&
+                        Approximately(imperial.nativeValue, length, 0d) &&
+                        Approximately(imperial.canonicalInches, length, 0d),
+                    "native-chassis-imperial-length");
+            }
+            foreach (int lengthMm in new[] { 3500, 3700, 3900, 4100 })
+            {
+                Require(AlpineVisualPartSystem.TryDetectLengthMetadata(
+                            lengthMm.ToString(CultureInfo.InvariantCulture),
+                            "Shredder 850 " + lengthMm.ToString(CultureInfo.InvariantCulture) + ".prefab",
+                            null, null, "lynx-radien", out AlpineVisualPartSystem.NativeTrackLength metric) &&
+                        metric.unit == AlpineVisualPartSystem.NativeTrackLengthUnit.Millimeters &&
+                        Approximately(metric.nativeValue, lengthMm, 0d) &&
+                        Approximately(metric.canonicalInches, lengthMm / 25.4d, 1e-4),
+                    "native-chassis-metric-length");
+            }
+            Require(!AlpineVisualPartSystem.TryDetectLengthMetadata(
+                        null, "Engine 650 850 900.prefab", null, null, "g5", out _),
+                "native-chassis-engine-sizes-rejected");
+            Require(!AlpineVisualPartSystem.TryDetectLengthMetadata(
+                        null, "Unknown 3900.prefab", null, null, "unknown", out _),
+                "native-chassis-metric-platform-gated");
+            int sameLineRank = AlpineVisualPartSystem.RankDonorMetadata(
+                "summit", "summit", "mountain", "other", false, "Summit 154 Mod 850.prefab");
+            int sameGroupRank = AlpineVisualPartSystem.RankDonorMetadata(
+                "summit", "freeride", "mountain", "mountain", true, "Freeride 154 Base.prefab");
+            Require(sameLineRank > sameGroupRank, "native-chassis-same-line-rank-priority");
+            Require(AlpineVisualPartSystem.RankDonorMetadata(
+                        "articcat", "articcat", "cat", "cat", true, "ArticCat 154.prefab") >
+                    AlpineVisualPartSystem.RankDonorMetadata(
+                        "articcat", "articcat", "cat", "cat", true, "ArticCat 154 Mod 850.prefab"),
+                "native-chassis-base-over-mod-ranking");
 
             Type nativeUiType = typeof(AlpineTuneMath).Assembly.GetType(
                 "AlpineTuning.AlpineNativeUi", false, false);
@@ -1113,7 +2112,7 @@ namespace AlpineTuning.ReleaseTests
             Require(sectionCategories != null && partTypeIcon != null,
                 "garage-category-routing-helpers");
             var routedCategories = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-            foreach (string section in new[] { "engine", "drivetrain", "track", "steering", "suspension", "lighting", "fuel" })
+            foreach (string section in new[] { "performance", "chassis-handling", "lighting", "utility" })
             {
                 var categories = ((IEnumerable<string>)sectionCategories.Invoke(null, new object[] { section })).ToArray();
                 Require(categories.Length > 0, "garage-root-category-empty");
@@ -1126,7 +2125,8 @@ namespace AlpineTuning.ReleaseTests
                 "garage-category-icon-routing-complete");
 
             foreach (string key in runtimeKeys)
-                Require(fileKeys.Contains(ResolveGarageIconKey(key, aliases)), "garage-runtime-icon-missing");
+                Require(fileKeys.Contains(ResolveGarageIconKey(key, aliases)),
+                    "garage-runtime-icon-missing:" + key + "->" + ResolveGarageIconKey(key, aliases));
 
             string[] nativeEngineKeys = fileKeys
                 .Where(key => key.StartsWith("engine.native-", StringComparison.OrdinalIgnoreCase))
@@ -1170,6 +2170,12 @@ namespace AlpineTuning.ReleaseTests
                 runtimeKeys.Select(key => ResolveGarageIconKey(key, aliases)),
                 StringComparer.OrdinalIgnoreCase);
             expectedFileKeys.UnionWith(nativeEngineKeys);
+            // Kept only for backwards-compatible package identity; accessory
+            // selection is no longer a public Alpine category or runtime feature.
+            expectedFileKeys.UnionWith(new[]
+            {
+                "part.accessory.stock", "part.accessory.race_trim", "part.accessory.utility"
+            });
             Require(fileKeys.SetEquals(expectedFileKeys), "garage-icon-file-manifest");
         }
 

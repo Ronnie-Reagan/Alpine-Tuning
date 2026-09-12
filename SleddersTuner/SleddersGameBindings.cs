@@ -52,6 +52,14 @@ namespace AlpineTuning
         private static Type _meshInterpretterType;
         private static Type _suspensionControllerType;
         private static Type _snowmobileControllerBaseType;
+        private static Type _vehicleSelectionWrapperType;
+        private static Type _snowmobilePreviewHelperType;
+        private static PropertyInfo _snowmobilePreviewInstanceProperty;
+        private static FieldInfo _snowmobilePreviewRootField;
+        private static MethodInfo _snowmobilePreviewRefreshMethod;
+        private static MethodInfo _snowmobileStructureInitMethod;
+        private static Type _rearAxelControllerType;
+        private static FieldInfo _suspensionRearAxelField;
         private static Type _ski2Type;
         private static Type _skiHardSurfaceContactType;
         private static Type _trackHardSurfaceContactType;
@@ -65,6 +73,7 @@ namespace AlpineTuning
         private static bool _nativeGripReflectionReady;
         private static Type _netClientType;
         private static PropertyInfo _netClientInstanceProp;
+        private static MethodInfo _netClientIsHostMethod;
         private static PropertyInfo _netClientLocalClientIdProp;
         private static FieldInfo _netClientNetInterfaceField;
         private static MethodInfo _netClientGetIdsMethod;
@@ -227,6 +236,25 @@ namespace AlpineTuning
 
             AddCapability(
                 report,
+                "rearAssemblyGraft",
+                "Rear Assembly Graft",
+                _vehicleSelectionWrapperType != null &&
+                _snowmobilePreviewHelperType != null &&
+                _snowmobilePreviewInstanceProperty != null &&
+                _snowmobilePreviewRootField != null &&
+                _snowmobilePreviewRefreshMethod != null &&
+                _snowmobileStructureInitMethod != null &&
+                _rearAxelControllerType != null &&
+                _suspensionRearAxelField != null,
+                false,
+                $"preview={NameOrNull(_snowmobilePreviewHelperType)}, " +
+                $"refresh={NameOrNull(_snowmobilePreviewRefreshMethod)}, " +
+                $"structureInit={NameOrNull(_snowmobileStructureInitMethod)}, " +
+                $"rearAxel={NameOrNull(_rearAxelControllerType)}, " +
+                $"suspensionCache={NameOrNull(_suspensionRearAxelField)}");
+
+            AddCapability(
+                report,
                 "nativeDrivetrain",
                 "Native Drivetrain",
                 _nativeDrivetrainReflectionReady,
@@ -288,6 +316,47 @@ namespace AlpineTuning
                 _headLightReflectionReady,
                 false,
                 $"type={NameOrNull(_headLightType)}, lightField={NameOrNull(_headLightLightField)}");
+
+            Assembly gameAssembly = typeof(SnowmobileController).Assembly;
+            Type nativeInputType = gameAssembly.GetType("JLPGEGBOFIP");
+            FieldInfo nativeInputAsset = nativeInputType?.GetFields(All).FirstOrDefault(field =>
+                string.Equals(field.FieldType.FullName,
+                    "UnityEngine.InputSystem.InputActionAsset", StringComparison.Ordinal));
+            AddCapability(
+                report,
+                "physicalControllerInput",
+                "Physical Controller Input",
+                nativeInputType != null && nativeInputAsset != null,
+                false,
+                $"wrapper={NameOrNull(nativeInputType)}, actionAsset={NameOrNull(nativeInputAsset)}");
+
+            Type fuelStationType = typeof(FuelStation);
+            bool nitrousReady = GetField(_meshInterpretterType, "power") != null &&
+                                fuelStationType.GetMethods(All).Any(method => method.Name == "UpdateRefuelInput") &&
+                                GetField(fuelStationType, "refuelInputHoldTime") != null &&
+                                GetField(fuelStationType, "refuelTickCooldown") != null;
+            AddCapability(
+                report,
+                "nitrousResource",
+                "Nitrous Resource",
+                nitrousReady,
+                false,
+                $"power={NameOrNull(GetField(_meshInterpretterType, "power"))}, " +
+                $"stationInput={Status(fuelStationType.GetMethods(All).Any(method => method.Name == "UpdateRefuelInput"))}, " +
+                $"hold={NameOrNull(GetField(fuelStationType, "refuelInputHoldTime"))}, " +
+                $"tick={NameOrNull(GetField(fuelStationType, "refuelTickCooldown"))}");
+
+            Type virtualCameraManager = gameAssembly.GetType("VirtualCameraManager");
+            Type driverStructure = gameAssembly.GetType("DriverStructure");
+            AddCapability(
+                report,
+                "trackingAndExperiments",
+                "Tracking and Experimental Systems",
+                virtualCameraManager != null && driverStructure != null &&
+                typeof(LevelPropScriptableObject) != null && typeof(VehicleListScriptableObject) != null,
+                false,
+                $"cameraManager={NameOrNull(virtualCameraManager)}, driver={NameOrNull(driverStructure)}, " +
+                "props=LevelPropScriptableObject, vehicles=VehicleListScriptableObject");
 
             AddCapability(
                 report,
@@ -448,6 +517,33 @@ namespace AlpineTuning
             _controllerType = typeof(Controller);
             _controllerInstanceProp = GetProperty(_controllerType, "PKMPAOKMHCB");
             _reCreateSnowmobileMethod = GetMethod(_controllerType, "ReCreateSnowmobile", Type.EmptyTypes);
+
+            Assembly gameAssembly = typeof(SnowmobileController).Assembly;
+            _snowmobileStructureInitMethod = typeof(SnowmobileStructure).GetMethods(All)
+                .FirstOrDefault(method => method.Name == "Init" && method.ReturnType == typeof(void) &&
+                    method.GetParameters().Length == 1);
+            _vehicleSelectionWrapperType = _snowmobileStructureInitMethod?
+                .GetParameters()[0].ParameterType;
+            _snowmobilePreviewHelperType = gameAssembly.GetType("SnowmobilePreviewHelper");
+            _rearAxelControllerType = gameAssembly.GetType("RearAxelController") ?? typeof(RearAxelController);
+            _snowmobilePreviewInstanceProperty = _snowmobilePreviewHelperType?
+                .GetProperties(All)
+                .FirstOrDefault(property => property.GetMethod != null && property.GetMethod.IsStatic &&
+                    property.PropertyType == _snowmobilePreviewHelperType);
+            _snowmobilePreviewRootField = _snowmobilePreviewHelperType?
+                .GetFields(All)
+                .FirstOrDefault(field => field.FieldType == typeof(Transform) &&
+                    string.Equals(field.Name, "vehiclePreviewRoot", StringComparison.OrdinalIgnoreCase)) ??
+                _snowmobilePreviewHelperType?.GetFields(All)
+                    .FirstOrDefault(field => field.FieldType == typeof(Transform));
+            _snowmobilePreviewRefreshMethod = _snowmobilePreviewHelperType?
+                .GetMethods(All)
+                .FirstOrDefault(method => method.Name == "RefreshSnowmobilePreview" &&
+                    method.ReturnType == typeof(void) && method.GetParameters().Length == 1 &&
+                    method.GetParameters()[0].ParameterType == _vehicleSelectionWrapperType);
+            _suspensionRearAxelField = gameAssembly.GetType("SuspensionController")?
+                .GetFields(All)
+                .SingleOrDefault(field => field.FieldType == _rearAxelControllerType);
         }
 
         private static bool RuntimeTuningControlsReady(out string detail)
@@ -1093,6 +1189,182 @@ namespace AlpineTuning
                 reason = ex.InnerException?.GetType().Name ?? ex.GetType().Name;
                 return false;
             }
+        }
+
+        public static object GetCurrentVehicleSelection(SnowmobileController controller)
+        {
+            Initialize();
+            return FindVehicleSelection(controller, GetVehicleFromSnowmobile(controller));
+        }
+
+        public static bool TryGetGaragePreviewContext(
+            VehicleScriptableObject target,
+            out Transform previewRoot,
+            out object selection,
+            out string reason)
+        {
+            previewRoot = null;
+            selection = null;
+            reason = null;
+            Initialize();
+            try
+            {
+                object helper = _snowmobilePreviewInstanceProperty?.GetValue(null);
+                if (helper == null)
+                {
+                    reason = "SnowmobilePreviewHelper singleton is unavailable";
+                    return false;
+                }
+                previewRoot = _snowmobilePreviewRootField?.GetValue(helper) as Transform;
+                selection = FindVehicleSelection(helper, target);
+                if (selection == null)
+                {
+                    foreach (VehicleSelectionUiController controller in
+                             Resources.FindObjectsOfTypeAll<VehicleSelectionUiController>() ??
+                             Array.Empty<VehicleSelectionUiController>())
+                    {
+                        selection = FindVehicleSelection(controller, target);
+                        if (selection != null)
+                            break;
+                    }
+                }
+                if (previewRoot == null || selection == null)
+                {
+                    reason = previewRoot == null
+                        ? "Native garage preview root is unavailable"
+                        : "Native garage vehicle selection is unavailable";
+                    return false;
+                }
+                return true;
+            }
+            catch (Exception ex)
+            {
+                reason = ex.GetType().Name;
+                return false;
+            }
+        }
+
+        public static bool TryRefreshGaragePreview(
+            VehicleScriptableObject target,
+            out Transform previewRoot,
+            out object selection,
+            out string reason)
+        {
+            if (!TryGetGaragePreviewContext(target, out previewRoot, out selection, out reason))
+                return false;
+            Initialize();
+            try
+            {
+                object helper = _snowmobilePreviewInstanceProperty?.GetValue(null);
+                if (helper == null || _snowmobilePreviewRefreshMethod == null)
+                {
+                    reason = "SnowmobilePreviewHelper.RefreshSnowmobilePreview binding is unavailable";
+                    return false;
+                }
+                _snowmobilePreviewRefreshMethod.Invoke(helper, new[] { selection });
+                return true;
+            }
+            catch (Exception ex)
+            {
+                reason = ex.InnerException?.GetType().Name ?? ex.GetType().Name;
+                return false;
+            }
+        }
+
+        public static bool TryInitializeSnowmobileStructure(
+            SnowmobileStructure structure,
+            object selection,
+            out string reason)
+        {
+            reason = null;
+            Initialize();
+            if (structure == null || selection == null || _snowmobileStructureInitMethod == null)
+            {
+                reason = "SnowmobileStructure.Init binding is unavailable";
+                return false;
+            }
+            try
+            {
+                _snowmobileStructureInitMethod.Invoke(structure, new[] { selection });
+                return true;
+            }
+            catch (Exception ex)
+            {
+                reason = ex.InnerException?.GetType().Name ?? ex.GetType().Name;
+                return false;
+            }
+        }
+
+        public static bool TrySetRearAxelController(
+            Component suspensionController,
+            object rearAxel,
+            out object previous,
+            out string reason)
+        {
+            previous = null;
+            reason = null;
+            Initialize();
+            if (suspensionController == null || _suspensionRearAxelField == null)
+            {
+                reason = "SuspensionController rear-axle binding is unavailable";
+                return false;
+            }
+            if (rearAxel != null && !_suspensionRearAxelField.FieldType.IsInstanceOfType(rearAxel))
+            {
+                reason = "Rear-axle replacement has the wrong native type";
+                return false;
+            }
+            try
+            {
+                previous = _suspensionRearAxelField.GetValue(suspensionController);
+                _suspensionRearAxelField.SetValue(suspensionController, rearAxel);
+                return true;
+            }
+            catch (Exception ex)
+            {
+                reason = ex.GetType().Name;
+                return false;
+            }
+        }
+
+        private static object FindVehicleSelection(object owner, VehicleScriptableObject target)
+        {
+            if (owner == null || _vehicleSelectionWrapperType == null)
+                return null;
+            object fallback = null;
+            foreach (FieldInfo field in owner.GetType().GetFields(All)
+                .Where(field => field.FieldType == _vehicleSelectionWrapperType))
+            {
+                object candidate;
+                try { candidate = field.GetValue(owner); }
+                catch { continue; }
+                if (candidate == null)
+                    continue;
+                fallback = fallback ?? candidate;
+                VehicleScriptableObject vehicle = candidate.GetType().GetFields(All)
+                    .Where(inner => inner.FieldType == typeof(VehicleScriptableObject))
+                    .Select(inner =>
+                    {
+                        try { return inner.GetValue(candidate) as VehicleScriptableObject; }
+                        catch { return null; }
+                    })
+                    .FirstOrDefault(value => value != null);
+                if (target == null || ReferenceEquals(vehicle, target) ||
+                    string.Equals(
+                        SledIdentity.StableIdentityKey(vehicle),
+                        SledIdentity.StableIdentityKey(target),
+                        StringComparison.OrdinalIgnoreCase))
+                    return candidate;
+            }
+            return target == null ? fallback : null;
+        }
+
+        private static VehicleScriptableObject GetVehicleFromSnowmobile(SnowmobileController controller)
+        {
+            if (controller == null)
+                return null;
+            return GetPropertyValue<VehicleScriptableObject>(controller, "GKMNAIKNNMJ") ??
+                   GetFieldValue<VehicleScriptableObject>(controller, "KJFNKMCOKLL");
         }
 
         public static object GetStabilizer(object controller)
@@ -2040,6 +2312,34 @@ namespace AlpineTuning
             }
         }
 
+        // The message registry lives on NetClient.netInterface, but outbound
+        // messages must be submitted through NetClient itself.  Keeping these
+        // two bindings separate is important: a joining client has no
+        // NetServer instance of its own.
+        public static bool TryGetNetClient(out object netClient, out string reason)
+        {
+            netClient = null;
+            reason = null;
+
+            try
+            {
+                netClient = GetNetClientInstance(false);
+                if (netClient == null)
+                {
+                    reason = "NetClient instance missing";
+                    return false;
+                }
+
+                reason = netClient.GetType().FullName;
+                return true;
+            }
+            catch (Exception ex)
+            {
+                reason = ex.GetType().Name;
+                return false;
+            }
+        }
+
         public static bool TryGetNetServer(out object netServer, out string reason)
         {
             netServer = null;
@@ -2118,12 +2418,14 @@ namespace AlpineTuning
         {
             try
             {
+                ResolvePeerDiscoveryBindings();
                 ResolveNetServerBindings();
-
-                object netServer = _netServerInstanceProp?.GetValue(null);
-                if (netServer == null)
-                    netServer = FindNetServerObjectFallback();
-                return netServer;
+                // Owning a lobby grants admin rights, not necessarily a local
+                // server. Never select a dormant NetServer object as a relay.
+                if (_netClientIsHostMethod == null ||
+                    !(bool)_netClientIsHostMethod.Invoke(null, null))
+                    return null;
+                return _netServerInstanceProp?.GetValue(null);
             }
             catch
             {
@@ -2326,6 +2628,9 @@ namespace AlpineTuning
             _netClientInstanceProp =
                 GetProperty(_netClientType, "PKMPAOKMHCB") ??
                 GetProperty(_netClientType, "Instance");
+            _netClientIsHostMethod = _netClientType?.GetMethod(
+                "get_IsHost", BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic,
+                null, Type.EmptyTypes, null);
         }
 
         private static void ResolveNetServerBindings()

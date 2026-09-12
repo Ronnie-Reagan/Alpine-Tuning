@@ -300,16 +300,20 @@ namespace AlpineTuning
             float trim = 1f + Mathf.Clamp(trimPercent, -10f, 10f) / 100f;
             float minimumOffset = effect?.clutchRpmMinOffset ?? 0f;
             float maximumOffset = effect?.clutchRpmMaxOffset ?? 0f;
+            float engagementTarget = effect?.clutchEngagementTargetRpm ?? 0f;
             if (!IsFinite(minimumOffset))
                 minimumOffset = 0f;
             if (!IsFinite(maximumOffset))
                 maximumOffset = 0f;
+            if (!IsFinite(engagementTarget) || engagementTarget < 1000f)
+                engagementTarget = 0f;
 
             result.HasMinimum = defaults.hasClutchRpmMin && IsFinite(defaults.clutchRpmMin);
             result.HasMaximum = defaults.hasClutchRpmMax && IsFinite(defaults.clutchRpmMax);
             bool modified = Mathf.Abs(trimPercent) > 0.0001f ||
                             Mathf.Abs(minimumOffset) > 0.0001f ||
-                            Mathf.Abs(maximumOffset) > 0.0001f;
+                            Mathf.Abs(maximumOffset) > 0.0001f ||
+                            engagementTarget > 0f;
             if (!modified)
             {
                 result.Minimum = result.HasMinimum ? defaults.clutchRpmMin : 0f;
@@ -319,13 +323,15 @@ namespace AlpineTuning
 
             if (result.HasMinimum)
             {
-                result.Minimum = ClampRelative(
-                    (defaults.clutchRpmMin + minimumOffset) * trim,
-                    defaults.clutchRpmMin,
-                    0.75f,
-                    1.35f,
-                    0f,
-                    14000f);
+                result.Minimum = engagementTarget > 0f
+                    ? Mathf.Clamp(engagementTarget, 1000f, 12000f)
+                    : ClampRelative(
+                        (defaults.clutchRpmMin + minimumOffset) * trim,
+                        defaults.clutchRpmMin,
+                        0.75f,
+                        1.35f,
+                        0f,
+                        14000f);
             }
             if (result.HasMaximum)
             {
@@ -409,6 +415,11 @@ namespace AlpineTuning
                 target.backpackContainerMassKg = source.backpackContainerMassKg;
             }
             target.requiresCosmeticBackpack |= source.requiresCosmeticBackpack;
+            if (source.nitrousCapacitySeconds > 0.001f)
+            {
+                target.nitrousCapacitySeconds = source.nitrousCapacitySeconds;
+                target.nitrousSystemMassKg = source.nitrousSystemMassKg;
+            }
             target.skiStanceOffset += source.skiStanceOffset;
             target.skisXDistanceOffset += source.skisXDistanceOffset;
             target.centerOfMassDelta = Vec3Data.From(ToVector3(target.centerOfMassDelta) + ToVector3(source.centerOfMassDelta));
@@ -425,6 +436,8 @@ namespace AlpineTuning
                 1.35f);
             target.clutchRpmMinOffset += source.clutchRpmMinOffset;
             target.clutchRpmMaxOffset += source.clutchRpmMaxOffset;
+            if (source.clutchEngagementTargetRpm >= 1000f)
+                target.clutchEngagementTargetRpm = source.clutchEngagementTargetRpm;
             target.minThrottleOnClutchEngagementOffset += source.minThrottleOnClutchEngagementOffset;
             target.stabilizerDampingMultiplier *= source.stabilizerDampingMultiplier;
             target.trackSpeedDampingMultiplier *= source.trackSpeedDampingMultiplier;
@@ -458,6 +471,12 @@ namespace AlpineTuning
             target.headlightRangeMultiplier *= SanitizePositive(source.headlightRangeMultiplier, 1f);
             target.headlightSpotAngleMultiplier *= SanitizePositive(source.headlightSpotAngleMultiplier, 1f);
             target.headlightPitchOffsetDegrees += source.headlightPitchOffsetDegrees;
+            target.headlightDelete |= source.headlightDelete;
+            if (!string.IsNullOrWhiteSpace(source.visualTrackVariantId))
+            {
+                target.visualTrackVariantId = source.visualTrackVariantId;
+                target.visualTrackLengthInches = source.visualTrackLengthInches;
+            }
             if (!string.IsNullOrWhiteSpace(source.accessoryMode))
                 target.accessoryMode = source.accessoryMode;
         }
@@ -508,6 +527,12 @@ namespace AlpineTuning
             fine.centerOfMassYTrim = Mathf.Clamp(fine.centerOfMassYTrim, -0.08f, 0.08f);
             fine.centerOfMassZTrim = Mathf.Clamp(fine.centerOfMassZTrim, -0.12f, 0.12f);
             fine.skiStanceTrim = Mathf.Clamp(fine.skiStanceTrim, -0.08f, 0.08f);
+            fine.nitrousBoostPercent = Mathf.Clamp(
+                IsFinite(fine.nitrousBoostPercent) && fine.nitrousBoostPercent > 0f
+                    ? fine.nitrousBoostPercent
+                    : 100f,
+                25f,
+                200f);
         }
 
         public static PowerGainBreakdown ComputePowerGainBreakdown(

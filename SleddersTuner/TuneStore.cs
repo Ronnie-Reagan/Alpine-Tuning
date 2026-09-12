@@ -1376,7 +1376,8 @@ namespace AlpineTuning
                     clutchTrimPercent = fine.clutchTrimPercent,
                     centerOfMassYTrim = fine.centerOfMassYTrim,
                     centerOfMassZTrim = fine.centerOfMassZTrim,
-                    skiStanceTrim = fine.skiStanceTrim
+                    skiStanceTrim = fine.skiStanceTrim,
+                    nitrousBoostPercent = fine.nitrousBoostPercent
                 }
             };
 
@@ -1526,7 +1527,8 @@ namespace AlpineTuning
                    Mathf.Abs(fine.clutchTrimPercent) > epsilon ||
                    Mathf.Abs(fine.centerOfMassYTrim) > epsilon ||
                    Mathf.Abs(fine.centerOfMassZTrim) > epsilon ||
-                   Mathf.Abs(fine.skiStanceTrim) > epsilon;
+                   Mathf.Abs(fine.skiStanceTrim) > epsilon ||
+                   Mathf.Abs(fine.nitrousBoostPercent - 100f) > epsilon;
         }
 
         public static bool ChecksumMatches(TuneProfile profile)
@@ -2861,6 +2863,17 @@ namespace AlpineTuning
                 return false;
             }
 
+            if (!Enum.IsDefined(typeof(AlpineSetupBaseline), profile.baseline))
+            {
+                if (strictCatalog)
+                {
+                    reason = "setup baseline is invalid";
+                    return false;
+                }
+
+                profile.baseline = AlpineSetupBaseline.RealisticStock;
+            }
+
             if (profile.name != null && profile.name.Length > AlpineConstants.MaxProfileNameLength)
             {
                 reason = "profile name is too long";
@@ -2917,7 +2930,13 @@ namespace AlpineTuning
                 }
 
                 TunePart selectedPart = catalog?.Find(selection.partId);
-                if (selectedPart == null && strictCatalog)
+                bool deferredDetectedTrack =
+                    string.Equals(selection.category, PartCatalog.Track, StringComparison.OrdinalIgnoreCase) &&
+                    PartCatalog.IsDetectedTrackPartId(selection.partId) &&
+                    selection.partId.Length <= 160 &&
+                    selection.partId.All(character => char.IsLetterOrDigit(character) ||
+                                                      character == '.' || character == '-' || character == '_');
+                if (selectedPart == null && strictCatalog && !deferredDetectedTrack)
                 {
                     reason = $"unknown part {selection.partId}";
                     return false;
@@ -2937,6 +2956,17 @@ namespace AlpineTuning
 
             if (profile.fineTune == null)
                 profile.fineTune = new FineTuneSettings();
+
+            if (profile.sledBuild == null)
+                profile.sledBuild = new SledBuildSpec();
+            profile.sledBuild.Normalize();
+            if (profile.sledBuild.selections.Count > 9 ||
+                profile.sledBuild.selections.Any(selection => selection.donorSledKey != null &&
+                    selection.donorSledKey.Length > AlpineConstants.MaxSledIdentityLength))
+            {
+                reason = "sled forge build specification is invalid";
+                return false;
+            }
 
             if (!IsFineTuneFinite(profile.fineTune))
             {
@@ -3288,7 +3318,8 @@ namespace AlpineTuning
                    IsFinite(fine.clutchTrimPercent) &&
                    IsFinite(fine.centerOfMassYTrim) &&
                    IsFinite(fine.centerOfMassZTrim) &&
-                   IsFinite(fine.skiStanceTrim);
+                   IsFinite(fine.skiStanceTrim) &&
+                   IsFinite(fine.nitrousBoostPercent);
         }
 
         private static bool FineTuneWithinBounds(FineTuneSettings fine)
@@ -3300,7 +3331,8 @@ namespace AlpineTuning
                    fine.clutchTrimPercent >= -10f && fine.clutchTrimPercent <= 10f &&
                    fine.centerOfMassYTrim >= -0.08f && fine.centerOfMassYTrim <= 0.08f &&
                    fine.centerOfMassZTrim >= -0.12f && fine.centerOfMassZTrim <= 0.12f &&
-                   fine.skiStanceTrim >= -0.08f && fine.skiStanceTrim <= 0.08f;
+                   fine.skiStanceTrim >= -0.08f && fine.skiStanceTrim <= 0.08f &&
+                   fine.nitrousBoostPercent >= 25f && fine.nitrousBoostPercent <= 200f;
         }
 
         private static void SanitizeResolvedStats(ResolvedStats stats)

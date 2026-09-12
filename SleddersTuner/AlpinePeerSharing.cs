@@ -474,6 +474,10 @@ namespace AlpineTuning
                 shareLighting = _mod.Settings.shareLighting,
                 shareAudio = _mod.Settings.shareAudio,
                 shareVisualEquipment = _mod.Settings.shareVisualEquipment,
+                shareBuildShowcase = _mod.Settings.shareBuildShowcase,
+                supportsSledForge = true,
+                supportsBuildShowcase = true,
+                assemblyLightHash = SleddersGameBindings.GetCompatibilityReport()?.assemblyLightHash,
                 lastSeenUnixTime = NowUnix(),
                 applyStatus = "broadcast"
             };
@@ -586,6 +590,23 @@ namespace AlpineTuning
         {
             if (message == null)
                 return;
+
+            if (message.buildProtocolVersion != AlpineConstants.BuildSyncProtocolVersion ||
+                !message.supportsSledForge)
+            {
+                StatusMessage = "Peer build protocol is incompatible; native presentation retained.";
+                TouchPeer(senderId, message.senderName, "incompatible build protocol");
+                return;
+            }
+            string localAssemblyHash = SleddersGameBindings.GetCompatibilityReport()?.assemblyLightHash;
+            if (!string.IsNullOrWhiteSpace(message.assemblyLightHash) &&
+                !string.IsNullOrWhiteSpace(localAssemblyHash) &&
+                !string.Equals(message.assemblyLightHash, localAssemblyHash, StringComparison.OrdinalIgnoreCase))
+            {
+                StatusMessage = "Peer game build is incompatible; native presentation retained.";
+                TouchPeer(senderId, message.senderName, "incompatible game build");
+                return;
+            }
 
             ulong localSleddersId = SleddersGameBindings.GetLocalSleddersClientId();
             if (message.targetSleddersClientId != 0 &&
@@ -977,6 +998,7 @@ namespace AlpineTuning
 
             _lastRemoteApplyStatus.Remove(message.senderId);
             _mod.RemoteReplication?.ClearSender(message.senderId);
+            _mod.SledForge?.ClearRemote(message.senderId);
             if (_remotePeers.TryGetValue(message.senderId, out var peer) && peer != null)
             {
                 peer.sharingEnabled = false;
@@ -1033,6 +1055,7 @@ namespace AlpineTuning
 
         private bool SendToPeers(AlpineShareMessage message)
         {
+            PrepareBuildMessage(message);
             var peers = DiscoverPeers().ToArray();
             bool hasInternalPeers = peers.Any(p => p != null && p.hasInternalClientId);
             bool hasSteamPeers = peers.Any(p => p != null && p.hasSteamId);
@@ -1074,6 +1097,7 @@ namespace AlpineTuning
 
         private bool SendToPeer(ulong peerId, AlpineShareMessage message)
         {
+            PrepareBuildMessage(message);
             ulong localSteamId = LocalSteamId();
             ulong localSleddersId = SleddersGameBindings.GetLocalSleddersClientId();
 
@@ -1157,6 +1181,15 @@ namespace AlpineTuning
                 StatusMessage = "Alpine tune packet send failed.";
                 return false;
             }
+        }
+
+        private static void PrepareBuildMessage(AlpineShareMessage message)
+        {
+            if (message == null) return;
+            message.buildProtocolVersion = AlpineConstants.BuildSyncProtocolVersion;
+            message.supportsSledForge = true;
+            message.supportsBuildShowcase = true;
+            message.assemblyLightHash = SleddersGameBindings.GetCompatibilityReport()?.assemblyLightHash;
         }
 
         private void BlockSteamForInternalId(ulong sleddersClientId, string messageType, bool warn)

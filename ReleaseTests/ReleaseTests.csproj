@@ -38,6 +38,14 @@
       <HintPath>$(SleddersDir)\MelonLoader\net35\MelonLoader.dll</HintPath>
       <Private>False</Private>
     </Reference>
+    <Reference Include="Mono.Cecil">
+      <HintPath>$(SleddersDir)\MelonLoader\net35\Mono.Cecil.dll</HintPath>
+      <Private>False</Private>
+    </Reference>
+    <Reference Include="Unity.Collections">
+      <HintPath>$(SleddersDir)\Sledders_Data\Managed\Unity.Collections.dll</HintPath>
+      <Private>False</Private>
+    </Reference>
     <Reference Include="Newtonsoft.Json">
       <HintPath>$(SleddersDir)\Sledders_Data\Managed\Newtonsoft.Json.dll</HintPath>
       <Private>False</Private>

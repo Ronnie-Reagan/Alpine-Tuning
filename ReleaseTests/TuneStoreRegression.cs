@@ -23,6 +23,7 @@ namespace AlpineTuning.ReleaseTests
             TestProfileWriteOutcome(repoRoot, Path.Combine(testRoot, "profile-write-outcome"));
             TestDefaultsAndSettingsBackupRecovery(Path.Combine(testRoot, "store-backups"));
             TestHeadlightBindingMigrationMatrix();
+            TestSetupBaselineAndDetectedTrackPersistence(Path.Combine(testRoot, "baseline-track"));
         }
 
         private static void TestRoundTripAndSafety(string repoRoot, string root)
@@ -593,7 +594,7 @@ namespace AlpineTuning.ReleaseTests
                 settings.headlightControllerButton = "JoystickButton4";
                 settings.headlightToggleEnabled = true;
                 settings.headlightBindingConfigured = true;
-                settings.headlightBindingRevision = 2;
+                settings.headlightBindingRevision = 4;
                 settings.units = AlpineDisplayUnits.Metric;
                 Program.Require(store.SaveSettings(), "tune-settings-custom-first-save");
                 settings.units = AlpineDisplayUnits.Imperial;
@@ -657,19 +658,38 @@ namespace AlpineTuning.ReleaseTests
             var emptyLegacy = new AlpineUserSettings { headlightBindingRevision = 0 };
             emptyLegacy.Normalize();
             Program.Require(emptyLegacy.headlightKeyboardKey == null, "tune-binding-empty-keyboard-remains-empty");
-            Program.Require(emptyLegacy.headlightControllerButton == "JoystickButton9", "tune-binding-empty-controller-migrated");
-            Program.Require(emptyLegacy.headlightToggleEnabled && emptyLegacy.headlightBindingConfigured, "tune-binding-empty-default-enabled");
-            Program.Require(emptyLegacy.headlightBindingRevision == 2, "tune-binding-empty-revision");
+            Program.Require(emptyLegacy.headlightControllerButton == null, "tune-binding-empty-controller-remains-empty");
+            Program.Require(!emptyLegacy.headlightToggleEnabled && !emptyLegacy.headlightBindingConfigured, "tune-binding-empty-follows-game-time");
+            Program.Require(emptyLegacy.headlightBindingRevision == 4, "tune-binding-empty-revision");
+            Program.Require(!emptyLegacy.showFuelOverlay && !emptyLegacy.headTrackingEnabled,
+                "tune-settings-new-features-opt-in");
 
-            var legacyControllerWithKeyboard = new AlpineUserSettings
+            var formerAutomaticController = new AlpineUserSettings
             {
                 headlightKeyboardKey = "F7",
-                headlightControllerButton = "JoystickButton7",
-                headlightBindingRevision = 1
+                headlightControllerButton = "JoystickButton9",
+                headlightBindingConfigured = true,
+                headlightToggleEnabled = true,
+                headlightBindingRevision = 2
             };
-            legacyControllerWithKeyboard.Normalize();
-            Program.Require(legacyControllerWithKeyboard.headlightKeyboardKey == "F7", "tune-binding-custom-keyboard-preserved");
-            Program.Require(legacyControllerWithKeyboard.headlightControllerButton == "JoystickButton9", "tune-binding-legacy-controller-replaced");
+            formerAutomaticController.Normalize();
+            Program.Require(formerAutomaticController.headlightKeyboardKey == "F7", "tune-binding-custom-keyboard-preserved");
+            Program.Require(formerAutomaticController.headlightControllerButton == null, "tune-binding-automatic-controller-cleared");
+            Program.Require(formerAutomaticController.headlightToggleEnabled,
+                "tune-binding-keyboard-keeps-toggle-enabled");
+
+            var automaticOnly = new AlpineUserSettings
+            {
+                headlightControllerButton = "JoystickButton9",
+                headlightBindingConfigured = true,
+                headlightToggleEnabled = true,
+                headlightBindingRevision = 2
+            };
+            automaticOnly.Normalize();
+            Program.Require(automaticOnly.headlightControllerButton == null &&
+                            !automaticOnly.headlightToggleEnabled &&
+                            !automaticOnly.headlightBindingConfigured,
+                "tune-binding-automatic-only-follows-game-time");
 
             var customLegacyRevision = new AlpineUserSettings
             {
@@ -677,12 +697,26 @@ namespace AlpineTuning.ReleaseTests
                 headlightControllerButton = "JoystickButton4",
                 headlightBindingConfigured = true,
                 headlightToggleEnabled = false,
-                headlightBindingRevision = 1
+                headlightBindingRevision = 2
             };
             customLegacyRevision.Normalize();
             Program.Require(customLegacyRevision.headlightKeyboardKey == "K", "tune-binding-nonlegacy-keyboard-unchanged");
             Program.Require(customLegacyRevision.headlightControllerButton == "JoystickButton4", "tune-binding-nonlegacy-controller-unchanged");
             Program.Require(!customLegacyRevision.headlightToggleEnabled, "tune-binding-nonlegacy-enabled-unchanged");
+
+            var nonDefaultRevisionTwo = new AlpineUserSettings
+            {
+                headlightKeyboardKey = "H",
+                headlightControllerButton = "JoystickButton8",
+                headlightBindingConfigured = true,
+                headlightToggleEnabled = true,
+                headlightBindingRevision = 2
+            };
+            nonDefaultRevisionTwo.Normalize();
+            Program.Require(nonDefaultRevisionTwo.headlightKeyboardKey == "H" &&
+                            nonDefaultRevisionTwo.headlightControllerButton == "JoystickButton8" &&
+                            nonDefaultRevisionTwo.headlightToggleEnabled,
+                "tune-binding-nondefault-revision-two-preserved");
 
             var currentRevision = new AlpineUserSettings
             {
@@ -690,20 +724,92 @@ namespace AlpineTuning.ReleaseTests
                 headlightControllerButton = "JoystickButton8",
                 headlightBindingConfigured = true,
                 headlightToggleEnabled = true,
-                headlightBindingRevision = 2
+                headlightBindingRevision = 3
             };
             currentRevision.Normalize();
             Program.Require(currentRevision.headlightKeyboardKey == "P", "tune-binding-current-keyboard-unchanged");
             Program.Require(currentRevision.headlightControllerButton == "JoystickButton8", "tune-binding-current-controller-unchanged");
-            Program.Require(currentRevision.headlightBindingRevision == 2, "tune-binding-current-revision-unchanged");
+            Program.Require(currentRevision.headlightBindingRevision == 4, "tune-binding-current-revision-upgraded");
+
+            var rewiredSquare = new AlpineUserSettings
+            {
+                headlightControllerButton = "rewired|dualshock|2|Square",
+                headlightBindingConfigured = true,
+                headlightToggleEnabled = true,
+                headlightBindingRevision = 3
+            };
+            rewiredSquare.Normalize();
+            Program.Require(rewiredSquare.headlightControllerButton ==
+                            "inputsystem:v1:<Gamepad>/buttonWest" &&
+                            rewiredSquare.headlightBindingRevision == 4,
+                "tune-binding-rewired-name-migrated");
+
+            var rewiredUnknown = new AlpineUserSettings
+            {
+                headlightControllerButton = "rewired|dualshock|91|Unknown%20Paddle",
+                headlightBindingConfigured = true,
+                headlightToggleEnabled = true,
+                headlightBindingRevision = 3
+            };
+            rewiredUnknown.Normalize();
+            Program.Require(rewiredUnknown.headlightControllerButton == null &&
+                            !rewiredUnknown.headlightBindingConfigured &&
+                            !rewiredUnknown.headlightToggleEnabled,
+                "tune-binding-unmappable-rewired-cleared");
 
             var invalidUnits = new AlpineUserSettings
             {
                 units = (AlpineDisplayUnits)999,
-                headlightBindingRevision = 2
+                headlightBindingRevision = 4
             };
             invalidUnits.Normalize();
             Program.Require(invalidUnits.units == AlpineDisplayUnits.Metric, "tune-settings-invalid-units-normalized");
+        }
+
+        private static void TestSetupBaselineAndDetectedTrackPersistence(string root)
+        {
+            const string dynamicTrackId = "track.length.fixture-donor.154";
+            using (TuneStore.UseTestStorageRoot(root))
+            {
+                var catalog = new PartCatalog();
+                var store = new TuneStore(catalog);
+                store.Initialize();
+                var profile = new TuneProfile
+                {
+                    profileId = "fixture-baseline-track",
+                    name = "Native baseline with detected track",
+                    targetSledKey = "fixture_sled",
+                    targetVehicleId = "1001",
+                    baseline = AlpineSetupBaseline.SleddersDefault
+                };
+                catalog.EnsureProfileSelections(profile);
+                profile.SetPartId(PartCatalog.Track, dynamicTrackId);
+                Program.Require(store.SaveProfile(profile, false), "tune-baseline-track-save");
+            }
+
+            using (TuneStore.UseTestStorageRoot(root))
+            {
+                var store = new TuneStore(new PartCatalog());
+                store.Initialize();
+                TuneProfile restored = store.GetProfile("fixture-baseline-track");
+                Program.Require(restored != null, "tune-baseline-track-load");
+                Program.Require(restored.baseline == AlpineSetupBaseline.SleddersDefault,
+                    "tune-baseline-persisted");
+                Program.Require(restored.GetPartId(PartCatalog.Track) == dynamicTrackId,
+                    "tune-detected-track-deferred-persisted");
+            }
+
+            var invalid = new TuneProfile
+            {
+                profileId = "fixture-invalid-baseline",
+                targetSledKey = "fixture_sled",
+                baseline = (AlpineSetupBaseline)999
+            };
+            Program.Require(TuneStore.TryValidateProfileForCatalog(
+                    invalid, new PartCatalog(), false, false, out _),
+                "tune-invalid-baseline-repair-valid");
+            Program.Require(invalid.baseline == AlpineSetupBaseline.RealisticStock,
+                "tune-invalid-baseline-repaired");
         }
 
         private static TuneProfile CopyAndLoadFixture(string repoRoot, string root, string fileName)

@@ -1,7 +1,7 @@
 {
-  "schemaVersion": 3,
-  "modVersion": "2026.08.21",
-  "catalogVersion": "2026.08.fuel-v1",
+  "schemaVersion": 5,
+  "modVersion": "2026.09.02",
+  "catalogVersion": "2026.09.backlog-v5",
   "profileId": "fixture-stock",
   "name": "",
   "usesAutomaticName": true,
@@ -28,6 +28,10 @@
     {
       "category": "intakeExhaust",
       "partId": "intake.stock"
+    },
+    {
+      "category": "nitrous",
+      "partId": "nitrous.none"
     },
     {
       "category": "clutchGearing",
@@ -94,10 +98,6 @@
       "partId": "light.aim.stock"
     },
     {
-      "category": "accessories",
-      "partId": "accessory.stock"
-    },
-    {
       "category": "fuelTank",
       "partId": "fuel.tank.stock"
     },
@@ -106,7 +106,7 @@
       "partId": "fuel.backpack.none"
     }
   ],
-  "fineTune": {},
+  "fineTune": { "nitrousBoostPercent": 100.0 },
   "resolvedStats": {
     "horsePower": 150.0,
     "powerFactor": 1.0,

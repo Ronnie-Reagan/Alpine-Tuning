@@ -1,8 +1,8 @@
 @echo off
 setlocal EnableExtensions DisableDelayedExpansion
 
-set "PUBLIC_VERSION=2026.08.22"
-set "ASSEMBLY_VERSION=2026.8.22.0"
+set "PUBLIC_VERSION=2026.09.02"
+set "ASSEMBLY_VERSION=2026.9.2.0"
 for %%I in ("%~dp0.") do set "ROOT=%%~fI"
 set "PROJECT=%ROOT%\SleddersTuner\SleddersTuner.csproj"
 set "TEST_PROJECT=%ROOT%\ReleaseTests\ReleaseTests.csproj"
@@ -30,6 +30,13 @@ if not "%CLEANUP_RESULT%"=="0" (
 if not "%BUILD_RESULT%"=="0" (
   echo ERROR: Alpine Tuning release validation or deployment failed.
   exit /b %BUILD_RESULT%
+)
+
+if /I "%ALPINE_VALIDATE_ONLY%"=="1" (
+  echo.
+  echo Alpine Tuning %PUBLIC_VERSION% passed the validation gate.
+  echo Verified payload was not deployed.
+  exit /b 0
 )
 
 echo.
@@ -67,13 +74,7 @@ if not exist "%GAME_ASSEMBLY%" (
   echo ERROR: The configured Sledders installation is unavailable.
   exit /b 1
 )
-if not exist "%MODS_DIR%" (
-  mkdir "%MODS_DIR%" >nul 2>&1
-  if errorlevel 1 (
-    echo ERROR: The Sledders Mods directory could not be created.
-    exit /b 1
-  )
-)
+
 if "%ProgramData%"=="" (
   echo ERROR: ProgramData is unavailable for neutral staging.
   exit /b 1
@@ -129,7 +130,7 @@ if errorlevel 1 (
 
 set "ALPINE_SOURCE_ROOT=%ROOT%"
 set "ALPINE_UNTRACKED_INVENTORY=%UNTRACKED_INVENTORY%"
-powershell -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command "$ErrorActionPreference='Stop'; $root=[IO.Path]::GetFullPath($env:ALPINE_SOURCE_ROOT); $prefix=$root.TrimEnd([IO.Path]::DirectorySeparatorChar)+[IO.Path]::DirectorySeparatorChar; $utf8=New-Object Text.UTF8Encoding($false,$true); foreach($relative in [IO.File]::ReadAllLines($env:ALPINE_UNTRACKED_INVENTORY)){if([String]::IsNullOrWhiteSpace($relative)){continue}; $path=[IO.Path]::GetFullPath([IO.Path]::Combine($root,$relative)); if(-not $path.StartsWith($prefix,[StringComparison]::OrdinalIgnoreCase)){throw 'Untracked inventory escaped the source root.'}; if(-not [IO.File]::Exists($path)){continue}; $name=[IO.Path]::GetFileName($path); $extension=[IO.Path]::GetExtension($path).ToLowerInvariant(); if($name -ne '.gitignore' -and @('.cs','.csproj','.json','.bat','.md','.txt') -notcontains $extension){continue}; $text=$utf8.GetString([IO.File]::ReadAllBytes($path)); if($text.IndexOf([char]0) -ge 0 -or [Text.RegularExpressions.Regex]::IsMatch($text,'(?m)[ 	]+(?=\r?$)') -or [Text.RegularExpressions.Regex]::IsMatch($text,'(?m)^[ 	]* +\t') -or [Text.RegularExpressions.Regex]::IsMatch($text,'(?:\r?\n[ 	]*){2,}$')){throw 'An allowlisted untracked text file failed the whitespace contract.'}}"
+powershell -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command "$ErrorActionPreference='Stop'; $root=[IO.Path]::GetFullPath($env:ALPINE_SOURCE_ROOT); $prefix=$root.TrimEnd([IO.Path]::DirectorySeparatorChar)+[IO.Path]::DirectorySeparatorChar; $utf8=New-Object Text.UTF8Encoding($false,$true); foreach($relative in [IO.File]::ReadAllLines($env:ALPINE_UNTRACKED_INVENTORY)){if([String]::IsNullOrWhiteSpace($relative)){continue}; $path=[IO.Path]::GetFullPath([IO.Path]::Combine($root,$relative)); if(-not $path.StartsWith($prefix,[StringComparison]::OrdinalIgnoreCase)){throw 'Untracked inventory escaped the source root.'}; if(-not [IO.File]::Exists($path)){continue}; $name=[IO.Path]::GetFileName($path); $extension=[IO.Path]::GetExtension($path).ToLowerInvariant(); if($name -ne '.gitignore' -and @('.cs','.csproj','.json','.bat','.md','.txt','.ps1','.yml','.yaml') -notcontains $extension){continue}; $text=$utf8.GetString([IO.File]::ReadAllBytes($path)); if($text.IndexOf([char]0) -ge 0 -or [Text.RegularExpressions.Regex]::IsMatch($text,'(?m)[ 	]+(?=\r?$)') -or [Text.RegularExpressions.Regex]::IsMatch($text,'(?m)^[ 	]* +\t') -or [Text.RegularExpressions.Regex]::IsMatch($text,'(?:\r?\n[ 	]*){2,}$')){throw 'An allowlisted untracked text file failed the whitespace contract.'}}"
 if errorlevel 1 (
   echo ERROR: An allowlisted untracked text file contains invalid whitespace.
   exit /b 1
@@ -204,6 +205,18 @@ if not "%TEST_RESULT%"=="0" (
   exit /b 1
 )
 
+if /I "%ALPINE_VALIDATE_ONLY%"=="1" (
+  echo Validation-only mode: verified payload was not deployed.
+  exit /b 0
+)
+
+if not exist "%MODS_DIR%" (
+  mkdir "%MODS_DIR%" >nul 2>&1
+  if errorlevel 1 (
+    echo ERROR: The Sledders Mods directory could not be created.
+    exit /b 1
+  )
+)
 if not exist "%LOCAL_RELEASE_DIR%" mkdir "%LOCAL_RELEASE_DIR%" >nul 2>&1
 if not exist "%LOCAL_RELEASE_DIR%" (
   echo ERROR: The local Release directory could not be created.
