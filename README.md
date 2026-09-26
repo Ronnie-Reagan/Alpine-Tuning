@@ -8,32 +8,58 @@ Alpine Tuning adds mechanical tuning, setup options, customization, and experime
 ---
 
 <details>
-<summary><strong>Installation — Windows / Steam Deck / Linux</strong></summary>
+<summary><strong>Windows Installation</strong></summary>
 
 <br>
 
-## Windows
+### 1. Install MelonLoader
 
-1. Close Sledders.
-2. Install [MelonLoader](https://melonwiki.xyz/) for Sledders.
-3. Launch Sledders once, then close it.
-4. Download `Alpine Tuning.dll` from the [latest Alpine Tuning release](https://github.com/Ronnie-Reagan/Alpine-Tuning/releases/latest).
-5. Copy the DLL into the Sledders `Mods` folder.
+Close Sledders and install [MelonLoader](https://melonwiki.xyz/) for Sledders.
 
-For a standard Steam installation:
+### 2. Launch Sledders once
+
+Start Sledders normally through Steam.
+
+Wait until you reach the main menu, then close the game.
+
+This allows MelonLoader to finish creating its folders, including `Mods`.
+
+### 3. Download Alpine Tuning
+
+Download `Alpine Tuning.dll` from the [latest Alpine Tuning release](https://github.com/Ronnie-Reagan/Alpine-Tuning/releases/latest).
+
+### 4. Open the Sledders folder
+
+The easiest method is through Steam:
+
+1. Open your Steam Library.
+2. Right-click **Sledders**.
+3. Select **Manage > Browse local files**.
+4. Open the `Mods` folder.
+
+For a standard Steam installation, the Mods folder is:
 
 ```text
 C:\Program Files (x86)\Steam\steamapps\common\Sledders\Mods
 ```
 
-If Sledders is installed somewhere else:
+If Sledders is installed in another Steam Library, use **Browse local files** instead of manually looking for this path.
 
-1. Open Steam.
-2. Right-click **Sledders**.
-3. Select **Manage > Browse local files**.
-4. Open the `Mods` folder.
+### 5. Install Alpine Tuning
 
-The final location should look roughly like:
+Copy:
+
+```text
+Alpine Tuning.dll
+```
+
+directly into:
+
+```text
+Sledders\Mods
+```
+
+The installation should look roughly like this:
 
 ```text
 Sledders/
@@ -43,11 +69,24 @@ Sledders/
 └── Sledders.exe
 ```
 
-Do not place `Alpine Tuning.dll` inside another folder within `Mods`.
+Do **not** put `Alpine Tuning.dll` inside another folder within `Mods`.
+
+### 6. Launch Sledders
+
+Start Sledders normally through Steam.
+
+If MelonLoader and Alpine Tuning are installed correctly, Alpine Tuning should load with the game.
+
+Once in Sledders, open the garage, select a sled, and choose **TUNING**.
+
+</details>
 
 ---
 
-## Steam Deck / Linux
+<details>
+<summary><strong>Linux / Steam Deck Installation</strong></summary>
+
+<br>
 
 > These steps were tested successfully on Steam Deck/Linux by community member **goatly** using MelonLoader **0.7.3**.
 
@@ -111,7 +150,7 @@ Ctrl+H
 
 to show hidden files.
 
-If Sledders is installed on an SD card or another Steam Library, use **Browse local files** rather than manually looking for the path above.
+If Sledders is installed on an SD card or another Steam Library, use **Browse local files** instead of manually looking for the path above.
 
 ### 6. Install Alpine Tuning
 
@@ -123,7 +162,7 @@ Copy the DLL directly into:
 Sledders/Mods
 ```
 
-Do not put the DLL inside another folder within `Mods`.
+Do **not** put `Alpine Tuning.dll` inside another folder within `Mods`.
 
 ### 7. Add the Steam launch option
 
@@ -132,7 +171,7 @@ In Steam:
 1. Open **Library > Sledders**.
 2. Open **Properties > General**.
 3. Find **Launch Options**.
-4. Paste:
+4. Paste the following exactly:
 
 ```bash
 WINEDLLOVERRIDES="version=n,b" %command%
@@ -144,7 +183,9 @@ There **must be a space** between `"version=n,b"` and `%command%`.
 
 Close the Properties window and start Sledders normally through Steam.
 
-If MelonLoader, Alpine Tuning, and the launch option are installed correctly, Alpine Tuning should load with the game.
+If MelonLoader, Alpine Tuning, and the Steam launch option are installed correctly, Alpine Tuning should load with the game.
+
+Once in Sledders, open the garage, select a sled, and choose **TUNING**.
 
 </details>
 
