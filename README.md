@@ -1,6 +1,6 @@
 # Alpine Tuning — Northern-Built. Mountain-Proven
 
-Alpine Tuning adds mechanical tuning and setup options to the Sledders garage while matching the style of the game's existing menus.
+Alpine Tuning adds mechanical tuning, setup options, customization, and experimental systems to the **Sledders** garage while matching the style of the game's existing menus.
 
 Current public version: **2026.10.02**
 Made for Sledders **1.1.6**
@@ -13,43 +13,186 @@ Made for Sledders **1.1.6**
 4. Download `Alpine Tuning.dll` from the [official releases page](https://github.com/Ronnie-Reagan/Alpine-Tuning/releases/latest).
 5. Copy the DLL into the Sledders `Mods` folder.
 
-For a standard Steam installation, the folder is:
+For a standard Steam installation, the Mods folder is:
 
 ```text
 C:\Program Files (x86)\Steam\steamapps\common\Sledders\Mods
 ```
 
-When Sledders is installed somewhere else:
+If Sledders is installed in another Steam Library, use **Browse local files** instead of manually looking for this path.
 
-1. Open Steam.
-2. Right-click Sledders.
-3. Select **Manage > Browse local files**.
-4. Open the `Mods` folder.
+### 5. Install Alpine Tuning
+
+Copy:
+
+```text
+Alpine Tuning.dll
+```
+
+directly into:
+
+```text
+Sledders\Mods
+```
+
+The installation should look roughly like this:
+
+```text
+Sledders/
+├── MelonLoader/
+├── Mods/
+│   └── Alpine Tuning.dll
+└── Sledders.exe
+```
+
+Do **not** put `Alpine Tuning.dll` inside another folder within `Mods`.
+
+### 6. Launch Sledders
+
+Start Sledders normally through Steam.
+
+If MelonLoader and Alpine Tuning are installed correctly, Alpine Tuning should load with the game.
+
+Once in Sledders, open the garage, select a sled, and choose **TUNING**.
+
+</details>
+
+---
+
+<details>
+<summary><strong>Linux / Steam Deck Installation</strong></summary>
+
+<br>
+
+> These steps were tested successfully on Steam Deck/Linux by community member **goatly** using MelonLoader **0.7.3**.
+
+### 1. Download MelonLoader
+
+Download the Linux MelonLoader installer:
+
+```text
+MelonLoader.Installer.Linux
+```
+
+Do **not** download or run the Windows `.exe` installer.
+
+### 2. Make the installer executable
+
+In Desktop Mode:
+
+1. Open **Dolphin** and go to your `Downloads` folder.
+2. Right-click `MelonLoader.Installer.Linux`.
+3. Select **Properties > Permissions**.
+4. Enable **Is executable** / **Allow executing file as program**.
+5. Close the Properties window.
+6. Launch the installer.
+
+### 3. Install MelonLoader
+
+When the installer opens:
+
+1. Select **Sledders**.
+2. Select **MelonLoader 0.7.3**.
+3. Select **Install**.
+4. Close the installer when installation finishes.
+
+### 4. Launch Sledders once
+
+Start Sledders normally through Steam.
+
+Wait until you reach the main menu, then close the game.
+
+This allows MelonLoader to finish creating its folders, including `Mods`.
+
+### 5. Find the Sledders folder
+
+The easiest method is through Steam:
+
+1. Open your Steam Library.
+2. Open **Sledders > Manage > Browse local files**.
+3. Open the `Mods` folder.
+
+For a standard Steam installation on Linux, Sledders is usually located at:
+
+```text
+~/.local/share/Steam/steamapps/common/Sledders
+```
+
+If `.local` is hidden in Dolphin, press:
+
+```text
+Ctrl+H
+```
+
+to show hidden files.
+
+If Sledders is installed on an SD card or another Steam Library, use **Browse local files** instead of manually looking for the path above.
+
+### 6. Install Alpine Tuning
+
+Download `Alpine Tuning.dll` from the [latest Alpine Tuning release](https://github.com/Ronnie-Reagan/Alpine-Tuning/releases/latest).
+
+Copy the DLL directly into:
+
+```text
+Sledders/Mods
+```
+
+Do **not** put `Alpine Tuning.dll` inside another folder within `Mods`.
+
+### 7. Add the Steam launch option
+
+In Steam:
+
+1. Open **Library > Sledders**.
+2. Open **Properties > General**.
+3. Find **Launch Options**.
+4. Paste the following exactly:
+
+```bash
+WINEDLLOVERRIDES="version=n,b" %command%
+```
+
+There **must be a space** between `"version=n,b"` and `%command%`.
+
+### 8. Launch Sledders
+
+Close the Properties window and start Sledders normally through Steam.
+
+If MelonLoader, Alpine Tuning, and the Steam launch option are installed correctly, Alpine Tuning should load with the game.
+
+Once in Sledders, open the garage, select a sled, and choose **TUNING**.
+
+</details>
+
+---
 
 ## Using Alpine Tuning
 
 Open the garage, select a sled, and choose **TUNING**.
 
-The normal **STYLE** option remains the game's cosmetic editor. Alpine Tuning is used for mechanical and performance changes.
+The normal **STYLE** option remains Sledders' cosmetic editor. Alpine Tuning handles mechanical, performance, setup, and supported customization changes.
 
-The tuning screen is organized into five domains:
+The tuning screen is organized into five main domains:
 
-- **Performance** — engines and swaps, internal parts, intake, turbo, refillable nitrous kits, clutch setup (including fixed 6,000–7,000 RPM racing engagement), clutch weights, gearing, and brake calibration.
-- **Chassis & Handling** — chassis, lightweight running boards and cooling, suspension, limiter, shocks, springs, skis, steering geometry, and compatible visual track-length kits.
+- **Performance** — engines and swaps, internal parts, intake, turbo, refillable nitrous kits, clutch setup, clutch weights, gearing, and brake calibration.
+- **Chassis & Handling** — chassis, lightweight running boards and cooling, suspension, limiter, shocks, springs, skis, steering geometry, and compatible track-length kits.
 - **Lighting** — colour, brightness, beam type, aim, operating mode, controller/keyboard controls, and a compatibility-gated carbon headlight delete.
-- **Utility** — Light and Default tanks, separate backpack reserves, Backpack-o-fuel, fuel/nitrous displays and refill behavior, saved setups, and both stock reset modes.
-- **Experimental** — six-axis head tracking and tracking lean, expanded track compatibility, validated hidden sled discovery, and stable world-prop bodies.
+- **Utility** — fuel tanks, backpack reserves, Backpack-o-fuel, fuel/nitrous displays and refill behavior, saved setups, and stock reset modes.
+- **Experimental** — six-axis head tracking and tracking lean, expanded track compatibility, validated hidden sled discovery, and world-prop bodies.
 
-**Settings** remains available from the tuning root for runtime, resource, display, binding, and calibration options. Experimental systems are independent and disabled by default.
+**Settings** is available from the tuning root for runtime, resource, display, binding, and calibration options.
+
+Experimental systems are independent and disabled by default.
 
 Changes are added to your current working setup immediately.
 
 Use:
 
-- **Save** to keep the setup.
-- **Reset** to choose either Alpine's Realistic Stock baseline or captured Sledders Default values.
-- **DYNO** to view estimated performance information.
-- **Back** to return to the previous menu.
+- **Save** — keep the setup.
+- **Reset** — choose either Alpine's Realistic Stock baseline or captured Sledders Default values.
+- **DYNO** — view estimated performance information.
+- **Back** — return to the previous menu.
 
 Some changes require the sled to be rebuilt before they take effect. Alpine handles this automatically when the setup is saved.
 
@@ -59,11 +202,13 @@ When leaving with unsaved changes, you can:
 - Continue tuning.
 - Exit without saving.
 
+---
+
 ## Comparing Parts
 
 Alpine shows how the current sled compares with its factory setup.
 
-When viewing another part or adjustment, it also previews how that choice would change the sled.
+When viewing another part or adjustment, Alpine also previews how that choice would change the sled.
 
 Comparison bars use the following colours:
 
@@ -72,11 +217,15 @@ Comparison bars use the following colours:
 - **Orange** — a reduction.
 - **Blue** — a change that is not automatically better or worse, such as ski stance.
 
-Exact values are shown where Sledders provides enough information. Alpine avoids displaying made-up values when the game does not provide the required data.
+Exact values are shown where Sledders provides enough information.
+
+Alpine avoids displaying made-up values when the game does not provide the required data.
+
+---
 
 ## Dyno
 
-The **DYNO** window provides two types of information:
+Select **DYNO** from the tuning interface to view performance information.
 
 ### Game Model
 
@@ -88,34 +237,171 @@ Shows estimated horsepower and torque curves for the selected engine family.
 
 These results are clearly marked as estimates because Sledders does not provide a complete engine torque curve.
 
-The Dyno window can be moved and resized. Select **FIT** to return it to its default size and position.
+The Dyno window can be moved and resized.
 
-Press Back or Escape to close it.
+Select **FIT** to return it to its default size and position.
 
-## Settings
+Press **Back** or **Escape** to close it.
 
-Open **Settings** to change:
+---
 
-- **Display Units** — Metric or Imperial.
-- **Runtime** — completely stop Alpine gameplay input, fuel, background, visual, and tuning behavior while retaining garage editing and saved setups.
-- **Fuel** — control idle consumption, model-level persistence, and the optional Alpine fuel readout. A sled model keeps the liters it was left with across every Alpine setup and owned ride, while each setup still respects its selected tank capacity. Emergency reserve-refuel controls remain available when the readout is hidden.
-- **Headlight Hotkey** — enable, disable, change, or clear keyboard and physical Unity Input System controller bindings. Bindings survive controller reconnects; with no binding, lights follow game time.
-- **Nitrous** — choose Hold to Spray or Automatic WOT, set the WOT threshold, choose Fuel/Nitrous/Both station refilling, toggle the meter, and bind keyboard/controller activation.
-- **Head Tracking** — opt into TrackIR or OpenTrack, choose a provider, view live six-axis data, recenter, select a calibration preset, or tune every axis, deadzone, clamp, inversion, smoothing, curve, camera mask, and additive lean mapping.
+<details>
+<summary><strong>Settings</strong></summary>
 
-While choosing a new hotkey, the menu will display **Waiting**.
+<br>
 
-Press Escape, use the controller Cancel button, or select Cancel to stop without changing the binding.
+Open **Settings** from the tuning root to configure Alpine's runtime and supporting systems.
+
+### Display Units
+
+Choose:
+
+- Metric
+- Imperial
+
+Engine output is displayed in **kW** with Metric units and **hp** with Imperial units.
+
+### Runtime
+
+The master runtime setting can completely stop Alpine gameplay input, fuel, background, visual, and tuning behavior while retaining garage editing and saved setups.
+
+### Fuel
+
+Fuel settings control:
+
+- Idle consumption.
+- Model-level persistence.
+- The optional Alpine fuel readout.
+
+A sled model keeps the liters it was left with across every Alpine setup and owned ride, while each setup still respects its selected tank capacity.
+
+Emergency reserve-refuel controls remain available when the readout is hidden.
+
+### Headlight Hotkey
+
+You can:
+
+- Enable or disable the hotkey.
+- Change the binding.
+- Clear the binding.
+- Use keyboard inputs.
+- Use physical Unity Input System controller inputs.
+
+Bindings survive controller reconnects.
+
+With no binding configured, lights follow game time.
+
+While choosing a new hotkey, the menu displays **Waiting**.
+
+Press **Escape**, use the controller **Cancel** button, or select **Cancel** to stop without changing the binding.
 
 Clearing an existing binding requires confirmation.
 
-## Nitrous
+### Nitrous
 
-Fit a 5 lb Compact, 10 lb Race, or 20 lb Drag kit under **Performance > Nitrous System**. The setup-specific boost is adjustable from +25% to +200%; higher boost consumes charge proportionally faster. Hold Left Shift by default, bind another keyboard/controller input, or choose Automatic WOT. A newly fitted sled receives one full bottle, after which its charge persists through resets, teleports, respawns, and reloads.
+Nitrous settings allow you to:
 
-At an active gas station, use the normal refuel control. The selected Utility/Settings refill target determines whether the station fills gasoline, nitrous, or both. The small station prompt remains visible even when the optional nitrous meter is hidden. On maps without stations, press **N** while parked with the engine off to refill the fitted bottle. An empty bottle immediately returns engine output to its unboosted value.
+- Choose **Hold to Spray** or **Automatic WOT**.
+- Set the WOT threshold.
+- Choose Fuel, Nitrous, or Both for station refilling.
+- Toggle the nitrous meter.
+- Bind keyboard or controller activation.
 
-## Experimental systems
+### Head Tracking
+
+Head Tracking supports TrackIR or OpenTrack.
+
+You can:
+
+- Choose a provider.
+- View live six-axis tracking data.
+- Recenter tracking.
+- Select a calibration preset.
+- Tune individual axes.
+- Configure deadzones.
+- Configure clamps.
+- Invert axes.
+- Adjust smoothing.
+- Adjust curves.
+- Configure the camera mask.
+- Configure additive rider lean mapping.
+
+</details>
+
+---
+
+<details>
+<summary><strong>Nitrous System</strong></summary>
+
+<br>
+
+Nitrous kits are available under:
+
+**Performance > Nitrous System**
+
+Available bottle sizes:
+
+- **5 lb Compact**
+- **10 lb Race**
+- **20 lb Drag**
+
+Setup-specific boost can be adjusted from:
+
+```text
++25% to +200%
+```
+
+Higher boost consumes nitrous charge proportionally faster.
+
+By default, hold:
+
+```text
+Left Shift
+```
+
+to spray.
+
+You can also bind another keyboard/controller input or choose **Automatic WOT**.
+
+A newly fitted sled receives one full bottle.
+
+After that, charge persists through:
+
+- Resets.
+- Teleports.
+- Respawns.
+- Reloads.
+
+### Refilling
+
+At an active gas station, use the normal refuel control.
+
+The selected Utility/Settings refill target determines whether the station fills:
+
+- Gasoline.
+- Nitrous.
+- Both.
+
+The small station prompt remains visible even when the optional nitrous meter is hidden.
+
+On maps without stations, press:
+
+```text
+N
+```
+
+while parked with the engine off to refill the fitted bottle.
+
+An empty bottle immediately returns engine output to its unboosted value.
+
+</details>
+
+---
+
+<details>
+<summary><strong>Experimental Systems</strong></summary>
+
+<br>
 
 Each experiment is opt-in and can be disabled independently:
 
@@ -124,9 +410,20 @@ Each experiment is opt-in and can be disabled independently:
 - **World-prop bodies** retain the native drivetrain, rider, suspension, and collision while projecting trucks, scenery, and experimental sled bodies with adjustable fit, mass, and center of mass. Separated rigid sled-prop skis and handlebars can follow native pivots; unmapped moving parts and the animated track remain native.
 - **Tracking Lean** adds calibrated tracking output to physical rider input without replacing the controller signal.
 
-These experiments are local visual/gameplay projections. Other connected players may see the underlying native sled and mounted rider state. The master runtime switch remounts the rider and restores all experimental projections.
+These experimental systems are local visual/gameplay projections.
 
-## Sled Forge and Multiplayer Build Showcase
+Other connected players may see the underlying native sled and mounted rider state.
+
+The master Runtime switch remounts the rider and restores all experimental projections.
+
+</details>
+
+---
+
+<details>
+<summary><strong>Sled Forge</strong></summary>
+
+<br>
 
 **Sled Forge** is Alpine's donor-part workshop. Choose donor cosmetic assemblies for the body shell, hood, seat, bumper, handlebars, skis, and running boards. Every donor projection keeps the source sled's rider, camera, collision, controls, and simulation graph. Donor pages expose the full available list. The displayed heuristic score ranks candidate sleds; it does not certify panel fit.
 
@@ -136,7 +433,14 @@ The preview reports loading, installed, retrying, or native-fallback status per 
 
 World sled props use a hybrid articulated projection: unambiguous, separated rigid left/right skis and handlebars follow the corresponding native anchors. Unmapped prop moving meshes are suppressed and native moving parts remain visible. Static prop tracks cannot reproduce native track animation, so the track remains native. Rear-track physics packages remain separately validated native grafts, and unsafe front/rear physics graphs are never installed.
 
-### Multiplayer
+</details>
+
+---
+
+<details>
+<summary><strong>Multiplayer & Build Showcase</strong></summary>
+
+<br>
 
 Alpine watches the native multiplayer start/stop lifecycle, detects joins and reconnects, represents the native host ID zero explicitly, and clears departed riders and their projections. Compatible Alpine Tuning clients automatically discover one another through Sledders' internal relay when available, with Steam P2P as a fallback using verified platform IDs from the native player records. Steam packets are accepted only from players in the current session and are mapped back to their native sled identities. The **Build Showcase** lists active compatible builds in the garage, lets you request or import a shared setup, and can display compact nearby-rider build tags. Build sharing, visual receiving, and tags are configurable from the Showcase.
 
@@ -152,7 +456,14 @@ The client syncs saved-setup inventory and processes publish/import actions whil
 
 Publish selected setups from the Discord Activity, choosing private, unlisted, or public visibility. Imports add a saved setup to your local library; load it from **Setups** when you want to ride it. Garage v1 exports mechanical setups and excludes Forge selections, fit adjustments, and prop configuration. Multiplayer sharing between updated Alpine clients preserves Forge fit data.
 
-## Saved Setups
+</details>
+
+---
+
+<details>
+<summary><strong>Saved Setups & Recovery</strong></summary>
+
+<br>
 
 Open **Setups** from the main tuning menu.
 
@@ -173,31 +484,109 @@ You can:
 - Recover removed or damaged setups.
 - Restore older revisions.
 
-Alpine keeps setups separated by sled. A setup created for one sled cannot accidentally overwrite a different sled.
+Alpine keeps setups separated by sled.
 
-Loading a saved setup while you have unsaved changes requires confirmation.
+A setup created for one sled cannot accidentally overwrite a different sled.
+
+Loading a saved setup while unsaved changes exist requires confirmation.
 
 Existing compatible setups from older versions are kept when possible.
 
-## Units and Tuning Behaviour
+</details>
+
+---
+
+<details>
+<summary><strong>Units & Tuning Behaviour</strong></summary>
+
+<br>
+
+### Units
 
 - Engine output is shown in **kW** with Metric units and **hp** with Imperial units.
 - Weight is shown in **kg** or **lb**.
 - Ski stance is shown in millimetres or inches.
-- The game's Power, Climbing, and Agility ratings remain on their normal 0-100 scale.
-- Brake settings are shown as a percentage of the factory brake strength.
-- Steering, suspension, grip, and drivetrain changes are applied from the sled's original factory values to prevent repeated setup changes from stacking incorrectly.
-- Generic track tuning changes physics only. Length kits reload the original sled, validate a native donor by tunnel seam and track geometry, then replace only the tunnel/rear bumper, skid, rails, wheels, animated track, contact mesh, and Trax graph. The hood, seat, cockpit, front suspension, lighting, engine, fuel, accessories, and sled identity remain native to the source sled. Arctic Cat's embedded 146/154/165 rear variants are preferred where complete; otherwise Alpine uses a validated direct graft or, with Experimental Track Compatibility enabled, an explicitly labelled front-anchored scaled fallback.
+- Sledders' Power, Climbing, and Agility ratings remain on their normal `0–100` scale.
+- Brake settings are shown as a percentage of factory brake strength.
 
-## Updating
+### Factory Baselines
 
-Close Sledders before replacing the mod DLL.
+Steering, suspension, grip, and drivetrain changes are applied from the sled's original factory values.
+
+This prevents repeated setup changes from stacking incorrectly.
+
+### Track Tuning
+
+Generic track tuning changes physics only.
+
+Length kits reload the original sled and validate a native donor using tunnel seam and track geometry.
+
+Alpine then replaces only the required rear components:
+
+- Tunnel/rear bumper.
+- Skid.
+- Rails.
+- Wheels.
+- Animated track.
+- Contact mesh.
+- Trax graph.
+
+The following remain native to the source sled:
+
+- Hood.
+- Seat.
+- Cockpit.
+- Front suspension.
+- Lighting.
+- Engine.
+- Fuel.
+- Accessories.
+- Sled identity.
+
+Arctic Cat's embedded `146`, `154`, and `165` rear variants are preferred where complete.
+
+Otherwise Alpine uses either:
+
+1. A validated direct graft, or
+2. With **Experimental Track Compatibility** enabled, an explicitly labelled front-anchored scaled fallback.
+
+</details>
+
+---
+
+<details>
+<summary><strong>Updating Alpine Tuning</strong></summary>
+
+<br>
+
+Close Sledders before replacing the Alpine Tuning DLL.
+
+Download the latest version from:
+
+[Alpine Tuning Releases](https://github.com/Ronnie-Reagan/Alpine-Tuning/releases/latest)
+
+Replace the existing:
+
+```text
+Alpine Tuning.dll
+```
+
+inside the Sledders `Mods` folder.
 
 It is recommended that you back up important saved setups before installing a major update.
 
-## Developer Build Instructions
+</details>
+
+---
+
+<details>
+<summary><strong>Developer Build Instructions</strong></summary>
+
+<br>
 
 This section is only needed when building Alpine Tuning from source.
+
+### Build
 
 Run:
 
@@ -205,13 +594,20 @@ Run:
 build-release.bat
 ```
 
-The completed DLL will be placed at:
+The completed DLL is placed at:
 
 ```text
 SleddersTuner\bin\x64\Release\Alpine Tuning.dll
 ```
 
-The build script checks the release files, runs automated tests, and installs the verified DLL into the standard Sledders `Mods` folder.
+The build script:
+
+- Checks release files.
+- Runs automated tests.
+- Builds the mod.
+- Installs the verified DLL into the standard Sledders `Mods` folder.
+
+### Validation-Only Build
 
 To run the same release gate without installing the DLL, use PowerShell:
 
@@ -220,18 +616,67 @@ $env:ALPINE_VALIDATE_ONLY = '1'
 try { .\build-release.bat } finally { Remove-Item Env:ALPINE_VALIDATE_ONLY }
 ```
 
-Validation builds from the Git public-file inventory in temporary staging and removes that staging afterward. It includes allowlisted untracked files, so add all intended source, test, script, and asset changes before committing a release. Validation-only mode does not update the local release DLL.
+Validation builds from the Git public-file inventory in temporary staging and removes that staging afterward.
 
-Build prerequisites are Git, the .NET SDK, .NET Framework 4.7.2 targeting assemblies, and a Sledders installation with MelonLoader. The test runner uses the installed game assemblies.
+It includes allowlisted untracked files, so add all intended source, test, script, and asset changes before committing a release.
 
-Before publishing, also smoke-test the built DLL in Sledders: open the garage, apply and restore a tune, save and reload a setup, switch sleds, and check multiplayer replication with another player. Automated checks do not exercise a running Unity scene or confirm visual behavior in game.
+Validation-only mode does not update the local release DLL.
 
-When Steam uses another library location, edit `GAME_DIR` near the top of `build-release.bat`.
+### Build Requirements
 
-## License and Attribution
+Required:
 
-Alpine Tuning is an unofficial community mod and is not affiliated with the developers of Sledders.
+- Git.
+- .NET SDK.
+- .NET Framework 4.7.2 targeting assemblies.
+- A Sledders installation.
+- MelonLoader.
 
-See [license.txt](license.txt) for source use, redistribution, attribution, and warranty terms.
+The test runner uses the installed game assemblies.
 
-Back up important setup data before updating. Use the mod at your own risk.
+### Release Smoke Test
+
+Before publishing a release, test the completed DLL inside Sledders.
+
+At minimum:
+
+1. Launch Sledders.
+2. Open the garage.
+3. Open **TUNING**.
+4. Apply a tune.
+5. Restore the tune.
+6. Save a setup.
+7. Reload the setup.
+8. Switch sleds.
+9. Confirm expected behavior.
+10. Check multiplayer replication with another player.
+
+Automated checks do not exercise a running Unity scene or confirm visual behavior in-game.
+
+### Non-Standard Steam Libraries
+
+When Steam uses another library location, edit:
+
+```text
+GAME_DIR
+```
+
+near the top of:
+
+```text
+build-release.bat
+```
+
+</details>
+
+---
+
+## License & Attribution
+
+Alpine Tuning is an unofficial community mod and is not affiliated with the developers of **Sledders**.
+
+See [`license.txt`](license.txt) for source use, redistribution, attribution, and warranty terms.
+
+Back up important setup data before updating.
+
+**Use the mod at your own risk.**
