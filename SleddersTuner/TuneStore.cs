@@ -677,6 +677,22 @@ namespace AlpineTuning
             return FindCurrentSetupRecord(sledKey, vehicleId);
         }
 
+        // Runtime callers only need the baseline; never serialize/clone a setup per frame.
+        internal bool UsesSleddersDefault(string sledKey, string vehicleId)
+        {
+            TuneProfile profile = FindCurrentSetupRecord(sledKey, vehicleId)?.profile;
+            if (profile == null)
+            {
+                string id = null;
+                if (!string.IsNullOrWhiteSpace(vehicleId)) _activeProfileIdsBySled.TryGetValue(vehicleId, out id);
+                if (string.IsNullOrWhiteSpace(id) && !string.IsNullOrWhiteSpace(sledKey))
+                    _activeProfileIdsBySled.TryGetValue(sledKey, out id);
+                if (id != null && _profiles.TryGetValue(id, out TuneProfile active) &&
+                    ProfileTargetsIdentity(active, sledKey, vehicleId)) profile = active;
+            }
+            return profile != null && profile.baseline == AlpineSetupBaseline.SleddersDefault;
+        }
+
         public TuneProfile GetCurrentSetupForSled(string sledKey, string vehicleId)
         {
             var record = FindCurrentSetupRecord(sledKey, vehicleId);
@@ -978,6 +994,46 @@ namespace AlpineTuning
                 ? "Shared Setup"
                 : imported.name;
 
+            return SaveProfile(imported, false) ? imported : null;
+        }
+
+        internal TuneProfile ImportGarageProfile(TuneProfile profile, string actionKey)
+        {
+            if (profile == null || string.IsNullOrWhiteSpace(actionKey)) return null;
+            // Match the 32-character setup IDs to keep Windows history/archive
+            // paths within the same budget as ordinary imported profiles.
+            string profileId;
+            using (var hash = SHA256.Create())
+                profileId = BitConverter.ToString(hash.ComputeHash(Encoding.UTF8.GetBytes("Alpine Garage import:" + actionKey)))
+                    .Replace("-", string.Empty).Substring(0, 32).ToLowerInvariant();
+
+            // The durable profile ID is also the import receipt. A crash after
+            // saving the profile but before saving the connection or sending its
+            // acknowledgment cannot create another copy, or overwrite rider edits.
+            if (_profiles.TryGetValue(profileId, out TuneProfile existing)) return Clone(existing);
+            string archived = Path.Combine(ArchivedProfilesDir, profileId);
+            if (Directory.Exists(archived))
+            {
+                foreach (string file in Directory.GetFiles(archived, "*.json"))
+                {
+                    try
+                    {
+                        var removed = JsonConvert.DeserializeObject<TuneProfile>(File.ReadAllText(file));
+                        if (removed != null && removed.profileId == profileId &&
+                            TryValidateProfileForCatalog(removed, _catalog, false, true, out _))
+                            return removed; // A replay must not resurrect a deleted setup.
+                    }
+                    catch { }
+                }
+                return null; // Retain damaged receipts for recovery; don't replace them.
+            }
+            string path = Path.Combine(ProfilesDir, profileId + ".json");
+            if (File.Exists(path) || File.Exists(path + ".bak")) return null;
+            var imported = Clone(profile);
+            imported.sourceProfileId = imported.profileId;
+            imported.profileId = profileId;
+            imported.importedUnixTime = NowUnix();
+            if (string.IsNullOrWhiteSpace(imported.name)) imported.name = "Garage Setup";
             return SaveProfile(imported, false) ? imported : null;
         }
 
@@ -1358,6 +1414,7 @@ namespace AlpineTuning
                     profile.donorSledKey,
                     profile.donorVehicleId),
                 headlightEnabled = profile.headlightEnabled,
+                visualBuild = VisualContentFingerprint(profile.sledBuild),
                 selectedParts = (profile.selectedParts ?? new List<PartSelection>())
                     .Where(selection => selection != null)
                     .OrderBy(selection => selection.category, StringComparer.OrdinalIgnoreCase)
@@ -1395,6 +1452,31 @@ namespace AlpineTuning
         public int CountModifiedParts(TuneProfile profile)
         {
             return ModifiedPartNames(profile).Count;
+        }
+
+        private static string VisualContentFingerprint(SledBuildSpec build)
+        {
+            if (build == null || (string.IsNullOrWhiteSpace(build.propAssetKey) &&
+                (build.selections == null || build.selections.Count == 0))) return null;
+            return JsonConvert.SerializeObject(new
+            {
+                prop = string.IsNullOrWhiteSpace(build.propAssetKey) ? null : new
+                {
+                    key = build.propAssetKey,
+                    position = build.propPosition ?? new Vec3Data(),
+                    rotation = build.propRotation ?? new Vec3Data(),
+                    scale = build.propScale ?? new Vec3Data(1f, 1f, 1f)
+                },
+                parts = (build.selections ?? new List<SledForgePartSelection>()).Where(item => item != null)
+                    .OrderBy(item => item.slot).Select(item => new
+                    {
+                        item.slot,
+                        donor = SledIdentity.StableIdentityKey(item.donorSledKey, item.donorVehicleId),
+                        position = item.fit?.position ?? new Vec3Data(),
+                        rotation = item.fit?.rotation ?? new Vec3Data(),
+                        scale = item.fit?.scale ?? 1f
+                    }).ToArray()
+            }, Formatting.None);
         }
 
         public string BuildProfilePartSummary(TuneProfile profile, int maximumNames = 3)
@@ -2959,6 +3041,19 @@ namespace AlpineTuning
 
             if (profile.sledBuild == null)
                 profile.sledBuild = new SledBuildSpec();
+            if (strictCatalog && (profile.sledBuild.selections != null &&
+                (profile.sledBuild.selections.Count > 9 ||
+                 profile.sledBuild.selections.Any(selection => selection == null ||
+                     !Enum.IsDefined(typeof(SledForgeSlot), selection.slot) ||
+                     (selection.fit != null && !selection.fit.IsValid) ||
+                     (!IsSafeIdentity(selection.donorSledKey) && !IsSafeIdentity(selection.donorVehicleId)) ||
+                     (!string.IsNullOrWhiteSpace(selection.donorSledKey) && !IsSafeIdentity(selection.donorSledKey)) ||
+                     (!string.IsNullOrWhiteSpace(selection.donorVehicleId) && !IsSafeIdentity(selection.donorVehicleId))) ||
+                 profile.sledBuild.selections.GroupBy(selection => selection.slot).Any(group => group.Count() > 1))))
+            {
+                reason = "sled forge selections or fit values are invalid";
+                return false;
+            }
             profile.sledBuild.Normalize();
             if (profile.sledBuild.selections.Count > 9 ||
                 profile.sledBuild.selections.Any(selection => selection.donorSledKey != null &&
@@ -3409,6 +3504,8 @@ namespace AlpineTuning
             public List<FingerprintPartSelection> selectedParts;
             public FineTuneSettings fineTune;
             public bool? headlightEnabled;
+            [JsonProperty(NullValueHandling = NullValueHandling.Ignore)]
+            public string visualBuild;
         }
 
         private sealed class FingerprintPartSelection

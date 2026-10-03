@@ -1170,6 +1170,7 @@ namespace AlpineTuning
                 factoryResetArmed = false;
                 if (working != null && target != null)
                     mod.PreviewProfile(working, target);
+                mod.SledForge?.PreviewGarage(target, working);
                 hasUnsavedChanges = true;
                 setStatus("Staged");
                 refreshDyno?.Invoke();
@@ -1182,6 +1183,7 @@ namespace AlpineTuning
 
                 working.baseline = AlpineSetupBaseline.RealisticStock;
                 mod.PreviewProfile(working, target);
+                mod.SledForge?.PreviewGarage(target, working);
                 hasUnsavedChanges = true;
                 fuelOverflowAccepted = false;
                 fuelOverflowPromptVisible = false;
@@ -2045,6 +2047,7 @@ namespace AlpineTuning
                 try
                 {
                     mod.PreviewProfile(working, target);
+                    mod.SledForge?.PreviewGarage(target, working);
                 }
                 catch (Exception ex)
                 {
@@ -4957,6 +4960,7 @@ namespace AlpineTuning
                 SleddersGameBindings.GetCompatibilityReport()?.assemblyLightHash;
             working.sledBuild.Normalize();
 
+            mod.SledForge.PreviewGarage(target, working);
             var detail = Section("Sled Forge");
             detail.Add(MutedLabel("DONOR COSMETICS  Live projection keeps the native rider, collision, and simulation graph."));
             detail.Add(MutedLabel("PHYSICS ASSEMBLIES  Rear-track packages use Alpine's separately validated native graft path."));
@@ -4965,8 +4969,48 @@ namespace AlpineTuning
             else
             {
                 foreach (SledForgePartSelection selection in working.sledBuild.selections.OrderBy(item => item.slot))
+                {
                     detail.Add(MutedLabel(selection.slot.ToString().ToUpperInvariant() + "  " +
-                        (selection.donorDisplayName ?? "Saved donor") + "  ·  " + selection.compatibilityScore + "% FIT"));
+                        (selection.donorDisplayName ?? "Saved donor") + "  ·  heuristic score " + selection.compatibilityScore + "/100"));
+                    Label projectionStatus = MutedLabel(mod.SledForge.GarageSlotStatus(selection.slot));
+                    detail.Add(projectionStatus);
+                    projectionStatus.schedule.Execute(() => projectionStatus.text = mod.SledForge.GarageSlotStatus(selection.slot)).Every(500);
+                    var fitSection = Section(selection.slot + " Fit");
+                    fitSection.Add(MutedLabel(selection.slot == SledForgeSlot.Skis || selection.slot == SledForgeSlot.Handlebars
+                        ? "Offsets use each native moving pivot. Unmapped parts remain native."
+                        : "Parts automatically fit the recipient mount and footprint. Offsets fine-tune that fit and are saved with this setup."));
+                    SledForgeFit fit = selection.fit ?? new SledForgeFit();
+                    Action fitChanged = () =>
+                    {
+                        selection.fit = fit;
+                        fit.Normalize();
+                        setupChanged?.Invoke();
+                    };
+                    AddSlider(fitSection, "Position X", -2f, 2f, fit.position.x, "F2", " m", value => fit.position.x = value, fitChanged);
+                    AddSlider(fitSection, "Position Y", -2f, 2f, fit.position.y, "F2", " m", value => fit.position.y = value, fitChanged);
+                    AddSlider(fitSection, "Position Z", -2f, 2f, fit.position.z, "F2", " m", value => fit.position.z = value, fitChanged);
+                    AddSlider(fitSection, "Rotation X", -180f, 180f, fit.rotation.x, "F0", " deg", value => fit.rotation.x = value, fitChanged);
+                    AddSlider(fitSection, "Rotation Y", -180f, 180f, fit.rotation.y, "F0", " deg", value => fit.rotation.y = value, fitChanged);
+                    AddSlider(fitSection, "Rotation Z", -180f, 180f, fit.rotation.z, "F0", " deg", value => fit.rotation.z = value, fitChanged);
+                    AddSlider(fitSection, "Scale", 0.25f, 4f, fit.scale, "F2", "x", value => fit.scale = value, fitChanged);
+                    Button resetFit = new Button(() =>
+                    {
+                        selection.fit = null;
+                        setupChanged?.Invoke();
+                        render?.Invoke();
+                    }) { text = "RESET FIT" };
+                    ApplyControlStyle(resetFit);
+                    fitSection.Add(resetFit);
+                    Button nativeSlot = new Button(() =>
+                    {
+                        working.sledBuild.selections.Remove(selection);
+                        setupChanged?.Invoke();
+                        render?.Invoke();
+                    }) { text = "RESTORE NATIVE " + selection.slot.ToString().ToUpperInvariant() };
+                    ApplyControlStyle(nativeSlot);
+                    fitSection.Add(nativeSlot);
+                    detail.Add(fitSection);
+                }
             }
             detailContent.Add(detail);
 
@@ -4983,6 +5027,15 @@ namespace AlpineTuning
             rail.Add(clear);
             tileButtons.Add(clear);
 
+            Button retryForge = GarageTile("RETRY FORGE PREVIEW", "Retry donor loads and rebuild the current projection with native fallback.", false,
+                () =>
+                {
+                    mod.SledForge.RetryGaragePreview();
+                    setStatus?.Invoke("Forge preview retry requested");
+                }, "action.recovery");
+            rail.Add(retryForge);
+            tileButtons.Add(retryForge);
+
             foreach (SledForgeSlot slot in Enum.GetValues(typeof(SledForgeSlot)))
             {
                 if (AlpineSledForgeSystem.SlotUsesNativePhysics(slot))
@@ -4995,7 +5048,22 @@ namespace AlpineTuning
                     tileButtons.Add(guarded);
                     continue;
                 }
-                AlpineSledForgeSystem.DonorCandidate[] donors = mod.SledForge.GetCandidates(target, slot).Take(6).ToArray();
+                AlpineSledForgeSystem.DonorCandidate[] allDonors = mod.SledForge.GetCandidates(target, slot).ToArray();
+                int pageCount = Math.Max(1, (allDonors.Length + 5) / 6);
+                int page = mod.SledForge.CandidatePage(target, slot, pageCount);
+                if (pageCount > 1)
+                {
+                    Button nextPage = GarageTile(slot.ToString().ToUpperInvariant() + " DONORS " + (page + 1) + "/" + pageCount,
+                        "Next page of donor sleds for this slot.", false,
+                        () =>
+                        {
+                            mod.SledForge.AdvanceCandidatePage(target, slot, pageCount);
+                            render?.Invoke();
+                        }, "action.continue");
+                    rail.Add(nextPage);
+                    tileButtons.Add(nextPage);
+                }
+                AlpineSledForgeSystem.DonorCandidate[] donors = allDonors.Skip(page * 6).Take(6).ToArray();
                 if (donors.Length == 0)
                     continue;
                 foreach (AlpineSledForgeSystem.DonorCandidate donor in donors)
@@ -5004,7 +5072,7 @@ namespace AlpineTuning
                     bool selected = working.sledBuild.selections.Any(selection => selection.slot == slot &&
                         string.Equals(selection.donorSledKey, captured.key, StringComparison.OrdinalIgnoreCase));
                     Button tile = GarageTile(slot.ToString().ToUpperInvariant() + ": " + CompactPropName(captured.displayName),
-                        captured.compatibilityScore + "% compatibility · cosmetic projection with native moving-part fallback.",
+                        "Heuristic score " + captured.compatibilityScore + "/100 · fit has not been geometry-verified. Unmapped moving parts remain native.",
                         selected,
                         () =>
                         {
@@ -5440,9 +5508,18 @@ namespace AlpineTuning
         {
             AlpinePeerSharing sharing = mod?.Sharing;
             var overview = Section("Build Showcase");
-            overview.Add(MutedLabel(sharing == null
+            Label networkStatus = MutedLabel(sharing == null
                 ? "NETWORK  Waiting for an Alpine transport."
-                : "NETWORK  " + (sharing.StatusMessage ?? "Searching for compatible riders.")));
+                : "NETWORK  " + sharing.SessionStatus + " " + sharing.StatusMessage);
+            overview.Add(networkStatus);
+            string peerSnapshot = sharing == null ? "" : ShowcaseSnapshot(sharing);
+            overview.schedule.Execute(() =>
+            {
+                if (sharing == null) return;
+                networkStatus.text = "NETWORK  " + sharing.SessionStatus + " " + sharing.StatusMessage;
+                string current = ShowcaseSnapshot(sharing);
+                if (current != peerSnapshot) { peerSnapshot = current; render?.Invoke(); }
+            }).Every(1000);
             overview.Add(MutedLabel("Only compatible Alpine clients receive donor projections. Other riders stay native-safe."));
             content.Add(overview);
             AlpineUserSettings settings = mod.Settings;
@@ -5492,7 +5569,7 @@ namespace AlpineTuning
                         setStatus?.Invoke("Requesting build details");
                         return;
                     }
-                    TuneProfile shared = sharing.GetPayload(peer.senderId, active.profileId, out string requestStatus);
+                    TuneProfile shared = sharing.GetActivePayload(peer.senderId, active.profileId, active.checksum, out string requestStatus);
                     if (shared == null)
                     {
                         setStatus?.Invoke(requestStatus ?? "Build payload is still loading");
@@ -5505,6 +5582,11 @@ namespace AlpineTuning
                 tileButtons.Add(card);
             }
         }
+
+        private static string ShowcaseSnapshot(AlpinePeerSharing sharing) =>
+            string.Join(";", sharing.RemotePeers.OrderBy(peer => peer.senderId).Select(peer => peer.senderId + ":" + peer.senderName)) + "|" +
+            string.Join(";", sharing.RemoteActiveTunes.OrderBy(state => state.senderId).Select(state =>
+                state.senderId + ":" + state.profileId + ":" + state.checksum + ":" + state.hasPayload + ":" + state.applyStatus));
 
         private static void BuildGarageFocusedPanel(
             AlpineTuningMod mod,
@@ -5579,6 +5661,12 @@ namespace AlpineTuning
                 return;
             }
 
+            if (string.Equals(panelId, "settings.garage", StringComparison.OrdinalIgnoreCase))
+            {
+                BuildGarageConnectionSettings(mod, content, tileContent, tileButtons, render, setStatus);
+                return;
+            }
+
             if (string.Equals(panelId, "settings.hotkey", StringComparison.OrdinalIgnoreCase))
             {
                 BuildGarageHotkeySettings(
@@ -5633,6 +5721,10 @@ namespace AlpineTuning
             detail.Add(MutedLabel("Choose a settings group."));
             content.Add(detail);
             AddGarageNavigationTile(
+                rail, tileButtons, "Garage Connection", "Connect, view pairing status, retry or disconnect the Garage service.",
+                NavigationPanel, "settings.garage", "Garage Connection", navigate,
+                "action.settings", "action.settings", false);
+            AddGarageNavigationTile(
                 rail, tileButtons, "Runtime", "Enable or disable all Alpine runtime tuning without removing the mod.",
                 NavigationPanel, "settings.runtime", "Runtime", navigate,
                 "settings.runtime", "action.settings", false);
@@ -5656,6 +5748,50 @@ namespace AlpineTuning
                 rail, tileButtons, "Head Tracking", "Experimental TrackIR and OpenTrack six-axis camera input.",
                 NavigationPanel, "settings.headtracking", "Head Tracking", navigate,
                 "settings.headtracking", "action.settings", false);
+        }
+
+        private static void BuildGarageConnectionSettings(
+            AlpineTuningMod mod, VisualElement content, SUIManagedList rail,
+            List<Button> tileButtons, Action render, Action<string> setStatus)
+        {
+            AlpineGarageClient client = mod.GarageClient;
+            var detail = Section("Garage Connection");
+            content.Add(detail);
+            if (client == null) { detail.Add(MutedLabel("Garage client is unavailable.")); return; }
+            var status = MutedLabel(client.StatusText);
+            detail.Add(status);
+            status.schedule.Execute(() => status.text = client.StatusText).Every(500);
+            var endpoint = new TextField("Garage address") { value = client.ApiBaseUrl };
+            ApplyControlStyle(endpoint);
+            detail.Add(endpoint);
+            detail.Add(MutedLabel("Connect saves this address and resumes your linked installation, or requests a pairing code. Enter the code in Alpine Garage in Discord."));
+            detail.Add(MutedLabel("Disconnect pauses syncing and queued actions. Your saved setups and linked installation stay on this computer."));
+            detail.Add(MutedLabel("Garage v1 shares mechanical setups. Forge parts, fit adjustments and props are excluded."));
+            Button connect = GarageTile("CONNECT / RETRY", "Connect to the address above or retry a failed connection.", false, () =>
+            {
+                client.Connect(endpoint.value, out string message);
+                setStatus?.Invoke(message);
+                status.text = client.StatusText;
+            }, "action.continue");
+            rail.Add(connect);
+            tileButtons.Add(connect);
+            Button copy = GarageTile("COPY PAIRING CODE", "Copy the current code while it is valid.", false, () =>
+            {
+                string code = client.PairingCode;
+                if (string.IsNullOrEmpty(code)) { setStatus?.Invoke("No valid code. Choose Connect to request one."); return; }
+                GUIUtility.systemCopyBuffer = code;
+                setStatus?.Invoke("Pairing code copied.");
+            }, "action.save");
+            rail.Add(copy);
+            tileButtons.Add(copy);
+            Button disconnect = GarageTile("DISCONNECT", "Pause the Garage connection; local setups stay available.", !client.IsEnabled, () =>
+            {
+                client.Disconnect(out string message);
+                setStatus?.Invoke(message);
+                render?.Invoke();
+            }, "settings.disabled");
+            rail.Add(disconnect);
+            tileButtons.Add(disconnect);
         }
 
         private static void BuildGarageDisplaySettings(
@@ -6074,9 +6210,9 @@ namespace AlpineTuning
             AddSlider(tuning, "Pitch deadzone", 0f, 15f, tracking.rotationDeadzoneDegrees.x, "F1", " deg", value => tracking.rotationDeadzoneDegrees.x = value, persist);
             AddSlider(tuning, "Yaw deadzone", 0f, 15f, tracking.rotationDeadzoneDegrees.y, "F1", " deg", value => tracking.rotationDeadzoneDegrees.y = value, persist);
             AddSlider(tuning, "Roll deadzone", 0f, 15f, tracking.rotationDeadzoneDegrees.z, "F1", " deg", value => tracking.rotationDeadzoneDegrees.z = value, persist);
-            AddSlider(tuning, "Translation X clamp", 0.01f, 0.50f, tracking.translationClampMeters.x, "F2", " m", value => tracking.translationClampMeters.x = value, persist);
-            AddSlider(tuning, "Translation Y clamp", 0.01f, 0.50f, tracking.translationClampMeters.y, "F2", " m", value => tracking.translationClampMeters.y = value, persist);
-            AddSlider(tuning, "Translation Z clamp", 0.01f, 0.50f, tracking.translationClampMeters.z, "F2", " m", value => tracking.translationClampMeters.z = value, persist);
+            AddSlider(tuning, "Translation X clamp", 0.01f, 1.50f, tracking.translationClampMeters.x, "F2", " m", value => tracking.translationClampMeters.x = value, persist);
+            AddSlider(tuning, "Translation Y clamp", 0.01f, 1.50f, tracking.translationClampMeters.y, "F2", " m", value => tracking.translationClampMeters.y = value, persist);
+            AddSlider(tuning, "Translation Z clamp", 0.01f, 1.50f, tracking.translationClampMeters.z, "F2", " m", value => tracking.translationClampMeters.z = value, persist);
             AddSlider(tuning, "Pitch clamp", 1f, 90f, tracking.rotationClampDegrees.x, "F0", " deg", value => tracking.rotationClampDegrees.x = value, persist);
             AddSlider(tuning, "Yaw clamp", 1f, 90f, tracking.rotationClampDegrees.y, "F0", " deg", value => tracking.rotationClampDegrees.y = value, persist);
             AddSlider(tuning, "Roll clamp", 1f, 90f, tracking.rotationClampDegrees.z, "F0", " deg", value => tracking.rotationClampDegrees.z = value, persist);
@@ -6106,9 +6242,9 @@ namespace AlpineTuning
                 responsive ? 1.35f : 0.85f,
                 responsive ? 1.15f : 0.75f);
             tracking.translationClampMeters = new Vec3Data(
-                responsive ? 0.25f : 0.14f,
-                responsive ? 0.20f : 0.12f,
-                responsive ? 0.30f : 0.16f);
+                responsive ? 0.60f : 0.30f,
+                responsive ? 0.40f : 0.20f,
+                responsive ? 0.70f : 0.35f);
             tracking.rotationClampDegrees = new Vec3Data(
                 responsive ? 55f : 30f,
                 responsive ? 70f : 40f,

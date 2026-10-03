@@ -28,12 +28,25 @@ namespace AlpineTuning
         private bool _propLoading;
         private int _propRevision;
         private GameObject _propInstance;
+        private Quaternion _propPrefabRotation = Quaternion.identity;
+        private Vector3 _propPrefabScale = Vector3.one;
         private string _installedPropKey;
         private string _installedPropSettingsSignature;
         private Rigidbody _propBody;
         private float _propBodyMass;
         private Vector3 _propBodyCenterOfMass;
         private readonly List<RendererState> _sourceRenderers = new List<RendererState>();
+        private readonly List<PropMotionBinding> _propMotionBindings = new List<PropMotionBinding>();
+
+        private sealed class PropMotionBinding
+        {
+            public Transform part;
+            public Transform parent;
+            public Transform anchor;
+            public Vector3 position;
+            public Quaternion rotation;
+            public Vector3 scale;
+        }
 
         internal sealed class PropCandidate
         {
@@ -143,8 +156,12 @@ namespace AlpineTuning
             if (_propInstance != null && string.Equals(_installedPropKey, settings.experimentalPropAssetKey, StringComparison.OrdinalIgnoreCase))
             {
                 if (string.Equals(_installedPropSettingsSignature, requestedSignature, StringComparison.Ordinal))
+                {
+                    foreach (RendererState state in _sourceRenderers) AlpineVisualAnchors.Hide(state.renderer, this);
                     return;
-                RestorePropProjection();
+                }
+                ApplyPropSettings(settings);
+                return;
             }
             if (_propLoading) return;
 
@@ -159,7 +176,9 @@ namespace AlpineTuning
             try
             {
                 _propLoading = true;
-                AsyncOperationHandle<GameObject> handle = candidate.asset.asset.LoadAssetAsync<GameObject>();
+                // Own a fresh operation by key. AssetReference.LoadAssetAsync caches
+                // its operation and cannot be reused after releasing that handle.
+                AsyncOperationHandle<GameObject> handle = Addressables.LoadAssetAsync<GameObject>(candidate.asset.asset.RuntimeKey);
                 if (!handle.IsValid())
                     throw new InvalidOperationException("invalid prop addressable handle");
                 _propHandle = handle;
@@ -178,7 +197,7 @@ namespace AlpineTuning
                         RestorePropProjection();
                         return;
                     }
-                InstallProp(operation.Result, requestedKey, candidate.isSledProp);
+                    InstallProp(operation.Result, requestedKey, candidate.isSledProp);
                 };
             }
             catch (Exception ex)
@@ -216,41 +235,52 @@ namespace AlpineTuning
                 if (_propBody == null) throw new InvalidOperationException("missing source rigidbody");
                 _propBodyMass = _propBody.mass;
                 _propBodyCenterOfMass = _propBody.centerOfMass;
-                _propInstance = UnityEngine.Object.Instantiate(prefab, _propBody.transform);
-                _propInstance.name = "Alpine Prop Vehicle - " + prefab.name;
-                AlpineUserSettings settings = _mod.Settings;
-                _propInstance.transform.localPosition = settings.experimentalPropPosition.ToVector3();
-                _propInstance.transform.localRotation = Quaternion.Euler(settings.experimentalPropRotation.ToVector3());
-                _propInstance.transform.localScale = settings.experimentalPropScale.ToVector3();
-
-                foreach (Rigidbody rigidbody in _propInstance.GetComponentsInChildren<Rigidbody>(true))
-                    if (rigidbody != _propBody) UnityEngine.Object.Destroy(rigidbody);
-                foreach (Joint joint in _propInstance.GetComponentsInChildren<Joint>(true)) UnityEngine.Object.Destroy(joint);
-                // The native sled remains the sole collision and drivetrain graph.
-                // Removing prop colliders makes map vehicles and scenery safe visual
-                // bodies rather than attaching unknown compound physics to the sled.
-                foreach (Collider collider in _propInstance.GetComponentsInChildren<Collider>(true)) UnityEngine.Object.Destroy(collider);
-                foreach (MonoBehaviour behaviour in _propInstance.GetComponentsInChildren<MonoBehaviour>(true)) UnityEngine.Object.Destroy(behaviour);
-
                 SnowmobileStructure sourceStructure = _controller.GetComponentInChildren<SnowmobileStructure>(true);
                 if (sourceStructure == null)
                     throw new InvalidOperationException("missing source sled structure");
-                HashSet<string> boundMotionGroups = isSledProp
-                    ? BindSledPropMotionGroups(_propInstance, sourceStructure)
-                    : new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-                foreach (Renderer renderer in sourceStructure.GetComponentsInChildren<Renderer>(true))
+                // Snapshot before donor parts are parented under native anchors.
+                Renderer[] nativeRenderers = sourceStructure.GetComponentsInChildren<Renderer>(true)
+                    .Where(renderer => !AlpineVisualAnchors.Projected(renderer)).ToArray();
+                GameObject staging = new GameObject("Alpine prop staging");
+                staging.SetActive(false);
+                try { _propInstance = UnityEngine.Object.Instantiate(prefab, staging.transform); }
+                finally { UnityEngine.Object.Destroy(staging); }
+                _propInstance.SetActive(false);
+                AlpineVisualAnchors.Own(_propInstance.transform);
+                _propInstance.transform.SetParent(_propBody.transform, false);
+                _propInstance.name = "Alpine Prop Vehicle - " + prefab.name;
+                _propPrefabRotation = _propInstance.transform.localRotation;
+                _propPrefabScale = _propInstance.transform.localScale;
+                AlpineUserSettings settings = _mod.Settings;
+                _propInstance.transform.localPosition = settings.experimentalPropPosition.ToVector3();
+                _propInstance.transform.localRotation = Quaternion.Euler(settings.experimentalPropRotation.ToVector3()) * _propPrefabRotation;
+                _propInstance.transform.localScale = Vector3.Scale(_propPrefabScale, settings.experimentalPropScale.ToVector3());
+
+                foreach (Joint joint in _propInstance.GetComponentsInChildren<Joint>(true)) UnityEngine.Object.DestroyImmediate(joint);
+                foreach (Rigidbody rigidbody in _propInstance.GetComponentsInChildren<Rigidbody>(true))
+                    UnityEngine.Object.DestroyImmediate(rigidbody);
+                // The native sled remains the sole collision and drivetrain graph.
+                // Removing prop colliders makes map vehicles and scenery safe visual
+                // bodies rather than attaching unknown compound physics to the sled.
+                foreach (Collider collider in _propInstance.GetComponentsInChildren<Collider>(true)) UnityEngine.Object.DestroyImmediate(collider);
+                foreach (MonoBehaviour behaviour in _propInstance.GetComponentsInChildren<MonoBehaviour>(true)) UnityEngine.Object.DestroyImmediate(behaviour);
+                foreach (Animator animator in _propInstance.GetComponentsInChildren<Animator>(true)) UnityEngine.Object.DestroyImmediate(animator);
+                foreach (LODGroup group in _propInstance.GetComponentsInChildren<LODGroup>(true)) UnityEngine.Object.DestroyImmediate(group);
+
+                HashSet<Renderer> coveredMotion = isSledProp
+                    ? BindSledPropMotionGroups(_propInstance, sourceStructure, nativeRenderers)
+                    : new HashSet<Renderer>();
+                foreach (Renderer renderer in nativeRenderers)
                 {
                     if (renderer == null || renderer.transform.IsChildOf(_propInstance.transform)) continue;
-                    if (isSledProp && IsSourceMotionRenderer(renderer, out string group) &&
-                        !boundMotionGroups.Contains(group))
+                    if (isSledProp && AlpineVisualAnchors.Moving(renderer, sourceStructure) && !coveredMotion.Contains(renderer))
                         continue;
                     _sourceRenderers.Add(new RendererState { renderer = renderer, enabled = renderer.enabled });
-                    renderer.enabled = false;
+                    AlpineVisualAnchors.Hide(renderer, this);
                 }
-                _propBody.mass = Mathf.Clamp(settings.experimentalPropMassKg, 50f, 1000f);
-                _propBody.centerOfMass = settings.experimentalPropCenterOfMass.ToVector3();
                 _installedPropKey = key;
-                _installedPropSettingsSignature = PropSettingsSignature(settings);
+                ApplyPropSettings(settings);
+                _propInstance.SetActive(true);
             }
             catch (Exception ex)
             {
@@ -284,63 +314,70 @@ namespace AlpineTuning
                    name.Contains("mxz");
         }
 
-        private static HashSet<string> BindSledPropMotionGroups(GameObject prop, SnowmobileStructure source)
+        private HashSet<Renderer> BindSledPropMotionGroups(GameObject prop, SnowmobileStructure source, Renderer[] nativeRenderers)
         {
-            var bound = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-            foreach (KeyValuePair<string, string[]> definition in MotionGroups())
+            var covered = new HashSet<Renderer>();
+            foreach (AlpineVisualAnchorRole role in Enum.GetValues(typeof(AlpineVisualAnchorRole)))
             {
-                Transform propGroup = FindNamedTransform(prop.transform, definition.Value);
-                Transform sourceAnchor = FindNamedTransform(source.transform, definition.Value);
-                if (propGroup == null || sourceAnchor == null || propGroup == prop.transform)
+                Transform propGroup = AlpineVisualAnchors.Prop(prop, role);
+                Transform sourceAnchor = AlpineVisualAnchors.Native(source, role);
+                if (propGroup == null || sourceAnchor == null || propGroup == prop.transform ||
+                    _propMotionBindings.Any(binding => AlpineVisualAnchors.Under(propGroup, binding.part) ||
+                        AlpineVisualAnchors.Under(binding.part, propGroup)))
                     continue;
-                propGroup.SetParent(sourceAnchor, true);
-                bound.Add(definition.Key);
-            }
-            return bound;
-        }
-
-        private static bool IsSourceMotionRenderer(Renderer renderer, out string group)
-        {
-            group = null;
-            string name = (renderer.name + " " + renderer.transform.name).ToLowerInvariant();
-            foreach (KeyValuePair<string, string[]> definition in MotionGroups())
-            {
-                if (definition.Value.Any(token => name.Contains(token)))
+                Renderer[] replacement = propGroup.GetComponentsInChildren<Renderer>(true);
+                if (replacement.Length == 0 || replacement.Any(renderer => !(renderer is MeshRenderer))) continue;
+                Renderer[] nativeParts = nativeRenderers.Where(renderer => AlpineVisualAnchors.Under(renderer.transform, sourceAnchor)).ToArray();
+                if (nativeParts.Length == 0) continue;
+                _propMotionBindings.Add(new PropMotionBinding
                 {
-                    group = definition.Key;
-                    return true;
-                }
+                    part = propGroup, parent = propGroup.parent, anchor = sourceAnchor,
+                    position = propGroup.localPosition, rotation = propGroup.localRotation,
+                    scale = propGroup.localScale
+                });
+                AlpineVisualAnchors.Own(propGroup);
+                propGroup.SetParent(sourceAnchor, true);
+                covered.UnionWith(nativeParts);
             }
-            return false;
-        }
-
-        private static Transform FindNamedTransform(Transform root, IEnumerable<string> tokens)
-        {
-            return root.GetComponentsInChildren<Transform>(true)
-                .FirstOrDefault(candidate => candidate != null && candidate != root &&
-                    tokens.Any(token => candidate.name.IndexOf(token, StringComparison.OrdinalIgnoreCase) >= 0));
-        }
-
-        private static IEnumerable<KeyValuePair<string, string[]>> MotionGroups()
-        {
-            yield return new KeyValuePair<string, string[]>("skis", new[] { "ski", "spindle" });
-            yield return new KeyValuePair<string, string[]>("handlebars", new[] { "handle", "bar" });
-            yield return new KeyValuePair<string, string[]>("track", new[] { "track", "trax" });
+            // Unknown/static track groups cannot reproduce native track motion.
+            // Keep native moving parts and suppress their unmapped prop meshes.
+            foreach (Renderer renderer in prop.GetComponentsInChildren<Renderer>(true))
+            {
+                if (AlpineVisualAnchors.Moving(renderer, source)) renderer.enabled = false;
+            }
+            return covered;
         }
 
         private void RestorePropProjection()
         {
             _propRevision++;
             foreach (RendererState state in _sourceRenderers)
-                if (state?.renderer != null) state.renderer.enabled = state.enabled;
+                AlpineVisualAnchors.Release(state.renderer, this);
             _sourceRenderers.Clear();
+            // Articulated parts live outside the prop root after binding.
+            // Destroy them explicitly before destroying the body or unloading assets.
+            foreach (PropMotionBinding binding in _propMotionBindings)
+                if (binding.part != null)
+                {
+                    AlpineVisualAnchors.Disown(binding.part);
+                    binding.part.gameObject.SetActive(false);
+                    UnityEngine.Object.Destroy(binding.part.gameObject);
+                }
+            _propMotionBindings.Clear();
             if (_propBody != null)
             {
                 _propBody.mass = _propBodyMass;
                 _propBody.centerOfMass = _propBodyCenterOfMass;
             }
-            if (_propInstance != null) UnityEngine.Object.Destroy(_propInstance);
+            if (_propInstance != null)
+            {
+                AlpineVisualAnchors.Disown(_propInstance.transform);
+                _propInstance.SetActive(false);
+                UnityEngine.Object.Destroy(_propInstance);
+            }
             _propInstance = null;
+            _propPrefabRotation = Quaternion.identity;
+            _propPrefabScale = Vector3.one;
             _propBody = null;
             _installedPropKey = null;
             _installedPropSettingsSignature = null;
@@ -350,6 +387,29 @@ namespace AlpineTuning
                 if (_propHandle.IsValid()) Addressables.Release(_propHandle);
                 _propHandleValid = false;
             }
+        }
+
+        private void ApplyPropSettings(AlpineUserSettings settings)
+        {
+            // Restore the authored hierarchy before fitting, so detached skis,
+            // handlebars and tracks receive the same absolute fit as the body.
+            foreach (PropMotionBinding binding in _propMotionBindings)
+            {
+                if (binding.part == null || binding.parent == null) continue;
+                binding.part.SetParent(binding.parent, false);
+                binding.part.localPosition = binding.position;
+                binding.part.localRotation = binding.rotation;
+                binding.part.localScale = binding.scale;
+            }
+            _propInstance.transform.localPosition = settings.experimentalPropPosition.ToVector3();
+            _propInstance.transform.localRotation = Quaternion.Euler(settings.experimentalPropRotation.ToVector3()) * _propPrefabRotation;
+            _propInstance.transform.localScale = Vector3.Scale(_propPrefabScale, settings.experimentalPropScale.ToVector3());
+            foreach (PropMotionBinding binding in _propMotionBindings)
+                if (binding.part != null && binding.anchor != null)
+                    binding.part.SetParent(binding.anchor, true);
+            _propBody.mass = Mathf.Clamp(settings.experimentalPropMassKg, 50f, 1000f);
+            _propBody.centerOfMass = settings.experimentalPropCenterOfMass.ToVector3();
+            _installedPropSettingsSignature = PropSettingsSignature(settings);
         }
 
         private static string PropSettingsSignature(AlpineUserSettings settings)

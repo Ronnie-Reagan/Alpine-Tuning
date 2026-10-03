@@ -2,7 +2,7 @@
 
 Alpine Tuning adds mechanical tuning and setup options to the Sledders garage while matching the style of the game's existing menus.
 
-Current public version: **2026.09.12**
+Current public version: **2026.10.02**
 Made for Sledders **1.1.6**
 
 ## Installation
@@ -121,24 +121,36 @@ Each experiment is opt-in and can be disabled independently:
 
 - **Track compatibility** exposes geometry-validated cross-platform rear assemblies and clearly labelled, front-anchored scaled fallbacks across the native 120–174 in track range.
 - **Hidden vehicles** appends validated native assets only when they are not locked or entitlement-controlled.
-- **World-prop bodies** retain the native drivetrain, rider, suspension, and collision while projecting safe trucks and scenery with adjustable fit, mass, and center of mass. Static sled props are intentionally excluded because their fixed skis and handlebars cannot safely follow a rideable sled.
+- **World-prop bodies** retain the native drivetrain, rider, suspension, and collision while projecting trucks, scenery, and experimental sled bodies with adjustable fit, mass, and center of mass. Separated rigid sled-prop skis and handlebars can follow native pivots; unmapped moving parts and the animated track remain native.
 - **Tracking Lean** adds calibrated tracking output to physical rider input without replacing the controller signal.
 
 These experiments are local visual/gameplay projections. Other connected players may see the underlying native sled and mounted rider state. The master runtime switch remounts the rider and restores all experimental projections.
 
 ## Sled Forge and Multiplayer Build Showcase
 
-**Sled Forge** is Alpine's donor-part workshop. Choose compatible donor cosmetic assemblies for the body shell, hood, seat, bumper, handlebars, skis, and running boards. Every donor projection keeps the source sled's rider, camera, collision, controls, and simulation graph. The Forge displays a compatibility score and always keeps native moving parts visible when a donor cannot provide a safe animated replacement.
+**Sled Forge** is Alpine's donor-part workshop. Choose donor cosmetic assemblies for the body shell, hood, seat, bumper, handlebars, skis, and running boards. Every donor projection keeps the source sled's rider, camera, collision, controls, and simulation graph. Donor pages expose the full available list. The displayed heuristic score ranks candidate sleds; it does not certify panel fit.
 
-World sled props are supported through the same hybrid articulated projection: separated prop skis, handlebars, and track groups follow the live native anchors; any missing group falls back to the source sled's moving assembly. Rear-track physics packages remain separately validated native grafts, and unsafe front/rear physics graphs are never installed.
+Each selected slot has saved position, rotation, and uniform-scale adjustments, **RESET FIT**, and a per-slot native restore control. Adjustments update the existing preview without reloading its donor. Body panels are aligned to the recipient assembly bounds and scaled to its footprint before saved adjustments are applied at the recipient mount. Running boards match width and length while retaining their thickness. Front and rear bumpers have separate mounts; skis and handlebars use their respective native pivot frames. Native paint lists are filtered because their names do not reliably describe physical assemblies.
+
+The preview reports loading, installed, retrying, or native-fallback status per slot. Failed asset loads retry up to three attempts; **RETRY FORGE PREVIEW** starts a fresh attempt. Failed installations roll back their objects and leave native parts visible. A rigid donor ski or handlebar is installed only when its corresponding pivots and meshes can be mapped; unsupported sides or assemblies remain native. Forge selects one donor level of detail and suppresses every identified native level of detail. A slot combined into another native mesh, or an unsupported skinned assembly, stays native with a reason in the preview. Cross-family panel seams and pivot orientation still require in-game inspection and fit adjustment.
+
+World sled props use a hybrid articulated projection: unambiguous, separated rigid left/right skis and handlebars follow the corresponding native anchors. Unmapped prop moving meshes are suppressed and native moving parts remain visible. Static prop tracks cannot reproduce native track animation, so the track remains native. Rear-track physics packages remain separately validated native grafts, and unsafe front/rear physics graphs are never installed.
 
 ### Multiplayer
 
-Compatible Alpine Tuning clients automatically discover one another through Sledders' internal relay when available, with Steam P2P as a fallback. The **Build Showcase** lists active compatible builds in the garage, lets you request or import a shared setup, and can display compact nearby-rider build tags. Build sharing, visual receiving, and tags are configurable from the Showcase.
+Alpine watches the native multiplayer start/stop lifecycle, detects joins and reconnects, represents the native host ID zero explicitly, and clears departed riders and their projections. Compatible Alpine Tuning clients automatically discover one another through Sledders' internal relay when available, with Steam P2P as a fallback using verified platform IDs from the native player records. Steam packets are accepted only from players in the current session and are mapped back to their native sled identities. The **Build Showcase** lists active compatible builds in the garage, lets you request or import a shared setup, and can display compact nearby-rider build tags. Build sharing, visual receiving, and tags are configurable from the Showcase.
 
-Both riders should use the corrected networking build. Internal tune data is sent only after the receiving game server acknowledges Alpine support. Owning a lobby does not guarantee that its server runs Alpine; unsupported servers leave internal sharing waiting, with Steam P2P available when peer Steam IDs can be resolved. This prevents tune broadcasts from being mistaken for race commands.
+Both riders must use this networking build (build protocol 2). The Showcase updates as riders join and build details arrive, and imports active-build payloads into Setups. Internal tune data is sent only after the receiving game server acknowledges Alpine support. Owning a lobby does not guarantee that its server runs Alpine; unsupported servers leave internal sharing waiting, with Steam P2P available when peer Steam IDs can be resolved. This prevents tune broadcasts from being mistaken for race commands.
 
-Networked projection is presentation-only. It synchronizes supported donor visuals, prop configuration, lights, audio, and build metadata between compatible Alpine clients; it never changes remote physics, ownership, or the game server's authority. A version, protocol, catalog, or game-build mismatch safely retains the native sled appearance.
+Networked projection is presentation-only. It synchronizes supported donor visuals, lights, audio, and build metadata between compatible Alpine clients; it never changes remote physics, ownership, or the game server's authority. Prop configuration is currently metadata only and is not projected onto remote riders. Both clients need the updated build to exchange saved Forge fits. A version, protocol, catalog, game-build, or profile-checksum mismatch retains the native sled appearance.
+
+### Alpine Garage service
+
+Open **Settings > Garage Connection** and choose **CONNECT / RETRY** to connect to [Alpine Garage](https://garage.donreagan.ca). The production address is configured by default. Old localhost defaults migrate to production and require pairing again. New installations start disconnected. Choose **COPY PAIRING CODE**, then enter it under **Connect Alpine** in the Alpine Garage Discord Activity. The panel shows connection status and lets you disconnect. Pairing expiry or a rejected installation stops the connection until you reconnect.
+
+The client syncs saved-setup inventory and processes publish/import actions while connected. Pending acknowledgements are persisted with their original payload and retried after outages or restarts. The Garage service handles repeated completions once, so acknowledgements do not duplicate published builds or inflate import counts. Disconnect pauses networking and retains local setups and the linked installation for reconnecting. Changing the service address clears the previous credentials. Connection records are saved atomically with a recovery backup under MelonLoader UserData at `AlpineTuning/Garage/connection.json`; backup recovery requires reconnecting. Import retries keep the existing setup, including rider edits, and do not resurrect a removed setup while its recovery archive exists.
+
+Publish selected setups from the Discord Activity, choosing private, unlisted, or public visibility. Imports add a saved setup to your local library; load it from **Setups** when you want to ride it. Garage v1 exports mechanical setups and excludes Forge selections, fit adjustments, and prop configuration. Multiplayer sharing between updated Alpine clients preserves Forge fit data.
 
 ## Saved Setups
 

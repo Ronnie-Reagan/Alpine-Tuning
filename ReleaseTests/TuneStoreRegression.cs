@@ -24,6 +24,103 @@ namespace AlpineTuning.ReleaseTests
             TestDefaultsAndSettingsBackupRecovery(Path.Combine(testRoot, "store-backups"));
             TestHeadlightBindingMigrationMatrix();
             TestSetupBaselineAndDetectedTrackPersistence(Path.Combine(testRoot, "baseline-track"));
+            TestForgeFitPersistence(Path.Combine(testRoot, "forge-fit"));
+            TestGarageImportReplays(Path.Combine(testRoot, "garage-imports"));
+        }
+
+        private static void TestGarageImportReplays(string root)
+        {
+            using (TuneStore.UseTestStorageRoot(root))
+            {
+                var catalog = new PartCatalog();
+                var store = new TuneStore(catalog);
+                store.Initialize();
+                var remote = new TuneProfile { profileId = "remote-build", name = "Garage import",
+                    targetSledKey = "synthetic-sled", targetVehicleId = "1001" };
+                catalog.EnsureProfileSelections(remote);
+                TuneProfile imported = store.ImportGarageProfile(remote, "installation-A/action-1");
+                Program.Require(imported != null && imported.profileId.Length <= AlpineConstants.MaxProfileIdLength,
+                    "garage-import-saved");
+                string importedId = imported.profileId;
+                Program.Require(imported.sourceProfileId == remote.profileId, "garage-import-source-retained");
+                imported.name = "Rider's edited setup";
+                Program.Require(store.SaveProfile(imported, false), "garage-import-rider-edit");
+                // No connection receipt is written: simulate a crash immediately
+                // after the profile write, then replay the same server action.
+                store = new TuneStore(catalog);
+                store.Initialize();
+                TuneProfile replay = store.ImportGarageProfile(remote, "installation-A/action-1");
+                Program.Require(replay != null && replay.profileId == importedId && replay.name == imported.name &&
+                    store.Profiles.Count == 1, "garage-import-restart-no-duplicate-or-overwrite");
+                for (int i = 2; i <= 103; i++)
+                    Program.Require(store.ImportGarageProfile(remote, "installation-A/action-" + i) != null,
+                        "garage-import-long-history");
+                Program.Require(store.ImportGarageProfile(remote, "installation-A/action-1").profileId == importedId &&
+                    store.Profiles.Count == 103, "garage-import-beyond-100-receipts");
+                Program.Require(store.ImportGarageProfile(remote, "installation-B/action-1").profileId != importedId,
+                    "garage-import-installation-scope");
+                Program.Require(store.DeleteProfile(importedId), "garage-import-delete");
+                store = new TuneStore(catalog);
+                store.Initialize();
+                replay = store.ImportGarageProfile(remote, "installation-A/action-1");
+                Program.Require(replay != null && replay.profileId == importedId && store.GetProfile(importedId) == null,
+                    "garage-import-deleted-replay-not-resurrected");
+                var invalid = TuneStore.Clone(remote);
+                invalid.fineTune.powerTrimPercent = float.NaN;
+                Program.Require(store.ImportGarageProfile(invalid, "invalid-action") == null,
+                    "garage-import-invalid-not-acknowledged");
+                Program.Require(store.ImportGarageProfile(remote, "invalid-action") != null,
+                    "garage-import-failed-save-retry");
+                string profilesDirectory = Path.Combine(root, "Profiles");
+                using (var blocked = new FileStream(Path.Combine(profilesDirectory, importedId + ".json"), FileMode.Create,
+                    FileAccess.ReadWrite, FileShare.None))
+                    Program.Require(store.ImportGarageProfile(remote, "installation-A/action-1").profileId == importedId,
+                        "garage-import-archive-receipt-precedes-live-path");
+            }
+        }
+
+        private static void TestForgeFitPersistence(string root)
+        {
+            using (TuneStore.UseTestStorageRoot(root))
+            {
+                var catalog = new PartCatalog();
+                var store = new TuneStore(catalog);
+                store.Initialize();
+                var profile = new TuneProfile
+                {
+                    profileId = "fixture-forge-fit", name = "Donor fit", usesAutomaticName = false,
+                    targetSledKey = "synthetic-sled", targetVehicleId = "1001"
+                };
+                catalog.EnsureProfileSelections(profile);
+                profile.sledBuild.selections.Add(new SledForgePartSelection
+                {
+                    slot = SledForgeSlot.Hood, donorSledKey = "synthetic-donor",
+                    fit = new SledForgeFit
+                    {
+                        position = new Vec3Data(0.1f, -0.2f, 0.3f),
+                        rotation = new Vec3Data(10f, -20f, 30f), scale = 1.25f
+                    }
+                });
+                Program.Require(store.SaveProfile(profile, false), "forge-fit-profile-save");
+                var reopened = new TuneStore(catalog);
+                reopened.Initialize();
+                TuneProfile loaded = reopened.GetProfile(profile.profileId);
+                Program.Require(loaded != null && TuneStore.ChecksumMatches(loaded), "forge-fit-profile-load-checksum");
+                SledForgeFit fit = loaded.sledBuild.selections.Single().fit;
+                Program.Require(fit != null && fit.position.z == 0.3f && fit.rotation.y == -20f && fit.scale == 1.25f,
+                    "forge-fit-profile-roundtrip");
+                TuneProfile copy = TuneStore.Clone(loaded);
+                copy.sledBuild.selections[0].fit.position.x = 0.9f;
+                Program.Require(fit.position.x == 0.1f, "forge-fit-clone-independent");
+                loaded.sledBuild.selections[0].fit = null;
+                string legacyShape = JsonConvert.SerializeObject(loaded);
+                Program.Require(!legacyShape.Contains("\"fit\""), "forge-legacy-null-fit-omitted");
+                Program.Require(store.SaveProfile(loaded, false), "forge-reset-fit-save");
+                reopened = new TuneStore(catalog);
+                reopened.Initialize();
+                Program.Require(reopened.GetProfile(profile.profileId).sledBuild.selections[0].fit == null,
+                    "forge-reset-fit-roundtrip");
+            }
         }
 
         private static void TestRoundTripAndSafety(string repoRoot, string root)
@@ -785,6 +882,13 @@ namespace AlpineTuning.ReleaseTests
                 catalog.EnsureProfileSelections(profile);
                 profile.SetPartId(PartCatalog.Track, dynamicTrackId);
                 Program.Require(store.SaveProfile(profile, false), "tune-baseline-track-save");
+                Program.Require(store.SetActiveProfile("fixture_sled", "1001", profile.profileId), "baseline-active-set");
+                Program.Require(store.UsesSleddersDefault("fixture_sled", "1001"), "baseline-runtime-active");
+                Program.Require(!store.UsesSleddersDefault("other_sled", "9999"), "baseline-runtime-identity");
+                profile.baseline = AlpineSetupBaseline.RealisticStock;
+                Program.Require(store.SetCurrentSetup(profile, "fixture_sled", "1001", "Fixture", null, null, true, false),
+                    "baseline-current-set");
+                Program.Require(!store.UsesSleddersDefault("fixture_sled", "1001"), "baseline-current-overrides-active");
             }
 
             using (TuneStore.UseTestStorageRoot(root))

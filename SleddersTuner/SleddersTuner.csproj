@@ -98,6 +98,10 @@
       <HintPath>$(SleddersDir)\Sledders_Data\Managed\UnityEngine.CoreModule.dll</HintPath>
       <Private>False</Private>
     </Reference>
+    <Reference Include="UnityEngine.AudioModule">
+      <HintPath>$(SleddersDir)\Sledders_Data\Managed\UnityEngine.AudioModule.dll</HintPath>
+      <Private>False</Private>
+    </Reference>
     <Reference Include="UnityEngine.AnimationModule">
       <HintPath>$(SleddersDir)\Sledders_Data\Managed\UnityEngine.AnimationModule.dll</HintPath>
       <Private>False</Private>
@@ -134,11 +138,18 @@
   <ItemGroup>
     <Compile Include="AlpineSleddersTransport.cs" />
     <Compile Include="AlpineSledForgeSystem.cs" />
+    <Compile Include="AlpineVisualAnchors.cs" />
+    <Compile Include="AlpineForgeGeometry.cs" />
+    <Compile Include="AlpineMultiplayerSession.cs" />
     <Compile Include="AlpineControllerInput.cs" />
     <Compile Include="AlpineFuelSystem.cs" />
     <Compile Include="AlpineExperimentalSystems.cs" />
     <Compile Include="AlpineHeadTrackingSystem.cs" />
     <Compile Include="AlpineHeadlightDeleteProjection.cs" />
+    <Compile Include="AlpineGarageBuildCodec.cs" />
+    <Compile Include="AlpineGarageClient.cs" />
+    <Compile Include="AlpineGarageConnectionStorage.cs" />
+    <Compile Include="AlpineGarageModels.cs" />
     <Compile Include="AlpineNitrousSystem.cs" />
     <Compile Include="AlpineTrackGraft.cs" />
     <Compile Include="AlpineTuneMath.cs" />

@@ -94,6 +94,16 @@ namespace AlpineTuning
             BindingStatus = "shut down";
         }
 
+        internal void ResetSession()
+        {
+            ResetCapabilities();
+            Unregister(_clientInterface, _unregisterClientMethod, ref _clientRegistered, "client");
+            Unregister(_serverReceiveInterface, _unregisterServerMethod, ref _serverReceiveRegistered, "server");
+            _clientInterface = _clientSender = _serverInterface = _serverReceiveInterface = null;
+            _clientSendReady = _serverRegistered = false;
+            BindingStatus = "waiting for multiplayer session";
+        }
+
         public bool Send(AlpineShareMessage message, ulong targetClientId, bool broadcast)
         {
             if (_shutDown)
@@ -571,10 +581,10 @@ namespace AlpineTuning
                 if (writer.HasFailedWrites || writer.Length != 1)
                     return false;
                 if (send != null)
-                    send.Invoke(endpoint, new object[] { target, _deliveryReliableFragmented, writer });
+                    send.Invoke(endpoint, new object[] { AlpineMultiplayerSession.NativeId(target), _deliveryReliableFragmented, writer });
                 else
                     _serverSendListMethod.Invoke(endpoint,
-                        new object[] { new List<ulong> { target }, _deliveryReliableFragmented, writer });
+                        new object[] { new List<ulong> { AlpineMultiplayerSession.NativeId(target) }, _deliveryReliableFragmented, writer });
                 LastSendStatus = "sent safe receiver capability probe (1 byte)";
                 return true;
             }
@@ -648,7 +658,7 @@ namespace AlpineTuning
                 return;
 
             AlpineShareMessage message = null;
-            ulong logicalSender = transportSenderId;
+            ulong logicalSender = AlpineMultiplayerSession.PeerId(transportSenderId);
             try
             {
                 message = JsonConvert.DeserializeObject<AlpineShareMessage>(json);
@@ -690,11 +700,11 @@ namespace AlpineTuning
 
             var targets = ResolveServerTargets(message.targetSleddersClientId, message.targetSleddersClientId == 0);
             if (logicalSender != 0)
-                targets.Remove(logicalSender);
+                targets.Remove(AlpineMultiplayerSession.NativeId(logicalSender));
 
             ulong local = SleddersGameBindings.GetLocalSleddersClientId();
             if (local != 0)
-                targets.Remove(local);
+                targets.Remove(AlpineMultiplayerSession.NativeId(local));
 
             if (targets.Count == 0)
                 return;
@@ -708,20 +718,20 @@ namespace AlpineTuning
 
             if (!broadcast && targetClientId != 0)
             {
-                targets.Add(targetClientId);
+                targets.Add(AlpineMultiplayerSession.NativeId(targetClientId));
             }
             else
             {
                 foreach (var peer in SleddersGameBindings.DiscoverPeers(0, false))
                 {
                     if (peer != null && peer.hasInternalClientId && peer.sleddersClientId != 0)
-                        targets.Add(peer.sleddersClientId);
+                        targets.Add(AlpineMultiplayerSession.NativeId(peer.sleddersClientId));
                 }
             }
 
             ulong local = SleddersGameBindings.GetLocalSleddersClientId();
             if (local != 0)
-                targets.Remove(local);
+                targets.Remove(AlpineMultiplayerSession.NativeId(local));
 
             return targets.Where(id => !requireCapability || _capableClients.Contains(id)).ToList();
         }
@@ -747,7 +757,7 @@ namespace AlpineTuning
                         {
                             _serverSendMethod.Invoke(
                                 _serverInterface,
-                                new object[] { target, _deliveryReliableFragmented, writer });
+                                new object[] { AlpineMultiplayerSession.NativeId(target), _deliveryReliableFragmented, writer });
                             packetCount++;
                         }
                     }

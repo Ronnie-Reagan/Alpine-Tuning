@@ -34,6 +34,7 @@ namespace AlpineTuning
 
         internal PartCatalog Catalog { get; private set; }
         internal TuneStore Store { get; private set; }
+        internal AlpineGarageClient GarageClient { get; private set; }
         internal AlpinePeerSharing Sharing { get; private set; }
         internal AlpineRemoteReplication RemoteReplication { get; private set; }
         internal AlpineFuelSystem FuelSystem { get; private set; }
@@ -262,6 +263,8 @@ namespace AlpineTuning
             Catalog = new PartCatalog();
             Store = new TuneStore(Catalog);
             Store.Initialize();
+            GarageClient = new AlpineGarageClient(this);
+            GarageClient.Initialize();
             FuelSystem = new AlpineFuelSystem(this);
             FuelSystem.Initialize();
             NitrousSystem = new AlpineNitrousSystem(this);
@@ -291,6 +294,8 @@ namespace AlpineTuning
             }
 
             AlpineNativeUi.UpdateGarageTuningShortcut();
+            GarageClient?.Update();
+            SledForge?.UpdateGaragePreview();
             // Binding capture belongs to the editor, not the live runtime. Keep
             // it responsive in menus, Sledders Default, and while the master
             // runtime switch is off without polling ordinary hotkeys there.
@@ -321,7 +326,6 @@ namespace AlpineTuning
             }
 
             _runtimeSuspended = false;
-            ExperimentalSystems?.Update();
             Sharing?.Update();
             FlushPendingCurrentSetups(false);
             HeadTracking?.Update();
@@ -333,6 +337,7 @@ namespace AlpineTuning
                     NitrousSystem?.SuspendRuntime();
                     ExperimentalSystems?.SuspendRuntime();
                     VisualParts?.RestoreTrackVisual();
+                    SledForge?.RestoreLocal();
                     _nativeSetupRuntimeSuspended = true;
                 }
                 _activeHeadlightOverride = null;
@@ -341,6 +346,8 @@ namespace AlpineTuning
             }
 
             _nativeSetupRuntimeSuspended = false;
+            ExperimentalSystems?.Update();
+            SledForge?.UpdateRuntimeProjections();
             if (!processedBindingCapture)
                 UpdateHeadlightInputBinding();
             FuelSystem?.Update();
@@ -440,6 +447,7 @@ namespace AlpineTuning
             // Fresh LocalInit remains the authoritative live reinstallation point.
             AlpineNativeUi.DetachGarageSessions();
             VisualParts?.RestoreGaragePreview();
+            SledForge?.RestoreGaragePreview();
             ExperimentalSystems?.OnSceneChanged();
             HeadTracking?.Suspend();
             NitrousSystem?.SuspendRuntime();
@@ -468,6 +476,7 @@ namespace AlpineTuning
             try
             {
                 FlushPendingCurrentSetups(true);
+                GarageClient?.Shutdown();
                 Sharing?.Shutdown();
             }
             catch (Exception ex)
@@ -904,13 +913,14 @@ namespace AlpineTuning
             profile.sledBuild.sourceSledKey = GetSledKey(sled);
             profile.sledBuild.compatibilityFingerprint =
                 SleddersGameBindings.GetCompatibilityReport()?.assemblyLightHash;
-            if (!string.IsNullOrWhiteSpace(Settings?.experimentalPropAssetKey))
+            if (Settings?.experimentalPropVehicles == true && !string.IsNullOrWhiteSpace(Settings.experimentalPropAssetKey))
             {
                 profile.sledBuild.propAssetKey = Settings.experimentalPropAssetKey;
-                profile.sledBuild.propPosition = Settings.experimentalPropPosition;
-                profile.sledBuild.propRotation = Settings.experimentalPropRotation;
-                profile.sledBuild.propScale = Settings.experimentalPropScale;
+                profile.sledBuild.propPosition = Vec3Data.From(Settings.experimentalPropPosition.ToVector3());
+                profile.sledBuild.propRotation = Vec3Data.From(Settings.experimentalPropRotation.ToVector3());
+                profile.sledBuild.propScale = Vec3Data.From(Settings.experimentalPropScale.ToVector3());
             }
+            else profile.sledBuild.propAssetKey = null;
             profile.sledBuild.Normalize();
         }
 
@@ -1827,6 +1837,7 @@ namespace AlpineTuning
                 clone.requiresReload = computation.requiresReload;
                 if (Settings == null || !Settings.receivePeerSetups)
                 {
+                    SledForge?.ClearRemote(senderId);
                     status = "Remote setup received, but receiving peer setups is off.";
                     return false;
                 }
@@ -1860,11 +1871,115 @@ namespace AlpineTuning
                 {
                     SledForge?.ApplyRemote(senderId, remoteRoot, clone);
                 }
+                else SledForge?.ClearRemote(senderId);
                 return applied;
             }
             catch (Exception ex)
             {
                 status = $"Remote setup install failed: {ex.GetType().Name}";
+                MelonLogger.Warning(status);
+                return false;
+            }
+        }
+
+        internal bool TryExportGarageProfile(string profileId, out GarageBuildV1 build, out string status)
+        {
+            build = null;
+            status = null;
+            if (Store == null || Catalog == null)
+            {
+                status = "Alpine tuning store is unavailable.";
+                return false;
+            }
+
+            TuneProfile source = Store.GetProfile(profileId);
+            if (source == null)
+            {
+                status = "Saved setup was not found.";
+                return false;
+            }
+
+            try
+            {
+                TuneProfile clone = TuneStore.Clone(source);
+                VehicleScriptableObject target = FindSledByIdentity(clone.targetSledKey, clone.targetVehicleId);
+                if (target == null)
+                {
+                    status = "Saved setup target is not available in this Sledders install.";
+                    return false;
+                }
+
+                Catalog.EnsureProfileSelections(clone);
+                TuneComputation computation = ComputeProfile(clone, target);
+                if (computation == null || computation.stats == null)
+                {
+                    status = computation?.unavailableReason ?? "Saved setup could not be resolved.";
+                    return false;
+                }
+
+                clone.resolvedStats = computation.stats;
+                clone.requiresReload = computation.requiresReload;
+                return GarageBuildCodec.TryFromProfile(clone, out build, out status);
+            }
+            catch (Exception ex)
+            {
+                status = "Garage export failed: " + ex.GetType().Name;
+                MelonLogger.Warning(status);
+                return false;
+            }
+        }
+
+        internal bool TryImportGarageBuild(GarageBuildV1 build, out string status, string actionKey = null)
+        {
+            status = null;
+            TuneProfile profile;
+            if (!GarageBuildCodec.TryToProfile(build, out profile, out status))
+                return false;
+
+            if (Store == null || Catalog == null)
+            {
+                status = "Alpine tuning store is unavailable.";
+                return false;
+            }
+
+            try
+            {
+                if (!GarageBuildCodec.TryPrepareImport(profile, Catalog, out string validationReason))
+                {
+                    status = "Garage build rejected: " + validationReason + ".";
+                    return false;
+                }
+
+                VehicleScriptableObject target = FindSledByIdentity(profile.targetSledKey, profile.targetVehicleId);
+                if (target == null)
+                {
+                    status = "Garage build target is not compatible with this install.";
+                    return false;
+                }
+
+                TuneComputation computation = ComputeProfile(profile, target);
+                if (computation == null || computation.stats == null)
+                {
+                    status = computation?.unavailableReason ?? "Garage build engine is unavailable.";
+                    return false;
+                }
+
+                profile.resolvedStats = computation.stats;
+                profile.requiresReload = computation.requiresReload;
+                TuneProfile imported = actionKey == null ? Store.ImportSharedProfile(profile) : Store.ImportGarageProfile(profile, actionKey);
+                if (imported == null)
+                {
+                    status = "Garage build could not be saved.";
+                    return false;
+                }
+
+                status = "Garage build imported as " + imported.name + ".";
+                MelonLogger.Msg(status);
+                return true;
+            }
+            catch (Exception ex)
+            {
+                status = "Garage import failed: " + ex.GetType().Name;
                 MelonLogger.Warning(status);
                 return false;
             }
@@ -1969,6 +2084,7 @@ namespace AlpineTuning
             RegisterSelectableSled(sled, source);
             if (CacheGarageSelection(controller, sled, source))
                 AlpineNativeUi.NotifyGarageSelectionChanged(controller);
+            SledForge?.PreviewNativeGarage(controller, sled);
         }
 
         private bool CacheGarageSelection(
@@ -2600,10 +2716,7 @@ namespace AlpineTuning
         {
             if (Store == null || ActiveSO == null)
                 return false;
-            TuneProfile profile =
-                Store.GetCurrentSetupForSled(GetSledKey(ActiveSO), GetVehicleId(ActiveSO)) ??
-                Store.GetActiveProfileForSled(GetSledKey(ActiveSO), GetVehicleId(ActiveSO));
-            return profile != null && profile.baseline == AlpineSetupBaseline.SleddersDefault;
+            return Store.UsesSleddersDefault(GetSledKey(ActiveSO), GetVehicleId(ActiveSO));
         }
 
         private TuneComputation ComputeProfile(TuneProfile profile, VehicleScriptableObject sled)
@@ -3796,6 +3909,7 @@ namespace AlpineTuning
         internal void RestoreGarageTrackPreview()
         {
             VisualParts?.RestoreGaragePreview();
+            SledForge?.RestoreGaragePreview();
         }
 
         internal bool RequestGarageHeadlightDeletePreview(

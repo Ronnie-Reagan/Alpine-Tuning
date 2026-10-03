@@ -24,6 +24,10 @@ namespace AlpineTuning
         private readonly Dictionary<string, float> _pendingActiveRequestDeadlines = new Dictionary<string, float>();
         private readonly Dictionary<ulong, string> _lastRemoteApplyStatus = new Dictionary<ulong, string>();
         private readonly AlpineSleddersTransport _internalTransport;
+        private readonly AlpineMultiplayerSession _session = new AlpineMultiplayerSession();
+        private string _sessionPeers;
+        private bool _transportWasReady;
+        private float _nextPeerScan;
         private TuneProfile _activeProfile;
         private bool _initialized;
         private bool _loggedUnavailable;
@@ -50,6 +54,7 @@ namespace AlpineTuning
         public bool IsAvailable => !AlpineConstants.PeerSharingTemporarilyDisabled && _initialized && IsSteamValid();
         public string StatusMessage { get; private set; }
         public AlpinePeerTransportMode SelectedTransportMode => _selectedTransportMode;
+        internal string SessionStatus => _session.Status;
 
         public void Initialize()
         {
@@ -99,7 +104,35 @@ namespace AlpineTuning
             if (!_initialized)
                 return;
 
+            if (_session.Update())
+            {
+                ClearSessionPeers();
+                _internalTransport.ResetSession();
+                _sessionPeers = null;
+                _transportWasReady = false;
+                _nextHelloTime = _nextPeerScan = 0f;
+            }
+            if (!_session.IsActive)
+            {
+                _selectedTransportMode = AlpinePeerTransportMode.Disabled;
+                StatusMessage = _session.Status;
+                return;
+            }
+
             _internalTransport.Update();
+            bool ready = _internalTransport.CanSend;
+            if (ready && !_transportWasReady) _nextHelloTime = 0f;
+            _transportWasReady = ready;
+            if (UnityEngine.Time.unscaledTime >= _nextPeerScan)
+            {
+                _nextPeerScan = UnityEngine.Time.unscaledTime + 1f;
+                var peers = DiscoverPeers().ToArray();
+                var present = new HashSet<ulong>(peers.Select(peer => peer.sleddersClientId).Concat(peers.Where(peer => peer.hasSteamId).Select(peer => peer.steamId)));
+                foreach (ulong departed in _remotePeers.Keys.Where(id => !present.Contains(id)).ToArray())
+                    RemoveSessionPeer(departed);
+                string membership = string.Join(",", present.OrderBy(id => id));
+                if (_sessionPeers != membership) { _sessionPeers = membership; _nextHelloTime = 0f; }
+            }
             UpdateSelectedTransportMode();
 
             PollPackets();
@@ -120,6 +153,7 @@ namespace AlpineTuning
 
         public bool BroadcastHello()
         {
+            if (!_session.IsActive) { StatusMessage = _session.Status; return false; }
             if (AlpineConstants.PeerSharingTemporarilyDisabled)
             {
                 StatusMessage = AlpineConstants.PeerSharingPausedNotice;
@@ -424,6 +458,53 @@ namespace AlpineTuning
             return clone;
         }
 
+        internal TuneProfile GetActivePayload(ulong senderId, string profileId, string checksum, out string status)
+        {
+            status = null;
+            if (!_remoteActivePayloads.TryGetValue(ActivePayloadKey(senderId, profileId, checksum), out TuneProfile profile))
+            {
+                status = "Active build details are still loading.";
+                return null;
+            }
+            if (!TuneStore.TryValidateProfileForCatalog(profile, _mod.Catalog, true, true, out string reason))
+            {
+                status = "Active build rejected: " + reason;
+                return null;
+            }
+            TuneProfile clone = TuneStore.Clone(profile);
+            AttachSourceMetadata(clone, senderId, profileId);
+            return clone;
+        }
+
+        private void RemoveSessionPeer(ulong sender)
+        {
+            _mod.RemoteReplication?.ClearSender(sender);
+            _mod.SledForge?.ClearRemote(sender);
+            _remotePeers.Remove(sender);
+            _remoteActiveStates.Remove(sender);
+            _lastRemoteApplyStatus.Remove(sender);
+            string prefix = sender + "|";
+            foreach (string key in _remoteSummaries.Keys.Where(key => key.StartsWith(prefix, StringComparison.Ordinal)).ToArray()) _remoteSummaries.Remove(key);
+            foreach (string key in _remotePayloads.Keys.Where(key => key.StartsWith(prefix, StringComparison.Ordinal)).ToArray()) _remotePayloads.Remove(key);
+            foreach (string key in _remoteActivePayloads.Keys.Where(key => key.StartsWith(prefix, StringComparison.Ordinal)).ToArray()) _remoteActivePayloads.Remove(key);
+            foreach (string key in _pendingRequestDeadlines.Keys.Where(key => key.StartsWith(prefix, StringComparison.Ordinal)).ToArray()) _pendingRequestDeadlines.Remove(key);
+            foreach (string key in _pendingActiveRequestDeadlines.Keys.Where(key => key.StartsWith(prefix, StringComparison.Ordinal)).ToArray()) _pendingActiveRequestDeadlines.Remove(key);
+        }
+
+        private void ClearSessionPeers()
+        {
+            _mod.RemoteReplication?.Shutdown();
+            _mod.SledForge?.ClearAllRemote();
+            _remotePeers.Clear();
+            _remoteSummaries.Clear();
+            _remotePayloads.Clear();
+            _remoteActiveStates.Clear();
+            _remoteActivePayloads.Clear();
+            _pendingRequestDeadlines.Clear();
+            _pendingActiveRequestDeadlines.Clear();
+            _lastRemoteApplyStatus.Clear();
+        }
+
         private bool SendSummary(TuneProfile profile)
         {
             if (!_initialized || profile == null)
@@ -543,9 +624,13 @@ namespace AlpineTuning
                     return;
                 }
 
-                message.senderId = packetSender;
+                AlpineDiscoveredPeer peer = DiscoverPeers().FirstOrDefault(item => item.hasSteamId && item.steamId == packetSender);
+                if (!_session.IsActive || peer == null) return;
+                ulong canonicalSender = peer.hasInternalClientId ? peer.sleddersClientId : packetSender;
+                message.senderId = canonicalSender;
                 message.senderSteamId = packetSender;
-                ProcessShareMessage(message, packetSender, "steamP2P");
+                message.senderSleddersClientId = peer.sleddersClientId;
+                ProcessShareMessage(message, canonicalSender, "steamP2P");
             }
             catch (Exception ex)
             {
@@ -1055,6 +1140,7 @@ namespace AlpineTuning
 
         private bool SendToPeers(AlpineShareMessage message)
         {
+            if (!_session.IsActive) return false;
             PrepareBuildMessage(message);
             var peers = DiscoverPeers().ToArray();
             bool hasInternalPeers = peers.Any(p => p != null && p.hasInternalClientId);
@@ -1097,6 +1183,7 @@ namespace AlpineTuning
 
         private bool SendToPeer(ulong peerId, AlpineShareMessage message)
         {
+            if (!_session.IsActive) return false;
             PrepareBuildMessage(message);
             ulong localSteamId = LocalSteamId();
             ulong localSleddersId = SleddersGameBindings.GetLocalSleddersClientId();
@@ -1121,6 +1208,10 @@ namespace AlpineTuning
 
             if (_internalTransport.CanSend && !LooksLikeSteam64(peerId))
                 return _internalTransport.Send(message, peerId, false);
+
+            AlpineDiscoveredPeer destination = DiscoverPeers().FirstOrDefault(peer => peer.hasInternalClientId && peer.sleddersClientId == peerId);
+            if (destination != null && destination.hasSteamId)
+                return SendToSteamPeer(destination.steamId, message);
 
             if (LooksLikeSteam64(peerId))
                 return SendToSteamPeer(peerId, message);
@@ -1245,6 +1336,7 @@ namespace AlpineTuning
             try
             {
                 _mod.RemoteReplication?.Shutdown();
+                _mod.SledForge?.ClearAllRemote();
             }
             catch (Exception ex)
             {
@@ -1256,6 +1348,7 @@ namespace AlpineTuning
                 if (_initialized)
                     SteamNetworking.OnP2PSessionRequest -= OnP2PSessionRequest;
                 _internalTransport.Shutdown();
+                _session.Detach();
             }
             catch (Exception ex)
             {
@@ -1630,6 +1723,7 @@ namespace AlpineTuning
 
         private void OnP2PSessionRequest(SteamId steamId)
         {
+            if (!_session.IsActive || !DiscoverPeers().Any(peer => peer.hasSteamId && peer.steamId == steamId.Value)) return;
             try
             {
                 SteamNetworking.AcceptP2PSessionWithUser(steamId);

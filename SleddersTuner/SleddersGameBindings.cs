@@ -1,5 +1,6 @@
 using MelonLoader;
 using System;
+using System.Collections;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -1738,13 +1739,13 @@ namespace AlpineTuning
                 return 0;
 
             if (TryGetPropertyValue(controller, "LIMNFNLEGDJ", out ulong direct))
-                return direct;
+                return AlpineMultiplayerSession.PeerId(direct);
 
             if (TryGetPropertyValue(controller, "LIMNFNLEGDJ", out object boxed) && boxed is ulong boxedId)
-                return boxedId;
+                return AlpineMultiplayerSession.PeerId(boxedId);
 
             if (TryGetFieldValue(controller, "LIMNFNLEGDJ", out ulong fieldId))
-                return fieldId;
+                return AlpineMultiplayerSession.PeerId(fieldId);
 
             return 0;
         }
@@ -1755,13 +1756,13 @@ namespace AlpineTuning
                 return 0;
 
             if (TryGetPropertyValue(remote, "LIMNFNLEGDJ", out ulong direct))
-                return direct;
+                return AlpineMultiplayerSession.PeerId(direct);
 
             if (TryGetPropertyValue(remote, "LIMNFNLEGDJ", out object boxed) && boxed is ulong boxedId)
-                return boxedId;
+                return AlpineMultiplayerSession.PeerId(boxedId);
 
             if (TryGetFieldValue(remote, "LIMNFNLEGDJ", out ulong fieldId))
-                return fieldId;
+                return AlpineMultiplayerSession.PeerId(fieldId);
 
             return 0;
         }
@@ -1866,7 +1867,7 @@ namespace AlpineTuning
 
                     vehicle = _netClientGameplayGetVehicleMethod?.Invoke(
                         gameplay,
-                        new object[] { senderId }) as VehicleScriptableObject;
+                        new object[] { AlpineMultiplayerSession.NativeId(senderId) }) as VehicleScriptableObject;
 
                     if (vehicle != null)
                         return true;
@@ -2201,14 +2202,15 @@ namespace AlpineTuning
                     return peers.Values.ToArray();
 
                 ulong localSleddersId = GetLocalSleddersClientId(netClient);
+                var playerRecords = GetFieldValue<IDictionary>(netClient, "players");
 
                 foreach (ulong id in result)
                 {
-                    if (id == 0 || (localSleddersId != 0 && id == localSleddersId) || (localSleddersId == 0 && id == localSteamId))
+                    if (AlpineMultiplayerSession.PeerId(id) == localSleddersId)
                         continue;
 
                     bool steam64 = LooksLikeSteam64(id);
-                    ulong key = steam64 ? id : id + 0x1000000000000000UL;
+                    ulong key = AlpineMultiplayerSession.PeerId(id);
                     if (!peers.TryGetValue(key, out var peer) || peer == null)
                     {
                         peer = new AlpineDiscoveredPeer
@@ -2224,10 +2226,16 @@ namespace AlpineTuning
                         peer.steamId = id;
                         peer.hasSteamId = true;
                     }
-                    else
+                    peer.sleddersClientId = key;
+                    peer.hasInternalClientId = true;
+                    // These are the game's explicit platform/user identity fields,
+                    // replicated in its player-connect message. Do not guess a
+                    // Steam ID from nicknames or arbitrary ulong fields.
+                    if (playerRecords != null && playerRecords.Contains(id) &&
+                        TryGetPlayerSteamId(playerRecords[id], out ulong steamId))
                     {
-                        peer.sleddersClientId = id;
-                        peer.hasInternalClientId = true;
+                        peer.steamId = steamId;
+                        peer.hasSteamId = true;
                     }
                 }
             }
@@ -2236,6 +2244,16 @@ namespace AlpineTuning
             }
 
             return peers.Values.ToArray();
+        }
+
+        internal static bool TryGetPlayerSteamId(object player, out ulong steamId)
+        {
+            steamId = 0;
+            object platform = GetFieldValue<object>(player, "OAFNDMNIPBM");
+            string identity = GetFieldValue<string>(player, "PFCCHGNNJEB");
+            return string.Equals(platform?.ToString(), "Steam", StringComparison.Ordinal) &&
+                ulong.TryParse(identity, System.Globalization.NumberStyles.None, System.Globalization.CultureInfo.InvariantCulture, out steamId) &&
+                LooksLikeSteam64(steamId);
         }
 
         public static ulong GetLocalSleddersClientId()
@@ -2255,6 +2273,7 @@ namespace AlpineTuning
         {
             if (clientId == 0)
                 return null;
+            clientId = AlpineMultiplayerSession.NativeId(clientId);
 
             try
             {
@@ -2495,10 +2514,10 @@ namespace AlpineTuning
 
                 object value = _netClientLocalClientIdProp?.GetValue(netClient);
                 if (value is ulong direct)
-                    return direct;
+                    return AlpineMultiplayerSession.PeerId(direct);
 
                 if (value != null && ulong.TryParse(value.ToString(), out var parsed))
-                    return parsed;
+                    return AlpineMultiplayerSession.PeerId(parsed);
             }
             catch
             {

@@ -9,7 +9,7 @@ namespace AlpineTuning
     internal static class AlpineConstants
     {
         public const int SchemaVersion = 5;
-        public const string ModVersion = "2026.09.12";
+        public const string ModVersion = "2026.10.02";
         public const string CatalogVersion = "2026.09.backlog-v5";
         public const string DefaultProfileAuthor = "Alpine Rider";
         // Build sharing is capability-gated at runtime. A peer that cannot prove
@@ -25,7 +25,7 @@ namespace AlpineTuning
         public const int MaxProfileIdLength = 64;
         public const int MaxProfileNameLength = 96;
         public const int MaxSledIdentityLength = 128;
-        public const int BuildSyncProtocolVersion = 1;
+        public const int BuildSyncProtocolVersion = 2;
     }
 
     internal enum AlpineDisplayUnits
@@ -61,7 +61,7 @@ namespace AlpineTuning
         public Vec3Data rotationSensitivity = new Vec3Data(1f, 1f, 1f);
         public Vec3Data translationDeadzoneMeters = new Vec3Data(0.002f, 0.002f, 0.002f);
         public Vec3Data rotationDeadzoneDegrees = new Vec3Data(0.5f, 0.5f, 0.5f);
-        public Vec3Data translationClampMeters = new Vec3Data(0.20f, 0.20f, 0.20f);
+        public Vec3Data translationClampMeters = new Vec3Data(0.60f, 0.40f, 0.70f);
         public Vec3Data rotationClampDegrees = new Vec3Data(45f, 60f, 30f);
         public bool invertTranslationX;
         public bool invertTranslationY;
@@ -84,7 +84,7 @@ namespace AlpineTuning
             rotationSensitivity = NormalizeVector(rotationSensitivity, 1f, 0f, 3f);
             translationDeadzoneMeters = NormalizeVector(translationDeadzoneMeters, 0.002f, 0f, 0.05f);
             rotationDeadzoneDegrees = NormalizeVector(rotationDeadzoneDegrees, 0.5f, 0f, 15f);
-            translationClampMeters = NormalizeVector(translationClampMeters, 0.20f, 0.01f, 0.50f);
+            translationClampMeters = NormalizeVector(translationClampMeters, 0.60f, 0.01f, 1.50f);
             rotationClampDegrees = NormalizeVector(rotationClampDegrees, 30f, 1f, 90f);
             smoothingResponse = ClampFinite(smoothingResponse, 18f, 1f, 40f);
             motionCurve = ClampFinite(motionCurve, 1f, 0.5f, 3f);
@@ -162,6 +162,42 @@ namespace AlpineTuning
         public string donorDisplayName;
         public int compatibilityScore;
         public bool physicsValidated;
+        // Null preserves the serialized shape/checksum of pre-fit setup files.
+        [JsonProperty(NullValueHandling = NullValueHandling.Ignore)]
+        public SledForgeFit fit;
+    }
+
+    [Serializable]
+    internal sealed class SledForgeFit
+    {
+        public Vec3Data position = new Vec3Data();
+        public Vec3Data rotation = new Vec3Data();
+        public float scale = 1f;
+
+        public void Normalize()
+        {
+            position = Clamp(position, -2f, 2f);
+            rotation = Clamp(rotation, -180f, 180f);
+            scale = HeadTrackingSettings.ClampFinite(scale, 1f, 0.25f, 4f);
+        }
+
+        internal bool IsValid => Valid(position, -2f, 2f) && Valid(rotation, -180f, 180f) &&
+            !float.IsNaN(scale) && !float.IsInfinity(scale) && scale >= 0.25f && scale <= 4f;
+
+        private static Vec3Data Clamp(Vec3Data value, float min, float max)
+        {
+            value = value ?? new Vec3Data();
+            value.x = HeadTrackingSettings.ClampFinite(value.x, 0f, min, max);
+            value.y = HeadTrackingSettings.ClampFinite(value.y, 0f, min, max);
+            value.z = HeadTrackingSettings.ClampFinite(value.z, 0f, min, max);
+            return value;
+        }
+
+        private static bool Valid(Vec3Data value, float min, float max)
+        {
+            return value == null || new[] { value.x, value.y, value.z }.All(number =>
+                !float.IsNaN(number) && !float.IsInfinity(number) && number >= min && number <= max);
+        }
     }
 
     [Serializable]
@@ -188,12 +224,13 @@ namespace AlpineTuning
             propScale.z = Mathf.Clamp(propScale.z, 0.1f, 5f);
             if (selections == null) selections = new List<SledForgePartSelection>();
             selections = selections
-                .Where(selection => selection != null &&
+                .Where(selection => selection != null && Enum.IsDefined(typeof(SledForgeSlot), selection.slot) &&
                                     (!string.IsNullOrWhiteSpace(selection.donorSledKey) ||
                                      !string.IsNullOrWhiteSpace(selection.donorVehicleId)))
                 .GroupBy(selection => selection.slot)
                 .Select(group => group.First())
                 .ToList();
+            foreach (SledForgePartSelection selection in selections) selection.fit?.Normalize();
         }
     }
 

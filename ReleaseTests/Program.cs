@@ -52,8 +52,8 @@ namespace AlpineTuning.ReleaseTests
 
     internal static class Program
     {
-        private const string PublicVersion = "2026.09.12";
-        private const string AssemblyVersion = "2026.9.12.0";
+        private const string PublicVersion = "2026.10.02";
+        private const string AssemblyVersion = "2026.10.2.0";
         private const string CatalogVersion = "2026.09.backlog-v5";
         private const int ExpectedGarageIconCount = 182;
 
@@ -103,6 +103,9 @@ namespace AlpineTuning.ReleaseTests
             "SleddersTuner/AlpineRemoteReplication.cs",
             "SleddersTuner/AlpineSleddersTransport.cs",
             "SleddersTuner/AlpineSledForgeSystem.cs",
+            "SleddersTuner/AlpineVisualAnchors.cs",
+            "SleddersTuner/AlpineForgeGeometry.cs",
+            "SleddersTuner/AlpineMultiplayerSession.cs",
             "SleddersTuner/AlpineTuneMath.cs",
             "SleddersTuner/AlpineVisualPartSystem.cs",
             "SleddersTuner/VisualProjectionCoordinator.cs",
@@ -121,12 +124,19 @@ namespace AlpineTuning.ReleaseTests
             "ReleaseTests/ReleaseTests.csproj",
             "ReleaseTests/Program.cs",
             "ReleaseTests/TuneStoreRegression.cs",
+            "ReleaseTests/GarageCompatibility.cs",
+            "ReleaseTests/ForgeSessionRegression.cs",
+            "ReleaseTests/Fixtures/garage-wire.json",
             "ReleaseTests/Fixtures/numerical-cases.json",
             "ReleaseTests/Fixtures/tune-stock.json",
             "ReleaseTests/Fixtures/tune-modified.json",
             "ReleaseTests/Fixtures/tune-legacy.json",
             "scripts/Audit-SleddersAssembly.ps1",
-            "docs/native-feature-audit.generated.json"
+            "docs/native-feature-audit.generated.json",
+            "SleddersTuner/AlpineGarageBuildCodec.cs",
+            "SleddersTuner/AlpineGarageConnectionStorage.cs",
+            "SleddersTuner/AlpineGarageClient.cs",
+            "SleddersTuner/AlpineGarageModels.cs"
         };
 
         private static readonly HashSet<string> IntentionalPublicIdentifiers =
@@ -144,6 +154,8 @@ namespace AlpineTuning.ReleaseTests
         private static string _inventoryFile;
         private static string _scanRoot;
         private static string _tuneTestRoot;
+        private static string _garageBackendSource;
+        private static string _garageLiveUrl;
 
         private sealed class ReleaseTestException : Exception
         {
@@ -185,6 +197,15 @@ namespace AlpineTuning.ReleaseTests
 
             ConfigureAssemblyResolution();
 
+            if (_garageBackendSource != null || _garageLiveUrl != null)
+            {
+                if (_garageBackendSource != null)
+                    Run("Garage backend HTTP compatibility", () => GarageCompatibility.RunBackend(_garageBackendSource, _tuneTestRoot));
+                if (_garageLiveUrl != null)
+                    Run("Garage live HTTPS and pairing contract", () => GarageCompatibility.RunLive(_garageLiveUrl));
+                return _failed == 0 ? 0 : 1;
+            }
+
             Run("public inventory", TestPublicInventory);
             Run("version contracts", TestVersionContracts);
             Run("documentation contracts", TestDocumentationContracts);
@@ -199,6 +220,12 @@ namespace AlpineTuning.ReleaseTests
             Run("backlog v5 runtime contracts", TestBacklogV5RuntimeContracts);
             Run("native transport packet isolation", TestNativeTransportIsolation);
             Run("TuneStore fixtures and recovery", () => TuneStoreRegression.Run(_repoRoot, _tuneTestRoot));
+            Run("Garage build roundtrip and import validation", TestGarageBuildCodec);
+            Run("Garage JavaScript hash contract", () => GarageCompatibility.RunGolden(_repoRoot));
+            Run("Garage connection recovery and request lifecycle", TestGarageConnection);
+            Run("Forge fit, anchors and shared visibility", TestForgeFitAndOwnership);
+            Run("Forge recipient geometry and multiplayer lifecycle", ForgeSessionRegression.Run);
+            Run("Garage client pairing, action retry and restart", () => GarageCompatibility.RunClientLifecycle(_tuneTestRoot));
             Run("native assembly contracts", TestNativeAssemblyContracts);
             Run("release assembly metadata", TestReleaseAssemblyMetadata);
             Run("embedded garage resources", TestEmbeddedGarageResources);
@@ -209,11 +236,265 @@ namespace AlpineTuning.ReleaseTests
             return _failed == 0 ? 0 : 1;
         }
 
+        private static void TestGarageConnection()
+        {
+            string directory = Path.Combine(_tuneTestRoot, "garage-connection");
+            Directory.CreateDirectory(directory);
+            string path = Path.Combine(directory, "connection.json");
+            GarageConnectionRecord fresh = GarageConnectionStorage.Load(path, out _);
+            Require(fresh.enabled == false && fresh.apiBaseUrl == GarageConnectionRecord.ProductionApiBaseUrl,
+                "garage-fresh-production-disconnected");
+            string migrationPath = Path.Combine(directory, "legacy", "connection.json");
+            var legacy = new GarageConnectionRecord { apiBaseUrl = "http://127.0.0.1:3001/", enabled = true,
+                installationId = "local-installation", installationToken = "local-token", linkedUser = "Local rider",
+                processedImportActionIds = new List<string> { "local-action" } };
+            Require(GarageConnectionStorage.TrySave(migrationPath, legacy, out _), "garage-localhost-fixture");
+            GarageConnectionRecord migrated = GarageConnectionStorage.Load(migrationPath, out _);
+            Require(migrated.apiBaseUrl == GarageConnectionRecord.ProductionApiBaseUrl && migrated.enabled == false &&
+                migrated.installationToken == null && migrated.installationId == null && migrated.linkedUser == null &&
+                migrated.processedImportActionIds.Count == 0, "garage-localhost-migrates-without-forwarding-credentials");
+            foreach (string bad in new[] { "ftp://localhost", "http://example.invalid", "https://user:secret@example.invalid",
+                "https://example.invalid?token=secret", "https://example.invalid/#fragment", "relative/path" })
+                Require(!GarageConnectionStorage.TryNormalizeEndpoint(bad, out _, out _), "garage-endpoint-reject");
+            Require(GarageConnectionStorage.TryNormalizeEndpoint(" HTTP://LOCALHOST:3001/ ", out string endpoint, out _) &&
+                endpoint == "http://localhost:3001", "garage-loopback-development");
+            Require(GarageConnectionStorage.TryNormalizeEndpoint("https://EXAMPLE.invalid:443/", out endpoint, out _) &&
+                endpoint == "https://example.invalid", "garage-endpoint-canonical");
+            var record = new GarageConnectionRecord { apiBaseUrl = endpoint, installationId = "fixture-installation",
+                installationToken = "fixture-token", linkedUser = "Fixture rider" };
+            Require(GarageConnectionStorage.TrySave(path, record, out _), "garage-connection-create");
+            Require(GarageConnectionStorage.Load(path, out _).enabled == true, "garage-legacy-paired-resumes");
+            record.enabled = false;
+            Require(GarageConnectionStorage.TrySave(path, record, out _), "garage-connection-pause-save");
+            string saved = File.ReadAllText(path);
+            record.installationToken = "replacement-token";
+            using (var blocked = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.None))
+                Require(!GarageConnectionStorage.TrySave(path, record, out _), "garage-connection-failed-replace");
+            Require(File.ReadAllText(path) == saved && Directory.GetFiles(directory, "*.tmp").Length == 0,
+                "garage-connection-failed-save-preserves-primary");
+            File.WriteAllText(path, "{ damaged");
+            string backup = File.ReadAllText(path + ".bak");
+            GarageConnectionRecord recovered = GarageConnectionStorage.Load(path, out string recovery);
+            Require(recovered.installationToken == "fixture-token" && recovered.enabled == false && recovery != null,
+                "garage-connection-backup-paused");
+            Require(File.ReadAllText(path + ".bak") == backup &&
+                GarageConnectionStorage.Load(path, out _).installationToken == "fixture-token",
+                "garage-connection-repair-preserves-backup");
+            using (var stream = new MemoryStream(Encoding.UTF8.GetBytes("{\"ok\":true}")))
+                Require(GarageConnectionStorage.ReadResponse(stream) == "{\"ok\":true}", "garage-response-read");
+            bool oversizedRejected = false;
+            try
+            {
+                using (var stream = new MemoryStream(new byte[2 * 1024 * 1024 + 1]))
+                    GarageConnectionStorage.ReadResponse(stream);
+            }
+            catch (InvalidDataException) { oversizedRejected = true; }
+            Require(oversizedRejected, "garage-response-size-limit");
+
+            // Exercise the actual asynchronous dispatcher without Unity or a
+            // reachable backend. Delayed results cross reconnect/disconnect boundaries.
+            var client = new AlpineGarageClient(null, directory, () => 100f, message => { }, message => { });
+            client.Initialize();
+            int completed = 0;
+            client.RunRequest(url => { completed++; return new AlpineGarageClient.HttpResult(); }, result => completed++)
+                .Wait();
+            client.PumpCallbacks();
+            Require(completed == 0 && !client.IsEnabled, "garage-paused-no-requests");
+            Require(client.Connect(endpoint, out _), "garage-connect-saved-endpoint");
+            using (var entered = new System.Threading.ManualResetEventSlim())
+            using (var releaseOld = new System.Threading.ManualResetEventSlim())
+            using (var enteredNew = new System.Threading.ManualResetEventSlim())
+            using (var releaseNew = new System.Threading.ManualResetEventSlim())
+            {
+                string captured = null;
+                var old = client.RunRequest(url =>
+                {
+                    captured = url; entered.Set();
+                    if (!releaseOld.Wait(5000)) throw new TimeoutException();
+                    return new AlpineGarageClient.HttpResult { StatusCode = 200 };
+                }, result => completed++);
+                try
+                {
+                    Require(entered.Wait(5000), "garage-old-request-started");
+                    Require(client.Connect("https://other.invalid", out _), "garage-switch-endpoint");
+                    Require(GarageConnectionStorage.Load(path, out _).installationToken == null,
+                        "garage-endpoint-switch-clears-credentials");
+                    var current = client.RunRequest(url =>
+                    {
+                        enteredNew.Set();
+                        if (!releaseNew.Wait(5000)) throw new TimeoutException();
+                        return new AlpineGarageClient.HttpResult { StatusCode = 200 };
+                    }, result => completed++);
+                    Require(enteredNew.Wait(5000), "garage-new-request-started");
+                    releaseOld.Set();
+                    Require(old.Wait(5000), "garage-old-request-completed");
+                    client.PumpCallbacks();
+                    int unexpected = 0;
+                    client.RunRequest(url => { unexpected++; return new AlpineGarageClient.HttpResult(); }, result => unexpected++)
+                        .Wait();
+                    Require(completed == 0 && unexpected == 0 && captured == endpoint,
+                        "garage-stale-callback-cannot-clear-current-request");
+                    releaseNew.Set();
+                    Require(current.Wait(5000), "garage-current-request-completed");
+                    Require(client.Disconnect(out _), "garage-disconnect-persisted");
+                    client.PumpCallbacks();
+                    Require(completed == 0 && !client.IsEnabled, "garage-disconnect-ignores-queued-response");
+                }
+                finally { releaseOld.Set(); releaseNew.Set(); }
+            }
+            Require(client.Connect("https://other.invalid", out _), "garage-retry-connect");
+            var malformed = client.RunRequest(url => new AlpineGarageClient.HttpResult { StatusCode = 200 },
+                result => { throw new InvalidDataException(); });
+            Require(malformed.Wait(5000), "garage-malformed-completed");
+            client.PumpCallbacks();
+            Require(client.StatusText.Contains("response processing failed"), "garage-malformed-status");
+            var queued = client.RunRequest(url => new AlpineGarageClient.HttpResult { StatusCode = 200 }, result => completed++);
+            Require(queued.Wait(5000), "garage-shutdown-request-completed");
+            client.Shutdown();
+            client.PumpCallbacks();
+            Require(completed == 0 && !client.Connect(endpoint, out _), "garage-shutdown-rejects-late-response-and-connect");
+        }
+
+        private static void TestGarageBuildCodec()
+        {
+            var catalog = new PartCatalog();
+            var original = new TuneProfile
+            {
+                profileId = "garage-regression", name = "Garage Regression",
+                targetSledKey = "fixture-sled", targetVehicleId = "1001",
+                fineTune = new FineTuneSettings { powerTrimPercent = 7.5f },
+                headlightEnabled = false,
+                sledBuild = new SledBuildSpec
+                {
+                    selections = new List<SledForgePartSelection>
+                    {
+                        new SledForgePartSelection { slot = SledForgeSlot.Hood, donorSledKey = "fixture-donor" }
+                    }
+                }
+            };
+            catalog.EnsureProfileSelections(original);
+            Require(GarageBuildCodec.TryFromProfile(original, out GarageBuildV1 build, out string reason),
+                "garage-export:" + reason);
+            string hash = build.contentHash;
+            build.configuration.parts.Reverse();
+            Require(GarageBuildCodec.ComputeHash(build) == hash, "garage-hash-order");
+            Require(GarageBuildCodec.TryToProfile(build, out TuneProfile decoded, out reason) &&
+                    GarageBuildCodec.TryPrepareImport(decoded, catalog, out reason), "garage-roundtrip:" + reason);
+            Require(decoded.profileId != original.profileId && decoded.targetSledKey == original.targetSledKey &&
+                    decoded.headlightEnabled == false && decoded.fineTune.powerTrimPercent == 7.5f &&
+                    decoded.selectedParts.Count == original.selectedParts.Count && decoded.sledBuild.selections.Count == 0,
+                "garage-roundtrip-values-and-v1-forge-exclusion");
+            decoded.fineTune.powerTrimPercent = 99f;
+            Require(original.fineTune.powerTrimPercent == 7.5f, "garage-deep-copy");
+
+            build.configuration.fineTune.powerTrimPercent += 1f;
+            Require(!GarageBuildCodec.TryToProfile(build, out _, out reason) && reason.Contains("hash mismatch"),
+                "garage-tamper-rejected");
+            build.configuration.fineTune.powerTrimPercent = float.NaN;
+            Require(!GarageBuildCodec.TryToProfile(build, out _, out reason), "garage-nonfinite-rejected");
+            build.configuration.fineTune.powerTrimPercent = 7.5f;
+            build.contentHash = GarageBuildCodec.ComputeHash(build);
+            build.alpine.catalogVersion = "incompatible";
+            Require(!GarageBuildCodec.TryToProfile(build, out _, out reason), "garage-catalog-rejected");
+            build.alpine.catalogVersion = AlpineConstants.CatalogVersion;
+
+            var duplicate = new GaragePartSelection
+            {
+                category = build.configuration.parts[0].category, partId = build.configuration.parts[0].partId
+            };
+            build.configuration.parts.Add(duplicate);
+            build.contentHash = GarageBuildCodec.ComputeHash(build);
+            Require(GarageBuildCodec.TryToProfile(build, out decoded, out reason) &&
+                    !GarageBuildCodec.TryPrepareImport(decoded, catalog, out reason) && reason.Contains("duplicate"),
+                "garage-duplicate-rejected-before-normalization");
+            build.configuration.parts.Remove(duplicate);
+            build.configuration.parts[0].partId = "missing-part";
+            build.contentHash = GarageBuildCodec.ComputeHash(build);
+            Require(GarageBuildCodec.TryToProfile(build, out decoded, out reason) &&
+                    !GarageBuildCodec.TryPrepareImport(decoded, catalog, out reason) && reason.Contains("unknown part"),
+                "garage-unknown-part-rejected-before-normalization");
+        }
+
+        private static void TestForgeFitAndOwnership()
+        {
+            var forge = new object();
+            var props = new object();
+            var visibility = new AlpineVisibilityState(true);
+            visibility.Acquire(forge);
+            visibility.Acquire(forge);
+            visibility.Acquire(props);
+            Require(!visibility.Enabled && visibility.OwnerCount == 2, "forge-idempotent-hide-ownership");
+            visibility.Release(forge);
+            visibility.Release(new object());
+            Require(!visibility.Enabled && visibility.OwnerCount == 1, "forge-overlap-retains-hidden-native");
+            visibility.Release(props);
+            Require(visibility.Enabled && visibility.OwnerCount == 0, "forge-overlap-restores-original");
+            visibility = new AlpineVisibilityState(false);
+            visibility.Acquire(forge);
+            visibility.Release(forge);
+            Require(!visibility.Enabled, "forge-originally-disabled-native-retained");
+
+            Require(AlpineVisualAnchors.TryRole("ski_left", 0.4f, out var role) && role == AlpineVisualAnchorRole.LeftSki,
+                "forge-explicit-ski-side-beats-position");
+            Require(AlpineVisualAnchors.TryRole("Ski_R", -0.4f, out role) && role == AlpineVisualAnchorRole.RightSki,
+                "forge-right-ski-side");
+            Require(AlpineVisualAnchors.TryRole("ski", -0.4f, out role) && role == AlpineVisualAnchorRole.LeftSki &&
+                    AlpineVisualAnchors.TryRole("ski", 0.4f, out role) && role == AlpineVisualAnchorRole.RightSki,
+                "forge-separated-unnamed-ski-sides");
+            foreach (string name in new[] { "skid", "SkinnedMesh", "Ski-Doo Body", "skidoo", "bumper_bar", "left_right_ski", "whiskies" })
+                Require(!AlpineVisualAnchors.TryRole(name, -1f, out _), "forge-ambiguous-anchor-rejected:" + name);
+            Require(!AlpineVisualAnchors.TryRole("skis", 0f, out _) &&
+                    AlpineVisualAnchors.TryRole("handle_bar", 0f, out role) && role == AlpineVisualAnchorRole.Handlebars,
+                "forge-central-ski-group-not-single-side");
+            Require(!AlpineVisualAnchors.TryRole("ski", float.NaN, out _) &&
+                    !AlpineVisualAnchors.TryRole("ski", float.PositiveInfinity, out _), "forge-invalid-anchor-position-rejected");
+
+            var invalid = new SledForgeFit
+            {
+                position = new Vec3Data(float.NaN, 4f, -4f), rotation = new Vec3Data(float.PositiveInfinity, 300f, -300f),
+                scale = 100f
+            };
+            Require(!invalid.IsValid, "forge-nonfinite-fit-invalid");
+            invalid.Normalize();
+            Require(invalid.IsValid && invalid.position.x == 0f && invalid.position.y == 2f &&
+                    invalid.rotation.x == 0f && invalid.rotation.y == 180f && invalid.scale == 4f,
+                "forge-local-fit-repaired");
+
+            var catalog = new PartCatalog();
+            var profile = new TuneProfile { profileId = "forge-regression", targetSledKey = "fixture-sled", name = "Forge test" };
+            catalog.EnsureProfileSelections(profile);
+            string stockHash = TuneStore.ComputeContentFingerprint(profile);
+            profile.sledBuild.selections.Add(new SledForgePartSelection { slot = SledForgeSlot.Hood, donorSledKey = "fixture-donor" });
+            string donorHash = TuneStore.ComputeContentFingerprint(profile);
+            Require(stockHash != donorHash, "forge-appearance-in-content-fingerprint");
+            profile.sledBuild.selections[0].fit = new SledForgeFit();
+            Require(TuneStore.ComputeContentFingerprint(profile) == donorHash, "forge-default-fit-content-equivalent");
+            profile.sledBuild.selections[0].fit.position.x = 0.15f;
+            string fitHash = TuneStore.ComputeContentFingerprint(profile);
+            Require(fitHash != donorHash, "forge-fit-in-content-fingerprint");
+            profile.sledBuild.revision++;
+            profile.sledBuild.selections[0].donorDisplayName = "Renamed donor";
+            Require(TuneStore.ComputeContentFingerprint(profile) == fitHash, "forge-metadata-excluded-from-content");
+            Require(TuneStore.TryValidateProfileForCatalog(profile, catalog, true, false, out string reason), "forge-valid-profile:" + reason);
+            profile.sledBuild.selections[0].fit.scale = float.NaN;
+            Require(!TuneStore.TryValidateProfileForCatalog(profile, catalog, true, false, out _),
+                "forge-peer-nonfinite-fit-rejected-before-normalization");
+            profile.sledBuild.selections[0].fit.scale = 1f;
+            profile.sledBuild.selections.Add(new SledForgePartSelection { slot = SledForgeSlot.Hood, donorSledKey = "another-donor" });
+            Require(!TuneStore.TryValidateProfileForCatalog(profile, catalog, true, false, out _), "forge-peer-duplicate-slots-rejected");
+            profile.sledBuild.selections.RemoveAt(1);
+            profile.sledBuild.selections[0].slot = (SledForgeSlot)99;
+            Require(!TuneStore.TryValidateProfileForCatalog(profile, catalog, true, false, out _), "forge-peer-unknown-slot-rejected");
+        }
+
         private static bool TryReadArguments(string[] args)
         {
             var values = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
             for (int i = 0; i + 1 < args.Length; i += 2)
                 values[args[i]] = args[i + 1];
+
+            values.TryGetValue("--garage-backend-source", out _garageBackendSource);
+            values.TryGetValue("--garage-live-url", out _garageLiveUrl);
 
             if (!values.TryGetValue("--repo", out _repoRoot) ||
                 !values.TryGetValue("--assembly", out _releaseAssembly) ||
@@ -1267,6 +1548,14 @@ namespace AlpineTuning.ReleaseTests
                     Approximately(restoredRotation.w, 1d, 1e-6) &&
                     !cameraPose.IsCaptured,
                 "tracking-camera-restoration");
+            cameraPose.Capture(UnityEngine.Vector3.zero, new UnityEngine.Quaternion(0f, 0.70710678f, 0f, 0.70710678f));
+            UnityEngine.Vector3 forward = cameraPose.ApplyPosition(new UnityEngine.Vector3(0f, 0f, 0.5f));
+            Require(Approximately(forward.x, 0.5d, 1e-5) && Approximately(forward.z, 0d, 1e-5),
+                "tracking-translation-follows-native-camera");
+            var expanded = new HeadTrackingSettings();
+            expanded.translationClampMeters.x = 1.2f;
+            expanded.Normalize();
+            Require(Approximately(expanded.translationClampMeters.x, 1.2d, 1e-5), "tracking-wide-lean-limit");
         }
 
         private static void TestBacklogV5RuntimeContracts()
@@ -1312,7 +1601,7 @@ namespace AlpineTuning.ReleaseTests
                     Approximately(settings.experimentalPropMassKg, 1000d, 0d) &&
                     Approximately(settings.headTracking.smoothingResponse, 40d, 0d) &&
                     Approximately(settings.headTracking.motionCurve, 0.5d, 0d) &&
-                    Approximately(settings.headTracking.translationClampMeters.x, 0.5d, 0d) &&
+                    Approximately(settings.headTracking.translationClampMeters.x, 1.5d, 0d) &&
                     !settings.experimentalTrackCompatibility && !settings.experimentalHiddenVehicles &&
                     !settings.experimentalPropVehicles && !settings.experimentalWalking,
                 "schema5-settings-normalization");
@@ -1579,6 +1868,13 @@ namespace AlpineTuning.ReleaseTests
                 Require(delivered == 2 && dispatcher.GameRulesCount == 0 && dispatcher.PingCount == 0,
                     "out-of-order-chunks-deliver-without-native-commands-" + serverSide);
 
+                if (!serverSide)
+                {
+                    dispatcher.Dispatch(0, MakeInternalPacket(Encoding.UTF8.GetBytes("{\"senderSleddersClientId\":" + AlpineMultiplayerSession.HostPeerId + "}")));
+                    Require(receivedSender == AlpineMultiplayerSession.HostPeerId, "native-host-zero-delivers-alpine-identity");
+                    delivered--; // Keep the shared shutdown delivery count below.
+                }
+
                 transport.Shutdown();
                 Require(!transport.CanSend, "shutdown-blocks-internal-sends-" + serverSide);
                 dispatcher.Dispatch(sender, legacy);
@@ -1710,6 +2006,14 @@ namespace AlpineTuning.ReleaseTests
             RequireNativeField(controllerBase, "meshInterpretter", "native-mesh-interpreter-field");
 
             Type netClient = RequireNativeType(game, "NetClient");
+            Require(netClient.GetMethod("get_LocalClientId", BindingFlags.Instance | BindingFlags.Public) != null &&
+                netClient.GetMethod("RegisterMultiplayerStartedSync", BindingFlags.Instance | BindingFlags.Public) != null &&
+                netClient.GetMethod("add_OnMultiplayerStopped", BindingFlags.Instance | BindingFlags.Public) != null,
+                "native-multiplayer-lifecycle-and-nullable-identity");
+            Type platformPlayer = RequireNativeType(game, "NetComponentBase+EDJENIBOCOP");
+            Require(platformPlayer.GetField("OAFNDMNIPBM", BindingFlags.Instance | BindingFlags.Public)?.FieldType.IsEnum == true &&
+                platformPlayer.GetField("PFCCHGNNJEB", BindingFlags.Instance | BindingFlags.Public)?.FieldType == typeof(string),
+                "native-verified-platform-user-id-contract");
             Type netServer = RequireNativeType(game, "NetServer");
             Type delivery = RequireNativeType(game, "BIMHPJPECDH");
             Require(delivery.IsEnum && Enum.GetNames(delivery).Contains("ReliableFragmentedSequenced"),
@@ -1738,6 +2042,11 @@ namespace AlpineTuning.ReleaseTests
             RequireNativeFloatField(ski, "camberFactor", "native-camber-field");
 
             Type structure = typeof(SnowmobileStructure);
+            foreach (string fieldName in new[] { "leftSki", "rightSki" })
+                Require(FindNativeField(structure, fieldName)?.FieldType == typeof(UnityEngine.Transform),
+                    "native-forge-ski-pivot:" + fieldName);
+            Require(FindNativeField(structure, "handlebars")?.FieldType == typeof(UnityEngine.Transform[]),
+                "native-forge-handlebar-pivots");
             foreach (string fieldName in new[]
             {
                 "trackRenderer", "trackMeshes", "otherTrackObjects", "traxGroup", "traxBody",

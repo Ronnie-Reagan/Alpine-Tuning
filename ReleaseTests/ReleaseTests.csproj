@@ -65,9 +65,14 @@
   <ItemGroup>
     <Compile Include="Program.cs" />
     <Compile Include="TuneStoreRegression.cs" />
+    <Compile Include="GarageCompatibility.cs" />
+    <Compile Include="ForgeSessionRegression.cs" />
   </ItemGroup>
   <ItemGroup>
     <Content Include="Fixtures\numerical-cases.json">
+      <CopyToOutputDirectory>Never</CopyToOutputDirectory>
+    </Content>
+    <Content Include="Fixtures\garage-wire.json">
       <CopyToOutputDirectory>Never</CopyToOutputDirectory>
     </Content>
     <Content Include="Fixtures\tune-*.json">

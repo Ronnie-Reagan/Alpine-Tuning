@@ -1,0 +1,519 @@
+[
+  {
+    "name": "stock",
+    "canonical": "ALPINE_GARAGE_BUILD|1\nschema=5\ncatalog=2026.09.backlog-v5\ntargetSledKey=fixture-sled\ntargetVehicleId=1001\ndonorSledKey=\ndonorVehicleId=\nbaseline=RealisticStock\nheadlight=null\npart=_first=b\npart=a=second\npart=z=stock\npowerTrimPercent=0\ntractionTrimPercent=0\nweightTrimPercent=0\nclutchTrimPercent=0\ncenterOfMassYTrim=0\ncenterOfMassZTrim=0\nskiStanceTrim=0\nnitrousBoostPercent=100",
+    "build": {
+      "format": "ALPINE_GARAGE_BUILD",
+      "formatVersion": 1,
+      "alpine": {
+        "modVersion": "2026.10.02",
+        "profileSchema": 5,
+        "catalogVersion": "2026.09.backlog-v5"
+      },
+      "name": "Wire fixture",
+      "configuration": {
+        "target": {
+          "sledKey": "fixture-sled",
+          "vehicleId": "1001"
+        },
+        "engineDonor": {},
+        "baseline": "RealisticStock",
+        "parts": [
+          {
+            "category": "z",
+            "partId": "Stock"
+          },
+          {
+            "category": "a",
+            "partId": "Second"
+          },
+          {
+            "category": "_first",
+            "partId": "B"
+          }
+        ],
+        "fineTune": {
+          "powerTrimPercent": 0,
+          "tractionTrimPercent": 0,
+          "weightTrimPercent": 0,
+          "clutchTrimPercent": 0,
+          "centerOfMassYTrim": 0,
+          "centerOfMassZTrim": 0,
+          "skiStanceTrim": 0,
+          "nitrousBoostPercent": 100
+        },
+        "headlightEnabled": null
+      },
+      "snapshot": {},
+      "contentHash": "df7880a55bbea50ebc944bf5a8041706077a76933379613a52c1d8e5bf7f8057"
+    }
+  },
+  {
+    "name": "maximums",
+    "canonical": "ALPINE_GARAGE_BUILD|1\nschema=5\ncatalog=2026.09.backlog-v5\ntargetSledKey=fixture-sled\ntargetVehicleId=1001\ndonorSledKey=\ndonorVehicleId=\nbaseline=RealisticStock\nheadlight=null\npowerTrimPercent=10\ntractionTrimPercent=10\nweightTrimPercent=8\nclutchTrimPercent=10\ncenterOfMassYTrim=0.08\ncenterOfMassZTrim=0.12\nskiStanceTrim=0.08\nnitrousBoostPercent=200",
+    "build": {
+      "format": "ALPINE_GARAGE_BUILD",
+      "formatVersion": 1,
+      "alpine": {
+        "modVersion": "2026.10.02",
+        "profileSchema": 5,
+        "catalogVersion": "2026.09.backlog-v5"
+      },
+      "name": "Wire fixture",
+      "configuration": {
+        "target": {
+          "sledKey": "fixture-sled",
+          "vehicleId": "1001"
+        },
+        "engineDonor": {},
+        "baseline": "RealisticStock",
+        "parts": [],
+        "fineTune": {
+          "powerTrimPercent": 10,
+          "tractionTrimPercent": 10,
+          "weightTrimPercent": 8,
+          "clutchTrimPercent": 10,
+          "centerOfMassYTrim": 0.08,
+          "centerOfMassZTrim": 0.12,
+          "skiStanceTrim": 0.08,
+          "nitrousBoostPercent": 200
+        },
+        "headlightEnabled": null
+      },
+      "snapshot": {},
+      "contentHash": "bca682225aa10d609c8f9fe23ee69181f799ff2441b71c566affbfab1ac9ccbb"
+    }
+  },
+  {
+    "name": "minimums",
+    "canonical": "ALPINE_GARAGE_BUILD|1\nschema=5\ncatalog=2026.09.backlog-v5\ntargetSledKey=fixture-sled\ntargetVehicleId=1001\ndonorSledKey=\ndonorVehicleId=\nbaseline=RealisticStock\nheadlight=null\npowerTrimPercent=-10\ntractionTrimPercent=-10\nweightTrimPercent=-8\nclutchTrimPercent=-10\ncenterOfMassYTrim=-0.08\ncenterOfMassZTrim=-0.12\nskiStanceTrim=-0.08\nnitrousBoostPercent=25",
+    "build": {
+      "format": "ALPINE_GARAGE_BUILD",
+      "formatVersion": 1,
+      "alpine": {
+        "modVersion": "2026.10.02",
+        "profileSchema": 5,
+        "catalogVersion": "2026.09.backlog-v5"
+      },
+      "name": "Wire fixture",
+      "configuration": {
+        "target": {
+          "sledKey": "fixture-sled",
+          "vehicleId": "1001"
+        },
+        "engineDonor": {},
+        "baseline": "RealisticStock",
+        "parts": [],
+        "fineTune": {
+          "powerTrimPercent": -10,
+          "tractionTrimPercent": -10,
+          "weightTrimPercent": -8,
+          "clutchTrimPercent": -10,
+          "centerOfMassYTrim": -0.08,
+          "centerOfMassZTrim": -0.12,
+          "skiStanceTrim": -0.08,
+          "nitrousBoostPercent": 25
+        },
+        "headlightEnabled": null
+      },
+      "snapshot": {},
+      "contentHash": "10f2fe3f5a2ad8f4b5dd65eb02f437c4bf690321e12815f591c0c1bd24576943"
+    }
+  },
+  {
+    "name": "positive-half-micro",
+    "canonical": "ALPINE_GARAGE_BUILD|1\nschema=5\ncatalog=2026.09.backlog-v5\ntargetSledKey=fixture-sled\ntargetVehicleId=1001\ndonorSledKey=\ndonorVehicleId=\nbaseline=RealisticStock\nheadlight=null\npowerTrimPercent=0\ntractionTrimPercent=0\nweightTrimPercent=0\nclutchTrimPercent=0\ncenterOfMassYTrim=0.000001\ncenterOfMassZTrim=0\nskiStanceTrim=0\nnitrousBoostPercent=100",
+    "build": {
+      "format": "ALPINE_GARAGE_BUILD",
+      "formatVersion": 1,
+      "alpine": {
+        "modVersion": "2026.10.02",
+        "profileSchema": 5,
+        "catalogVersion": "2026.09.backlog-v5"
+      },
+      "name": "Wire fixture",
+      "configuration": {
+        "target": {
+          "sledKey": "fixture-sled",
+          "vehicleId": "1001"
+        },
+        "engineDonor": {},
+        "baseline": "RealisticStock",
+        "parts": [],
+        "fineTune": {
+          "powerTrimPercent": 0,
+          "tractionTrimPercent": 0,
+          "weightTrimPercent": 0,
+          "clutchTrimPercent": 0,
+          "centerOfMassYTrim": 5e-7,
+          "centerOfMassZTrim": 0,
+          "skiStanceTrim": 0,
+          "nitrousBoostPercent": 100
+        },
+        "headlightEnabled": null
+      },
+      "snapshot": {},
+      "contentHash": "84400c5f0023606afba48f64dcce82d0796f3529bbe74356d30faa03181a670f"
+    }
+  },
+  {
+    "name": "negative-half-micro",
+    "canonical": "ALPINE_GARAGE_BUILD|1\nschema=5\ncatalog=2026.09.backlog-v5\ntargetSledKey=fixture-sled\ntargetVehicleId=1001\ndonorSledKey=\ndonorVehicleId=\nbaseline=RealisticStock\nheadlight=null\npowerTrimPercent=0\ntractionTrimPercent=0\nweightTrimPercent=0\nclutchTrimPercent=0\ncenterOfMassYTrim=-0.000001\ncenterOfMassZTrim=0\nskiStanceTrim=0\nnitrousBoostPercent=100",
+    "build": {
+      "format": "ALPINE_GARAGE_BUILD",
+      "formatVersion": 1,
+      "alpine": {
+        "modVersion": "2026.10.02",
+        "profileSchema": 5,
+        "catalogVersion": "2026.09.backlog-v5"
+      },
+      "name": "Wire fixture",
+      "configuration": {
+        "target": {
+          "sledKey": "fixture-sled",
+          "vehicleId": "1001"
+        },
+        "engineDonor": {},
+        "baseline": "RealisticStock",
+        "parts": [],
+        "fineTune": {
+          "powerTrimPercent": 0,
+          "tractionTrimPercent": 0,
+          "weightTrimPercent": 0,
+          "clutchTrimPercent": 0,
+          "centerOfMassYTrim": -5e-7,
+          "centerOfMassZTrim": 0,
+          "skiStanceTrim": 0,
+          "nitrousBoostPercent": 100
+        },
+        "headlightEnabled": null
+      },
+      "snapshot": {},
+      "contentHash": "2d0852674895f05a1713103b7b8f309e3a9278883b5a422fd27c3e0c8ec401ef"
+    }
+  },
+  {
+    "name": "positive-micro",
+    "canonical": "ALPINE_GARAGE_BUILD|1\nschema=5\ncatalog=2026.09.backlog-v5\ntargetSledKey=fixture-sled\ntargetVehicleId=1001\ndonorSledKey=\ndonorVehicleId=\nbaseline=RealisticStock\nheadlight=null\npowerTrimPercent=0\ntractionTrimPercent=0\nweightTrimPercent=0\nclutchTrimPercent=0\ncenterOfMassYTrim=0.000001\ncenterOfMassZTrim=0\nskiStanceTrim=0\nnitrousBoostPercent=100",
+    "build": {
+      "format": "ALPINE_GARAGE_BUILD",
+      "formatVersion": 1,
+      "alpine": {
+        "modVersion": "2026.10.02",
+        "profileSchema": 5,
+        "catalogVersion": "2026.09.backlog-v5"
+      },
+      "name": "Wire fixture",
+      "configuration": {
+        "target": {
+          "sledKey": "fixture-sled",
+          "vehicleId": "1001"
+        },
+        "engineDonor": {},
+        "baseline": "RealisticStock",
+        "parts": [],
+        "fineTune": {
+          "powerTrimPercent": 0,
+          "tractionTrimPercent": 0,
+          "weightTrimPercent": 0,
+          "clutchTrimPercent": 0,
+          "centerOfMassYTrim": 0.000001,
+          "centerOfMassZTrim": 0,
+          "skiStanceTrim": 0,
+          "nitrousBoostPercent": 100
+        },
+        "headlightEnabled": null
+      },
+      "snapshot": {},
+      "contentHash": "84400c5f0023606afba48f64dcce82d0796f3529bbe74356d30faa03181a670f"
+    }
+  },
+  {
+    "name": "negative-micro",
+    "canonical": "ALPINE_GARAGE_BUILD|1\nschema=5\ncatalog=2026.09.backlog-v5\ntargetSledKey=fixture-sled\ntargetVehicleId=1001\ndonorSledKey=\ndonorVehicleId=\nbaseline=RealisticStock\nheadlight=null\npowerTrimPercent=0\ntractionTrimPercent=0\nweightTrimPercent=0\nclutchTrimPercent=0\ncenterOfMassYTrim=-0.000001\ncenterOfMassZTrim=0\nskiStanceTrim=0\nnitrousBoostPercent=100",
+    "build": {
+      "format": "ALPINE_GARAGE_BUILD",
+      "formatVersion": 1,
+      "alpine": {
+        "modVersion": "2026.10.02",
+        "profileSchema": 5,
+        "catalogVersion": "2026.09.backlog-v5"
+      },
+      "name": "Wire fixture",
+      "configuration": {
+        "target": {
+          "sledKey": "fixture-sled",
+          "vehicleId": "1001"
+        },
+        "engineDonor": {},
+        "baseline": "RealisticStock",
+        "parts": [],
+        "fineTune": {
+          "powerTrimPercent": 0,
+          "tractionTrimPercent": 0,
+          "weightTrimPercent": 0,
+          "clutchTrimPercent": 0,
+          "centerOfMassYTrim": -0.000001,
+          "centerOfMassZTrim": 0,
+          "skiStanceTrim": 0,
+          "nitrousBoostPercent": 100
+        },
+        "headlightEnabled": null
+      },
+      "snapshot": {},
+      "contentHash": "2d0852674895f05a1713103b7b8f309e3a9278883b5a422fd27c3e0c8ec401ef"
+    }
+  },
+  {
+    "name": "under-half-micro",
+    "canonical": "ALPINE_GARAGE_BUILD|1\nschema=5\ncatalog=2026.09.backlog-v5\ntargetSledKey=fixture-sled\ntargetVehicleId=1001\ndonorSledKey=\ndonorVehicleId=\nbaseline=RealisticStock\nheadlight=null\npowerTrimPercent=0\ntractionTrimPercent=0\nweightTrimPercent=0\nclutchTrimPercent=0\ncenterOfMassYTrim=0\ncenterOfMassZTrim=0\nskiStanceTrim=0\nnitrousBoostPercent=100",
+    "build": {
+      "format": "ALPINE_GARAGE_BUILD",
+      "formatVersion": 1,
+      "alpine": {
+        "modVersion": "2026.10.02",
+        "profileSchema": 5,
+        "catalogVersion": "2026.09.backlog-v5"
+      },
+      "name": "Wire fixture",
+      "configuration": {
+        "target": {
+          "sledKey": "fixture-sled",
+          "vehicleId": "1001"
+        },
+        "engineDonor": {},
+        "baseline": "RealisticStock",
+        "parts": [],
+        "fineTune": {
+          "powerTrimPercent": 0,
+          "tractionTrimPercent": 0,
+          "weightTrimPercent": 0,
+          "clutchTrimPercent": 0,
+          "centerOfMassYTrim": 4.99999e-7,
+          "centerOfMassZTrim": 0,
+          "skiStanceTrim": 0,
+          "nitrousBoostPercent": 100
+        },
+        "headlightEnabled": null
+      },
+      "snapshot": {},
+      "contentHash": "8070ddf2f8531563e7efe9e657ea6edcc9a60fee8a845ee01e2c175d08b14148"
+    }
+  },
+  {
+    "name": "negative-zero",
+    "canonical": "ALPINE_GARAGE_BUILD|1\nschema=5\ncatalog=2026.09.backlog-v5\ntargetSledKey=fixture-sled\ntargetVehicleId=1001\ndonorSledKey=\ndonorVehicleId=\nbaseline=RealisticStock\nheadlight=null\npowerTrimPercent=0\ntractionTrimPercent=0\nweightTrimPercent=0\nclutchTrimPercent=0\ncenterOfMassYTrim=0\ncenterOfMassZTrim=0\nskiStanceTrim=0\nnitrousBoostPercent=100",
+    "build": {
+      "format": "ALPINE_GARAGE_BUILD",
+      "formatVersion": 1,
+      "alpine": {
+        "modVersion": "2026.10.02",
+        "profileSchema": 5,
+        "catalogVersion": "2026.09.backlog-v5"
+      },
+      "name": "Wire fixture",
+      "configuration": {
+        "target": {
+          "sledKey": "fixture-sled",
+          "vehicleId": "1001"
+        },
+        "engineDonor": {},
+        "baseline": "RealisticStock",
+        "parts": [],
+        "fineTune": {
+          "powerTrimPercent": 0,
+          "tractionTrimPercent": 0,
+          "weightTrimPercent": 0,
+          "clutchTrimPercent": 0,
+          "centerOfMassYTrim": -1e-8,
+          "centerOfMassZTrim": 0,
+          "skiStanceTrim": 0,
+          "nitrousBoostPercent": 100
+        },
+        "headlightEnabled": null
+      },
+      "snapshot": {},
+      "contentHash": "8070ddf2f8531563e7efe9e657ea6edcc9a60fee8a845ee01e2c175d08b14148"
+    }
+  },
+  {
+    "name": "power-slider-precision",
+    "canonical": "ALPINE_GARAGE_BUILD|1\nschema=5\ncatalog=2026.09.backlog-v5\ntargetSledKey=fixture-sled\ntargetVehicleId=1001\ndonorSledKey=\ndonorVehicleId=\nbaseline=RealisticStock\nheadlight=null\npowerTrimPercent=3.123457\ntractionTrimPercent=0\nweightTrimPercent=0\nclutchTrimPercent=0\ncenterOfMassYTrim=0\ncenterOfMassZTrim=0\nskiStanceTrim=0\nnitrousBoostPercent=100",
+    "build": {
+      "format": "ALPINE_GARAGE_BUILD",
+      "formatVersion": 1,
+      "alpine": {
+        "modVersion": "2026.10.02",
+        "profileSchema": 5,
+        "catalogVersion": "2026.09.backlog-v5"
+      },
+      "name": "Wire fixture",
+      "configuration": {
+        "target": {
+          "sledKey": "fixture-sled",
+          "vehicleId": "1001"
+        },
+        "engineDonor": {},
+        "baseline": "RealisticStock",
+        "parts": [],
+        "fineTune": {
+          "powerTrimPercent": 3.1234567,
+          "tractionTrimPercent": 0,
+          "weightTrimPercent": 0,
+          "clutchTrimPercent": 0,
+          "centerOfMassYTrim": 0,
+          "centerOfMassZTrim": 0,
+          "skiStanceTrim": 0,
+          "nitrousBoostPercent": 100
+        },
+        "headlightEnabled": null
+      },
+      "snapshot": {},
+      "contentHash": "8ccb8e74dbbc7522f69879fb188adb37f1f67faec7acd6bf6ac61e3d63940cb3"
+    }
+  },
+  {
+    "name": "nitrous-slider-precision",
+    "canonical": "ALPINE_GARAGE_BUILD|1\nschema=5\ncatalog=2026.09.backlog-v5\ntargetSledKey=fixture-sled\ntargetVehicleId=1001\ndonorSledKey=\ndonorVehicleId=\nbaseline=RealisticStock\nheadlight=null\npowerTrimPercent=0\ntractionTrimPercent=0\nweightTrimPercent=0\nclutchTrimPercent=0\ncenterOfMassYTrim=0\ncenterOfMassZTrim=0\nskiStanceTrim=0\nnitrousBoostPercent=137.123456",
+    "build": {
+      "format": "ALPINE_GARAGE_BUILD",
+      "formatVersion": 1,
+      "alpine": {
+        "modVersion": "2026.10.02",
+        "profileSchema": 5,
+        "catalogVersion": "2026.09.backlog-v5"
+      },
+      "name": "Wire fixture",
+      "configuration": {
+        "target": {
+          "sledKey": "fixture-sled",
+          "vehicleId": "1001"
+        },
+        "engineDonor": {},
+        "baseline": "RealisticStock",
+        "parts": [],
+        "fineTune": {
+          "powerTrimPercent": 0,
+          "tractionTrimPercent": 0,
+          "weightTrimPercent": 0,
+          "clutchTrimPercent": 0,
+          "centerOfMassYTrim": 0,
+          "centerOfMassZTrim": 0,
+          "skiStanceTrim": 0,
+          "nitrousBoostPercent": 137.123456
+        },
+        "headlightEnabled": null
+      },
+      "snapshot": {},
+      "contentHash": "9f987416a306ecdd0873a2480bb22ca06e39ba58caf8ae65e3370ee63ce0b311"
+    }
+  },
+  {
+    "name": "incoming-extra-precision",
+    "canonical": "ALPINE_GARAGE_BUILD|1\nschema=5\ncatalog=2026.09.backlog-v5\ntargetSledKey=fixture-sled\ntargetVehicleId=1001\ndonorSledKey=\ndonorVehicleId=\nbaseline=RealisticStock\nheadlight=null\npowerTrimPercent=10\ntractionTrimPercent=0\nweightTrimPercent=0\nclutchTrimPercent=0\ncenterOfMassYTrim=0\ncenterOfMassZTrim=0\nskiStanceTrim=0\nnitrousBoostPercent=142.987654",
+    "build": {
+      "format": "ALPINE_GARAGE_BUILD",
+      "formatVersion": 1,
+      "alpine": {
+        "modVersion": "2026.10.02",
+        "profileSchema": 5,
+        "catalogVersion": "2026.09.backlog-v5"
+      },
+      "name": "Wire fixture",
+      "configuration": {
+        "target": {
+          "sledKey": "fixture-sled",
+          "vehicleId": "1001"
+        },
+        "engineDonor": {},
+        "baseline": "RealisticStock",
+        "parts": [],
+        "fineTune": {
+          "powerTrimPercent": 9.9999995,
+          "tractionTrimPercent": 0,
+          "weightTrimPercent": 0,
+          "clutchTrimPercent": 0,
+          "centerOfMassYTrim": 0,
+          "centerOfMassZTrim": 0,
+          "skiStanceTrim": 0,
+          "nitrousBoostPercent": 142.9876543
+        },
+        "headlightEnabled": null
+      },
+      "snapshot": {},
+      "contentHash": "ea941519faf56dc26d05f4d1bffbc6514b16ab80c0ae892533403bfbc13b38c3"
+    }
+  },
+  {
+    "name": "decimal-tie",
+    "canonical": "ALPINE_GARAGE_BUILD|1\nschema=5\ncatalog=2026.09.backlog-v5\ntargetSledKey=fixture-sled\ntargetVehicleId=1001\ndonorSledKey=\ndonorVehicleId=\nbaseline=RealisticStock\nheadlight=null\npowerTrimPercent=1.234567\ntractionTrimPercent=0\nweightTrimPercent=0\nclutchTrimPercent=0\ncenterOfMassYTrim=0\ncenterOfMassZTrim=0\nskiStanceTrim=0\nnitrousBoostPercent=100",
+    "build": {
+      "format": "ALPINE_GARAGE_BUILD",
+      "formatVersion": 1,
+      "alpine": {
+        "modVersion": "2026.10.02",
+        "profileSchema": 5,
+        "catalogVersion": "2026.09.backlog-v5"
+      },
+      "name": "Wire fixture",
+      "configuration": {
+        "target": {
+          "sledKey": "fixture-sled",
+          "vehicleId": "1001"
+        },
+        "engineDonor": {},
+        "baseline": "RealisticStock",
+        "parts": [],
+        "fineTune": {
+          "powerTrimPercent": 1.2345665,
+          "tractionTrimPercent": 0,
+          "weightTrimPercent": 0,
+          "clutchTrimPercent": 0,
+          "centerOfMassYTrim": 0,
+          "centerOfMassZTrim": 0,
+          "skiStanceTrim": 0,
+          "nitrousBoostPercent": 99.9999995
+        },
+        "headlightEnabled": null
+      },
+      "snapshot": {},
+      "contentHash": "4e72f7e9d585ae67b31c9142ba0b6d1cc41d3e811f1ac8835107600c729982e4"
+    }
+  },
+  {
+    "name": "negative-decimal-tie",
+    "canonical": "ALPINE_GARAGE_BUILD|1\nschema=5\ncatalog=2026.09.backlog-v5\ntargetSledKey=fixture-sled\ntargetVehicleId=1001\ndonorSledKey=\ndonorVehicleId=\nbaseline=RealisticStock\nheadlight=null\npowerTrimPercent=-1.234567\ntractionTrimPercent=0\nweightTrimPercent=0\nclutchTrimPercent=0\ncenterOfMassYTrim=0\ncenterOfMassZTrim=0\nskiStanceTrim=0\nnitrousBoostPercent=100",
+    "build": {
+      "format": "ALPINE_GARAGE_BUILD",
+      "formatVersion": 1,
+      "alpine": {
+        "modVersion": "2026.10.02",
+        "profileSchema": 5,
+        "catalogVersion": "2026.09.backlog-v5"
+      },
+      "name": "Wire fixture",
+      "configuration": {
+        "target": {
+          "sledKey": "fixture-sled",
+          "vehicleId": "1001"
+        },
+        "engineDonor": {},
+        "baseline": "RealisticStock",
+        "parts": [],
+        "fineTune": {
+          "powerTrimPercent": -1.2345665,
+          "tractionTrimPercent": 0,
+          "weightTrimPercent": 0,
+          "clutchTrimPercent": 0,
+          "centerOfMassYTrim": 0,
+          "centerOfMassZTrim": 0,
+          "skiStanceTrim": 0,
+          "nitrousBoostPercent": 100
+        },
+        "headlightEnabled": null
+      },
+      "snapshot": {},
+      "contentHash": "fd68b5b93ccf2f8088c4327a784bdf15e9dccaf99d2c2f3be4bbb3dce44881d6"
+    }
+  }
+]

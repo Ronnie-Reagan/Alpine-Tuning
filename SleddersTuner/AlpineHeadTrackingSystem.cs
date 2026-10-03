@@ -99,7 +99,7 @@ namespace AlpineTuning
             IsCaptured = true;
         }
 
-        internal Vector3 ApplyPosition(Vector3 offset) => _position + offset;
+        internal Vector3 ApplyPosition(Vector3 offset) => _position + _rotation * offset;
         internal Quaternion ApplyRotation(Vector3 offsetDegrees) =>
             _rotation * Quaternion.Euler(offsetDegrees);
 
@@ -131,6 +131,8 @@ namespace AlpineTuning
         private bool _hasLeanInputSnapshot;
         private SnowmobileController _leanController;
         private float _nextProviderProbe;
+        private float _lastPoseTime;
+        private static Camera[] _cameraBuffer = new Camera[8];
         private string _status = "Disabled";
 
         internal AlpineHeadTrackingSystem(AlpineTuningMod mod)
@@ -174,10 +176,16 @@ namespace AlpineTuning
 
             if (!_provider.TryRead(out AlpineHeadPose raw))
             {
+                if (Time.unscaledTime - _lastPoseTime > 0.5f)
+                {
+                    _filter.Recenter();
+                    _leanOutput = Vector2.zero;
+                }
                 _status = _provider.Name + " waiting for pose";
                 return;
             }
 
+            _lastPoseTime = Time.unscaledTime;
             HeadTrackingSettings settings = _mod.Settings.headTracking ?? new HeadTrackingSettings();
             settings.Normalize();
             float blend = 1f - Mathf.Exp(-settings.smoothingResponse * Mathf.Max(0f, Time.unscaledDeltaTime));
@@ -213,6 +221,7 @@ namespace AlpineTuning
         internal void Recenter()
         {
             _filter.Recenter();
+            _leanOutput = Vector2.zero;
             _status = _provider != null ? _provider.Name + " recentering" : "No provider detected";
         }
 
@@ -241,6 +250,7 @@ namespace AlpineTuning
                 () => new OpenTrackProvider());
 
             _filter.Recenter();
+            _leanOutput = Vector2.zero;
             _status = _provider != null ? _provider.Name + " detected" : "No provider detected";
         }
 
@@ -322,7 +332,8 @@ namespace AlpineTuning
             HeadTrackingSettings tracking = _mod.Settings.headTracking;
             if (controller == null || controller != AlpineTuningMod.ActiveController ||
                 !_mod.Settings.headTrackingEnabled || tracking == null || tracking.lean == null ||
-                !tracking.lean.enabled || !_filter.HasPose)
+                !tracking.lean.enabled || !_filter.HasPose ||
+                AlpineNativeUi.HasAttachedMenus || Time.timeScale <= 0.0001f)
                 return;
 
             object input = SleddersGameBindings.GetFieldValue<object>(controller, "GJKCDNOBELI");
@@ -367,7 +378,9 @@ namespace AlpineTuning
                             pose.rotationDegrees.x / 45f * settings.pitchGain;
             side = ApplyLeanDeadzone(side, settings.deadzone);
             foreAft = ApplyLeanDeadzone(foreAft, settings.deadzone);
-            Vector2 target = Vector2.ClampMagnitude(new Vector2(side, foreAft), settings.maximumOutput);
+            Vector2 target = new Vector2(
+                Mathf.Clamp(side, -settings.maximumOutput, settings.maximumOutput),
+                Mathf.Clamp(foreAft, -settings.maximumOutput, settings.maximumOutput));
             float blend = 1f - Mathf.Exp(-settings.smoothingResponse * Mathf.Max(0f, Time.unscaledDeltaTime));
             _leanOutput = Vector2.Lerp(_leanOutput, target, blend);
         }
@@ -396,8 +409,12 @@ namespace AlpineTuning
         {
             Camera best = null;
             float bestDepth = float.MinValue;
-            foreach (Camera camera in Camera.allCameras)
+            if (_cameraBuffer.Length < Camera.allCamerasCount)
+                _cameraBuffer = new Camera[Camera.allCamerasCount];
+            int count = Camera.GetAllCameras(_cameraBuffer);
+            for (int i = 0; i < count; i++)
             {
+                Camera camera = _cameraBuffer[i];
                 if (camera == null || !camera.isActiveAndEnabled || camera.targetTexture != null)
                     continue;
                 string name = camera.name ?? string.Empty;

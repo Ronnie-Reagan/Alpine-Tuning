@@ -21,6 +21,9 @@
 !/SleddersTuner/AlpineRemoteReplication.cs
 !/SleddersTuner/AlpineSleddersTransport.cs
 !/SleddersTuner/AlpineSledForgeSystem.cs
+!/SleddersTuner/AlpineVisualAnchors.cs
+!/SleddersTuner/AlpineForgeGeometry.cs
+!/SleddersTuner/AlpineMultiplayerSession.cs
 !/SleddersTuner/AlpineTuneMath.cs
 !/SleddersTuner/GarageIconResources.cs
 !/SleddersTuner/ModMain.cs
@@ -28,6 +31,10 @@
 !/SleddersTuner/SleddersGameBindings.cs
 !/SleddersTuner/SledIdentity.cs
 !/SleddersTuner/TrackSpecResolver.cs
+!/SleddersTuner/AlpineGarageClient.cs
+!/SleddersTuner/AlpineGarageConnectionStorage.cs
+!/SleddersTuner/AlpineGarageModels.cs
+!/SleddersTuner/AlpineGarageBuildCodec.cs
 !/SleddersTuner/TuneModels.cs
 !/SleddersTuner/TuneStore.cs
 !/SleddersTuner/UnitConversion.cs
@@ -43,8 +50,11 @@
 !/ReleaseTests/ReleaseTests.csproj
 !/ReleaseTests/Program.cs
 !/ReleaseTests/TuneStoreRegression.cs
+!/ReleaseTests/GarageCompatibility.cs
+!/ReleaseTests/ForgeSessionRegression.cs
 !/ReleaseTests/Fixtures/
 !/ReleaseTests/Fixtures/numerical-cases.json
+!/ReleaseTests/Fixtures/garage-wire.json
 !/ReleaseTests/Fixtures/tune-legacy.json
 !/ReleaseTests/Fixtures/tune-modified.json
 !/ReleaseTests/Fixtures/tune-stock.json
